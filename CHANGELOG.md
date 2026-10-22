@@ -14,5 +14,7 @@ All notable changes to this project are documented here. The format follows
 - Upstream documentation snapshot in `docs/upstream/`: the five ApiDocs product specs
   (OpenAPI: Public, Comtrade, Comtrade Tools, Comtrade Bulk, Comtrade Async), ten Help
   Center articles as Markdown and two reference files, listed in `FETCHED.md`.
+  `.gitattributes` marks `docs/upstream/**` as `-text`, so git never converts the line
+  endings of the files kept byte for byte (the CRLF specs, one mixed-endings file).
 - `scripts/refresh_upstream.py`: regenerates the snapshot reproducibly, discovering the
   ApiDocs products from the page's bundle (`uv run scripts/refresh_upstream.py`).
