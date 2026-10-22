@@ -14,34 +14,35 @@ To help users evaluate the account type for their needs, the table below shows a
 
 #### Account Types
 
-| Features | Public | Basic Individual | Premium Individual | Premium Institutional |
-| --- | --- | --- | --- | --- |
-| Features | Public | Basic Individual | Premium Individual | Pro 1 – not-for-profit and academic institutions  Pro 2 – for-profit and private sector institutions |
-| *Number of Users* | Registration not required | Single | Single | Multiple |
-| *Yearly Subscription* | Free | Free | Visit [shop.un.org](https://shop.un.org/databases#Comtrade) | Visit [shop.un.org](https://shop.un.org/databases#Comtrade) |
-| *Type of Access* | Anonymous | Individual | Individual | Institution-wide |
-| *Authentication* | Non-authenticated | Registered email | Registered email | Registered email domain |
-| ***User Interface (UI)*** |  |  |  |  |
-| Data Preview | (tick) | (tick) | (tick) | (tick) |
-| Data Download | (error) | (tick) | (tick) | (tick) |
-| Data Delivery | (error) | (error) | (tick) | (tick) |
-| Aggregation Option | (tick) | (tick) | (tick) | (tick) |
-| Save Parameters | (error) | (tick) | (tick) | (tick) |
-| Save Searches | (error) | (tick) | (tick) | (tick) |
-| ***Download Options*** |  |  |  |  |
-| UI Download | (error) | (tick) max 100K records per call | (tick) max of 250k records per call | (tick) max of 250k records per call |
-| UI Bulk | (error) | (error) | (tick) | (tick) |
-| UI Deliver | (error) | (error) | (tick) max of 2.5M records per call | (tick) max of 2.5M records per call |
-| Data API | (error) | (tick) max 100K records per call | (tick) max of 250k records per call | (tick) max of 250k records per call |
-| Bulk API | (error) | (error) | (tick) | (tick) |
-| Async API | (error) | (error) | (tick) max of 2.5M records per call | (tick) max of 2.5M records per call |
-| ***API*** |  |  |  |  |
-| Preview data API Quota | (tick) Limited to 500 records and 1 single period and product per call | (tick) 500 calls/day | (tick) 5000 calls/day | (tick) Unlimited calls per day |
-| Data API Quota | (error) | (tick) 500 calls/day | (tick) 5000 calls/day | (tick) Unlimited calls per day |
-| Bulk API Quota | (error) | (error) | (tick) 5000 calls/day | (tick) Unlimited calls per day |
-| Async API Quota | (error) | (error) | (tick) 5000 calls/day | (tick) Unlimited calls per day |
-| API Key | (error) | Keys may be periodically regenerated.  Visit [My API Portal](https://comtradeplus.un.org/MyComtrade/APIPortal). | (tick) | (tick) |
-| API Rate Limit | 1 call per second | 1 call per second | 5 calls per second | 5 calls per second |
+<table>
+<tr><th rowspan="2">Features</th><th rowspan="2">Public</th><th rowspan="2">Basic Individual</th><th rowspan="2">Premium Individual</th><th>Premium Institutional</th></tr>
+<tr><th>Pro 1 – not-for-profit and academic institutions <br/>Pro 2 – for-profit and private sector institutions</th></tr>
+<tr><td><em>Number of Users</em></td><td>Registration not required</td><td>Single</td><td>Single</td><td>Multiple</td></tr>
+<tr><td><em>Yearly Subscription</em></td><td>Free</td><td>Free</td><td>Visit <a href="https://shop.un.org/databases#Comtrade">shop.un.org</a></td><td>Visit <a href="https://shop.un.org/databases#Comtrade">shop.un.org</a></td></tr>
+<tr><td><em>Type of Access</em></td><td>Anonymous</td><td>Individual</td><td>Individual</td><td>Institution-wide</td></tr>
+<tr><td><em>Authentication</em></td><td>Non-authenticated</td><td>Registered email</td><td>Registered email</td><td>Registered email domain</td></tr>
+<tr><td colspan="5"><strong><em>User Interface (UI) </em></strong></td></tr>
+<tr><td>Data Preview</td><td>(tick)</td><td>(tick)</td><td>(tick)</td><td>(tick)</td></tr>
+<tr><td>Data Download</td><td>(error)</td><td>(tick)</td><td>(tick)</td><td>(tick)</td></tr>
+<tr><td>Data Delivery</td><td>(error)</td><td>(error)</td><td>(tick)</td><td>(tick)</td></tr>
+<tr><td>Aggregation Option</td><td>(tick)</td><td>(tick)</td><td>(tick)</td><td>(tick)</td></tr>
+<tr><td>Save Parameters</td><td>(error)</td><td>(tick)</td><td>(tick)</td><td>(tick)</td></tr>
+<tr><td>Save Searches</td><td>(error)</td><td>(tick)</td><td>(tick)</td><td>(tick)</td></tr>
+<tr><td colspan="5"><em><strong>Download Options</strong></em></td></tr>
+<tr><td>UI Download</td><td>(error)</td><td>(tick)<br/>max 100K records per call</td><td>(tick)<br/>max of 250k records per call</td><td>(tick)<br/>max of 250k records per call</td></tr>
+<tr><td>UI Bulk</td><td>(error)</td><td>(error)</td><td>(tick)</td><td>(tick)</td></tr>
+<tr><td>UI Deliver</td><td>(error)</td><td>(error)</td><td>(tick)<br/>max of 2.5M records per call</td><td>(tick)<br/>max of 2.5M records per call</td></tr>
+<tr><td>Data API</td><td>(error)</td><td>(tick)<br/>max 100K records per call</td><td>(tick)<br/>max of 250k records per call</td><td>(tick)<br/>max of 250k records per call</td></tr>
+<tr><td>Bulk API</td><td>(error)</td><td>(error)</td><td>(tick)</td><td>(tick)</td></tr>
+<tr><td>Async API</td><td>(error)</td><td>(error)</td><td>(tick)<br/>max of 2.5M records per call</td><td>(tick)<br/>max of 2.5M records per call</td></tr>
+<tr><td colspan="5"><em><strong>API </strong></em></td></tr>
+<tr><td>Preview data API Quota</td><td>(tick)<br/>Limited to 500 records and 1 single period and product per call</td><td rowspan="2">(tick)<br/>500 calls/day</td><td rowspan="4">(tick)<br/>5000 calls/day</td><td rowspan="4">(tick)<br/>Unlimited calls per day</td></tr>
+<tr><td>Data API Quota</td><td>(error)</td></tr>
+<tr><td>Bulk API Quota</td><td>(error)</td><td>(error)</td></tr>
+<tr><td>Async API Quota</td><td>(error)</td><td>(error)</td></tr>
+<tr><td>API Key</td><td>(error)</td><td>warn-icon.png<br/>Keys may be periodically regenerated. <br/>Visit <a href="https://comtradeplus.un.org/MyComtrade/APIPortal">My API Portal</a>.</td><td>(tick)</td><td>(tick)</td></tr>
+<tr><td>API Rate Limit</td><td colspan="2">1 call per second</td><td colspan="2">5 calls per second</td></tr>
+</table>
 
 We offer a premium trial subscription to our registered free users (***Basic Individual***) interested in purchasing a premium subscription. This trial subscription aims to demonstrate the advanced features of our premium service and help users make an informed decision before committing to a premium subscription. ***Please note that the trial subscription only gives access to a limited dataset because it is intended to showcase the features rather than access the data.***
 
