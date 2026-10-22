@@ -1,0 +1,2908 @@
+{
+    "openapi": "3.0.1",
+    "info": {
+        "title": "comtrade",
+        "description": "APIs to get trade data and metadata. Free/Premium subscription key is required.",
+        "version": "v1"
+    },
+    "servers": [
+        {
+            "url": "https://comtradeapi.un.org/data/v1"
+        }
+    ],
+    "paths": {
+        "/get/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "get",
+                "description": "Extract trade data in a basic layout. See the detailed description at https://uncomtrade.org/docs/list-of-references-parameter-codes/",
+                "operationId": "get-get",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "description": "Type of trade: C for commodities and S for service",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "description": "Trade frequency: A for annual and M for monthly",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "description": "Product classifications: HS, SITC, BEC (for goods) or EBOPS (for services).",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "SS",
+                                "S4",
+                                "S3",
+                                "S2",
+                                "S1",
+                                "BE",
+                                "BE5",
+                                "EB",
+                                "EB02",
+                                "EB10",
+                                "TM"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partnerCode",
+                        "in": "query",
+                        "description": "Partner code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partner2Code",
+                        "in": "query",
+                        "description": "Second partner/consignment code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "cmdCode",
+                        "in": "query",
+                        "description": "Product (commodity/service category) code. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "flowCode",
+                        "in": "query",
+                        "description": "Trade flow code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values (case-insensitive): M, X, RX, RM, MIP, XIP, MOP, XOP, MIF, XIF, DX, FM. Omit to not filter.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "customsCode",
+                        "in": "query",
+                        "description": "Customs code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values: C00, C01, C02, C03, C04, C05, C06, C07, C08, C09, C10, C11, C12, C13, C14, C15, C20. Omit to not filter.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^((C|c)([0][0-9]|[1][0-5]|20))(,(C|c)([0][0-9]|[1][0-5]|20))*$"
+                        }
+                    },
+                    {
+                        "name": "motCode",
+                        "in": "query",
+                        "description": "Mode of transport code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values: 0, 1000, 2000, 2100, 2200, 2900, 3000, 3100, 3200, 3900, 9000, 9100, 9110, 9120, 9190, 9200, 9300, 9900. Omit to not filter.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^(0|1000|2000|2100|2200|2900|3000|3100|3200|3900|9000|9100|9110|9120|9190|9200|9300|9900)(,(0|1000|2000|2100|2200|2900|3000|3100|3200|3900|9000|9100|9110|9120|9190|9200|9300|9900))*$"
+                        }
+                    },
+                    {
+                        "name": "aggregateBy",
+                        "in": "query",
+                        "description": "Add parameters in csv list on which you want the results to be aggregated. Comma-separated list of: cmdCode, period, partnerCode, partner2Code, reporterCode, customsCode, motCode",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "breakdownMode",
+                        "in": "query",
+                        "description": "Breakdown mode to choose from",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "classic",
+                                "plus"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "includeDesc",
+                        "in": "query",
+                        "description": "Include descriptions of data variables",
+                        "schema": {
+                            "enum": [
+                                true,
+                                false
+                            ],
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TradeDataResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "1.07 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "typeCode": "C",
+                                            "freqCode": "A",
+                                            "refPeriodId": 20220101,
+                                            "refYear": 2022,
+                                            "refMonth": 52,
+                                            "period": "2022",
+                                            "reporterCode": 842,
+                                            "reporterISO": null,
+                                            "reporterDesc": null,
+                                            "flowCode": "M",
+                                            "flowDesc": null,
+                                            "partnerCode": 0,
+                                            "partnerISO": null,
+                                            "partnerDesc": null,
+                                            "partner2Code": 0,
+                                            "partner2ISO": null,
+                                            "partner2Desc": null,
+                                            "classificationCode": "H6",
+                                            "classificationSearchCode": "HS",
+                                            "isOriginalClassification": true,
+                                            "cmdCode": "TOTAL",
+                                            "cmdDesc": null,
+                                            "aggrLevel": null,
+                                            "isLeaf": null,
+                                            "customsCode": "C00",
+                                            "customsDesc": null,
+                                            "mosCode": "0",
+                                            "motCode": 0,
+                                            "motDesc": null,
+                                            "qtyUnitCode": -1,
+                                            "qtyUnitAbbr": null,
+                                            "qty": 0.0,
+                                            "isQtyEstimated": false,
+                                            "altQtyUnitCode": -1,
+                                            "altQtyUnitAbbr": null,
+                                            "altQty": 0.0,
+                                            "isAltQtyEstimated": false,
+                                            "netWgt": 0.0,
+                                            "isNetWgtEstimated": true,
+                                            "grossWgt": 0.0,
+                                            "isGrossWgtEstimated": false,
+                                            "cifvalue": 3372902165775.0,
+                                            "fobvalue": 3243389128166.0,
+                                            "primaryValue": 3372902165775.0,
+                                            "legacyEstimationFlag": 4,
+                                            "isReported": false,
+                                            "isAggregate": true
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid or missing parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Free-tier user not on the allow-list (\"User not allowed\"), or APIM quota / access denial.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getTariffline/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "getTariffline",
+                "description": "getTariffline",
+                "operationId": "get-gettariffline",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "description": "Type of trade: C for commodities",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "description": "Trade frequency: A for annual and M for monthly",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "description": "Product classifications: HS, SITC, BEC (for goods)",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "EB10",
+                                "EB02",
+                                "EBSDMX"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partnerCode",
+                        "in": "query",
+                        "description": "Partner code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partner2Code",
+                        "in": "query",
+                        "description": "Second partner/consignment code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "cmdCode",
+                        "in": "query",
+                        "description": "Commodity code. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "flowCode",
+                        "in": "query",
+                        "description": "Trade flow code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values (case-insensitive): M, X, RX, RM, MIP, XIP, MOP, XOP, MIF, XIF, DX, FM. Omit to not filter.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "customsCode",
+                        "in": "query",
+                        "description": "Customs code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values: C00, C01, C02, C03, C04, C05, C06, C07, C08, C09, C10, C11, C12, C13, C14, C15, C20. Omit to not filter.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^((C|c)([0][0-9]|[1][0-5]|20))(,(C|c)([0][0-9]|[1][0-5]|20))*$"
+                        }
+                    },
+                    {
+                        "name": "motCode",
+                        "in": "query",
+                        "description": "Mode of transport code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values: 0, 1000, 2000, 2100, 2200, 2900, 3000, 3100, 3200, 3900, 9000, 9100, 9110, 9120, 9190, 9200, 9300, 9900. Omit to not filter.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^(0|1000|2000|2100|2200|2900|3000|3100|3200|3900|9000|9100|9110|9120|9190|9200|9300|9900)(,(0|1000|2000|2100|2200|2900|3000|3100|3200|3900|9000|9100|9110|9120|9190|9200|9300|9900))*$"
+                        }
+                    },
+                    {
+                        "name": "includeDesc",
+                        "in": "query",
+                        "description": "Include descriptions of data variables",
+                        "schema": {
+                            "enum": [
+                                true,
+                                false
+                            ],
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TradeDataTarifflineResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "38.07 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "typeCode": "C",
+                                            "freqCode": "M",
+                                            "refPeriodId": 20230101,
+                                            "period": 202301,
+                                            "reporterCode": 36,
+                                            "reporterDesc": null,
+                                            "reporterISO": null,
+                                            "flowCode": "X",
+                                            "flowDesc": null,
+                                            "partnerCode": 344,
+                                            "partnerDesc": null,
+                                            "partnerISO": null,
+                                            "partner2Code": -1,
+                                            "partner2Desc": null,
+                                            "partner2ISO": null,
+                                            "classificationCode": "H6",
+                                            "cmdCode": "010121",
+                                            "cmdDesc": null,
+                                            "customsCode": "-1",
+                                            "customsDesc": null,
+                                            "mosCode": "-1",
+                                            "motCode": 9900,
+                                            "motDesc": null,
+                                            "qtyUnitCode": 5,
+                                            "qtyUnitAbbr": null,
+                                            "qty": 10.0,
+                                            "altQtyUnitCode": 5,
+                                            "altQtyUnitAbbr": null,
+                                            "altQty": 10.0,
+                                            "netWgt": 0.0,
+                                            "grossWgt": 5000.0,
+                                            "cifvalue": 0.0,
+                                            "fobvalue": 2739872.41,
+                                            "primaryValue": 2739872.41
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid or missing parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Free-tier user not on the allow-list (\"User not allowed\"), or APIM quota / access denial.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getDaTariffline/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "getDaTariffline",
+                "description": "getDaTariffline",
+                "operationId": "get-getdatariffline",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "description": "Type of trade: C for commodities and S for service",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "description": "Trade frequency: A for annual and M for monthly",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "description": "Product classifications: HS (for goods).",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "H6",
+                                "H5",
+                                "H4",
+                                "H3",
+                                "H2",
+                                "H1",
+                                "H0"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "publishedDateFrom",
+                        "in": "query",
+                        "description": "Publication date From YYYY-MM-DD",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "publishedDateTo",
+                        "in": "query",
+                        "description": "Publication date To YYYY-MM-DD",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DataAvailabilityTarifflineResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.06 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "datasetCode": 30036202301202100,
+                                            "typeCode": "C",
+                                            "freqCode": "M",
+                                            "period": 202301,
+                                            "reporterCode": 36,
+                                            "reporterISO": "AUS",
+                                            "classificationCode": "H6",
+                                            "isOriginalClassification": true,
+                                            "isExtendedFlowCode": false,
+                                            "isExtendedPartnerCode": true,
+                                            "isExtendedPartner2Code": false,
+                                            "isExtendedCmdCode": true,
+                                            "isExtendedCustomsCode": false,
+                                            "isExtendedMotCode": true,
+                                            "totalRecords": 250125,
+                                            "datasetChecksum": 1356064231,
+                                            "lengthCmdCode": 6,
+                                            "firstReleased": "2023-04-27T00:23:19.56",
+                                            "lastReleased": "2024-03-14T08:42:10.66"
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid or missing parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Daily quota exhausted, or the subscription does not include API access (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getDa/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "getDa",
+                "description": "getDa",
+                "operationId": "get-getda",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "description": "Type of trade: C for commodities and S for service",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "description": "Trade frequency: A for annual and M for monthly",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "description": "Product classifications: HS, SITC, BEC (for goods) or EBOPS (for services).",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "H6",
+                                "H5",
+                                "H4",
+                                "H3",
+                                "H2",
+                                "H1",
+                                "H0",
+                                "S4",
+                                "S3",
+                                "S2",
+                                "S1",
+                                "BE",
+                                "BE5",
+                                "EB",
+                                "EB10",
+                                "EB02",
+                                "EBSDMX"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "publishedDateFrom",
+                        "in": "query",
+                        "description": "Publication date From YYYY-MM-DD",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "publishedDateTo",
+                        "in": "query",
+                        "description": "Publication date To YYYY-MM-DD",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DataAvailabilityResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.12 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "datasetCode": 20842202201202100,
+                                            "typeCode": "C",
+                                            "freqCode": "A",
+                                            "period": 2022,
+                                            "reporterCode": 842,
+                                            "reporterISO": "USA",
+                                            "reporterDesc": "USA",
+                                            "classificationCode": "H6",
+                                            "classificationSearchCode": "HS",
+                                            "isOriginalClassification": true,
+                                            "isExtendedFlowCode": true,
+                                            "isExtendedPartnerCode": true,
+                                            "isExtendedPartner2Code": false,
+                                            "isExtendedCmdCode": true,
+                                            "isExtendedCustomsCode": false,
+                                            "isExtendedMotCode": false,
+                                            "totalRecords": 1210614,
+                                            "datasetChecksum": 1750866618,
+                                            "firstReleased": "2023-03-09T19:23:39.45",
+                                            "lastReleased": "2023-03-09T19:23:39.45"
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid or missing parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Daily quota exhausted, or the subscription does not include API access (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getMetadata/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "getMetadata",
+                "description": "getMetadata",
+                "operationId": "getmetadata",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "SS",
+                                "S4",
+                                "S3",
+                                "S2",
+                                "S1",
+                                "BE",
+                                "BE5",
+                                "EB",
+                                "EB02",
+                                "EB10",
+                                "TM"
+                            ],
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MetadataResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.01 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "reporterCode": 842,
+                                            "period": 2022,
+                                            "typeCode": "C",
+                                            "freqCode": "A",
+                                            "datasetCode": 20842202201202100,
+                                            "notes": [
+                                                {
+                                                    "datasetCode": 20842202201202100,
+                                                    "typeCode": "C",
+                                                    "freqCode": "A",
+                                                    "period": 2022,
+                                                    "reporterCode": 842,
+                                                    "reporterDescription": "USA",
+                                                    "currency": "USD",
+                                                    "importConvFactor": "1",
+                                                    "exportConvFactor": "1",
+                                                    "tradeSystem": "General",
+                                                    "classificationCode": "H6",
+                                                    "importValuation": "CIF",
+                                                    "exportValuation": "FOB",
+                                                    "importPartnerCountry": "Origin",
+                                                    "exportPartnerCountry": "Last Known Destination",
+                                                    "importPartner2Country": "N/A",
+                                                    "exportPartner2Country": "N/A",
+                                                    "publicationNote": "New Data: Data for this period is published for the first time; the new data was collected from US Census Bureau on 09 Feb 23.",
+                                                    "publicationDate": "2023-03-09T17:58:13.15",
+                                                    "publicationDateShort": "2023-03-09"
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid or missing parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Daily quota exhausted, or the subscription does not include API access (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getTradeMatrix/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "getTradeMatrix",
+                "description": "Extract trade data in a basic layout. See the detailed description at https://uncomtrade.org/docs/list-of-references-parameter-codes/",
+                "operationId": "6942d62a0064e7a9093613b0",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "description": "Type of trade: C for commodities and S for service",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "description": "Trade frequency: A for annual and M for monthly",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "description": "Product classifications: HS, SITC, BEC (for goods)",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "TM"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year. Year should be 4 digit year. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partnerCode",
+                        "in": "query",
+                        "description": "Partner code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "cmdCode",
+                        "in": "query",
+                        "description": "Commodity code. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "flowCode",
+                        "in": "query",
+                        "description": "Trade flow code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values (case-insensitive): M, X. Omit to not filter.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "aggregateBy",
+                        "in": "query",
+                        "description": "Add parameters in csv list on which you want the results to be aggregated. Comma-separated list of: cmdCode, period, partnerCode, partner2Code, reporterCode, customsCode, motCode",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "includeDesc",
+                        "in": "query",
+                        "description": "Include descriptions of data variables",
+                        "schema": {
+                            "enum": [
+                                true,
+                                false
+                            ],
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TradeDataResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "1.07 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "typeCode": "C",
+                                            "freqCode": "A",
+                                            "refPeriodId": 20220101,
+                                            "refYear": 2022,
+                                            "refMonth": 52,
+                                            "period": "2022",
+                                            "reporterCode": 842,
+                                            "reporterISO": null,
+                                            "reporterDesc": null,
+                                            "flowCode": "M",
+                                            "flowDesc": null,
+                                            "partnerCode": 0,
+                                            "partnerISO": null,
+                                            "partnerDesc": null,
+                                            "partner2Code": 0,
+                                            "partner2ISO": null,
+                                            "partner2Desc": null,
+                                            "classificationCode": "H6",
+                                            "classificationSearchCode": "HS",
+                                            "isOriginalClassification": true,
+                                            "cmdCode": "TOTAL",
+                                            "cmdDesc": null,
+                                            "aggrLevel": null,
+                                            "isLeaf": null,
+                                            "customsCode": "C00",
+                                            "customsDesc": null,
+                                            "mosCode": "0",
+                                            "motCode": 0,
+                                            "motDesc": null,
+                                            "qtyUnitCode": -1,
+                                            "qtyUnitAbbr": null,
+                                            "qty": 0.0,
+                                            "isQtyEstimated": false,
+                                            "altQtyUnitCode": -1,
+                                            "altQtyUnitAbbr": null,
+                                            "altQty": 0.0,
+                                            "isAltQtyEstimated": false,
+                                            "netWgt": 0.0,
+                                            "isNetWgtEstimated": true,
+                                            "grossWgt": 0.0,
+                                            "isGrossWgtEstimated": false,
+                                            "cifvalue": 3372902165775.0,
+                                            "fobvalue": 3243389128166.0,
+                                            "primaryValue": 3372902165775.0,
+                                            "legacyEstimationFlag": 4,
+                                            "isReported": false,
+                                            "isAggregate": true
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid or missing parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Free-tier user not on the allow-list (\"User not allowed\"), or APIM quota / access denial.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getSUV/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "getSUV",
+                "description": "getSUV",
+                "operationId": "getSUV",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "description": "Type of trade: C for commodities and S for service",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "description": "Trade frequency: A for annual and M for monthly",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "description": "Trade (IMTS) classifications: HS, SITC, BEC or EBOPS.",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "H6",
+                                "H5",
+                                "H4",
+                                "H3",
+                                "H2",
+                                "H1",
+                                "H0",
+                                "S4",
+                                "S3",
+                                "S2",
+                                "S1",
+                                "BE",
+                                "BE5",
+                                "EB",
+                                "EB10",
+                                "EB02",
+                                "EBSDMX"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year. Year should be 4 digit year. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "cmdCode",
+                        "in": "query",
+                        "description": "Commodity code. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "flowCode",
+                        "in": "query",
+                        "description": "Trade flow code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values (case-insensitive): M, X. Omit to not filter.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "qtyUnitCode",
+                        "in": "query",
+                        "description": "Quantity Unit Code",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SuvResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.35 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "typeCode": "C",
+                                            "freqCode": "A",
+                                            "period": "2022",
+                                            "flowCode": "M",
+                                            "classificationCode": "H6",
+                                            "cmdCode": "010121",
+                                            "qtyUnitCode": 5,
+                                            "qtyUnitAbbr": "u",
+                                            "uvMin": 1520.4,
+                                            "suv": 8914.37,
+                                            "uvMax": 41250.0,
+                                            "isUniModalDistribution": true
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid or missing parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Daily quota exhausted, or the subscription does not include API access (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getMBS": {
+            "get": {
+                "tags": [
+                    "MBSData"
+                ],
+                "summary": "getMBS",
+                "description": "The MBS data API gives users access to historical time series of MBS trade tables, notably Tables 38 and 35. Data availability and frequency of update depend on data series.\nT35 Total trade - value (1946-)\nT38 Conversion factors (1946-)",
+                "operationId": "66a8453df285d60d0f4ad074",
+                "parameters": [
+                    {
+                        "name": "series_type",
+                        "in": "query",
+                        "description": "Combination of table number, frequency, type of measurement and currenty. T35.Q.V.$\nT35.A.V.$\nT38.Q.CF.\nT38.A.CF.\nT35.M.V.$\nT38.M.CF.",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "T38.A.CF.",
+                                "T38.Q.CF.",
+                                "T38.M.CF.",
+                                "T35.A.V.$",
+                                "T35.Q.V.$",
+                                "T35.M.V.$"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "year",
+                        "in": "query",
+                        "description": "Reference year (default = any):The reference year of period. As an example: 2015,2016",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "country_code",
+                        "in": "query",
+                        "description": "Country code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period_type",
+                        "in": "query",
+                        "description": "data set frequency: Valid values:\nA Annual\nQ Quarterly\nM Monthly",
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "Q",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "table_type",
+                        "in": "query",
+                        "description": "(default = any) MBS Table numbers: MBS table identifier.",
+                        "schema": {
+                            "enum": [
+                                "T35",
+                                "T38"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "format",
+                        "in": "query",
+                        "description": "Output format (default = json): Valid value are json, txt or csv",
+                        "schema": {
+                            "enum": [
+                                "csv",
+                                "txt",
+                                "json"
+                            ],
+                            "type": "string",
+                            "default": "json"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success (JSON by default; CSV/TXT when format is set)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MbsResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "1.72 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "series_Type": "T35.A.V.$",
+                                            "table_Type": "T35",
+                                            "table_Type_Desc": "Total trade - value",
+                                            "country_Code": 842,
+                                            "country_Type": "C",
+                                            "country_English_Name": "United States",
+                                            "year": 2022,
+                                            "period_Type": "A",
+                                            "period_Number": 0,
+                                            "period": "202252",
+                                            "period_In_Date": "01/01/2022",
+                                            "trade_Flow": "X",
+                                            "trade_Flow_Desc": "Exports",
+                                            "commodity_Classification": "",
+                                            "commodity_Group_Code": "1",
+                                            "commodity_Group_Name": "Total",
+                                            "partner_Country_Code": 0,
+                                            "partner_Country_English_Name": "World",
+                                            "base_Year": null,
+                                            "currency_Type": "$",
+                                            "value": 2065156.971,
+                                            "value_Unit": "M",
+                                            "value_Type": "V",
+                                            "value_Type_Desc": "Value",
+                                            "estimation_Type": "A",
+                                            "estimation_Type_Desc": "Actual"
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            },
+                            "text/csv": {
+                                "schema": {
+                                    "type": "string",
+                                    "description": "format=csv: comma-separated, UTF-8 with BOM, header row = data field names."
+                                }
+                            },
+                            "text/plain": {
+                                "schema": {
+                                    "type": "string",
+                                    "description": "format=txt: tab-separated, UTF-8 with BOM, header row = data field names."
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid or missing parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Daily quota exhausted, or the subscription does not include API access (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getLiveUpdate": {
+            "get": {
+                "summary": "getLiveUpdate",
+                "description": "getLiveUpdate",
+                "operationId": "get-getliveupdate",
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/LiveUpdateResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.35 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "size": 48213775,
+                                            "startedAt": "2026-09-24T09:12:03",
+                                            "completedAt": "2026-09-24T09:14:41",
+                                            "status": "Success",
+                                            "lastUpdated": "Thursday, September 24, 2026",
+                                            "queuedAt": "9/24/2026 9:11:58 AM",
+                                            "releaseStatus": "Released",
+                                            "reporterCode": "842",
+                                            "freqCode": "M",
+                                            "typeCode": "C",
+                                            "classificationCode": "H6",
+                                            "period": 202607
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid or missing parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Daily quota exhausted, or the subscription does not include API access (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "apiKeyHeader": {
+                "type": "apiKey",
+                "name": "Ocp-Apim-Subscription-Key",
+                "in": "header"
+            },
+            "apiKeyQuery": {
+                "type": "apiKey",
+                "name": "subscription-key",
+                "in": "query"
+            }
+        },
+        "schemas": {
+            "ValidationError": {
+                "type": "object",
+                "properties": {
+                    "memberNames": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Parameters that failed validation."
+                    },
+                    "errorMessage": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "description": "Error body returned by the backend with a 4xx/5xx status.",
+                "properties": {
+                    "error": {
+                        "type": "string",
+                        "description": "Error message."
+                    },
+                    "details": {
+                        "type": "array",
+                        "nullable": true,
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "description": "Per-parameter validation failures (400 only); null otherwise."
+                    }
+                }
+            },
+            "GatewayError": {
+                "type": "object",
+                "description": "Returned by API Management before the request reaches the backend.",
+                "properties": {
+                    "statusCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "TradeDataRecord": {
+                "type": "object",
+                "properties": {
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "refPeriodId": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "refYear": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "refMonth": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "period": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "reporterCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "reporterISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "reporterDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "flowCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "flowDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partnerCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "partnerISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partnerDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partner2Code": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "partner2ISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partner2Desc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationSearchCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "isOriginalClassification": {
+                        "type": "boolean"
+                    },
+                    "cmdCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "cmdDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "aggrLevel": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "isLeaf": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "customsCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "customsDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "mosCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "motCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "motDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "qtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "qtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "qty": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isQtyEstimated": {
+                        "type": "boolean"
+                    },
+                    "altQtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "altQtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "altQty": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isAltQtyEstimated": {
+                        "type": "boolean"
+                    },
+                    "netWgt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isNetWgtEstimated": {
+                        "type": "boolean"
+                    },
+                    "grossWgt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isGrossWgtEstimated": {
+                        "type": "boolean"
+                    },
+                    "cifvalue": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "fobvalue": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "primaryValue": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "legacyEstimationFlag": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "isReported": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "isAggregate": {
+                        "type": "boolean",
+                        "nullable": true
+                    }
+                },
+                "description": "One row of trade data."
+            },
+            "TradeDataResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds trade data rows.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TradeDataRecord"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            },
+            "TradeDataTarifflineRecord": {
+                "type": "object",
+                "properties": {
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "refPeriodId": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "period": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "reporterCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "reporterDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "reporterISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "flowCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "flowDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partnerCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "partnerDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partnerISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partner2Code": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "partner2Desc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partner2ISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "cmdCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "cmdDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "customsCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "customsDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "mosCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "motCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "motDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "qtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "qtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "qty": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "altQtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "altQtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "altQty": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "netWgt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "grossWgt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "cifvalue": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "fobvalue": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "primaryValue": {
+                        "type": "number",
+                        "format": "double"
+                    }
+                },
+                "description": "One row of tariffline trade data."
+            },
+            "TradeDataTarifflineResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds tariffline trade data rows.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TradeDataTarifflineRecord"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            },
+            "DataAvailability": {
+                "type": "object",
+                "properties": {
+                    "datasetCode": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Dataset identifier. Exceeds the JavaScript safe-integer range - parse as 64-bit / BigInt / string."
+                    },
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "period": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "reporterCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "reporterISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "reporterDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationSearchCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "isOriginalClassification": {
+                        "type": "boolean"
+                    },
+                    "isExtendedFlowCode": {
+                        "type": "boolean"
+                    },
+                    "isExtendedPartnerCode": {
+                        "type": "boolean"
+                    },
+                    "isExtendedPartner2Code": {
+                        "type": "boolean"
+                    },
+                    "isExtendedCmdCode": {
+                        "type": "boolean"
+                    },
+                    "isExtendedCustomsCode": {
+                        "type": "boolean"
+                    },
+                    "isExtendedMotCode": {
+                        "type": "boolean"
+                    },
+                    "totalRecords": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "datasetChecksum": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "firstReleased": {
+                        "type": "string",
+                        "description": "ISO 8601 date-time without a UTC offset, e.g. 2023-03-09T19:23:39.45"
+                    },
+                    "lastReleased": {
+                        "type": "string",
+                        "description": "ISO 8601 date-time without a UTC offset, e.g. 2023-03-09T19:23:39.45"
+                    }
+                },
+                "description": "Availability of one final-data dataset (reporter / period / classification)."
+            },
+            "DataAvailabilityResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds dataset availability rows.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DataAvailability"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            },
+            "DataAvailabilityTariffline": {
+                "type": "object",
+                "properties": {
+                    "datasetCode": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Dataset identifier. Exceeds the JavaScript safe-integer range - parse as 64-bit / BigInt / string."
+                    },
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "period": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "reporterCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "reporterISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "isOriginalClassification": {
+                        "type": "boolean"
+                    },
+                    "isExtendedFlowCode": {
+                        "type": "boolean"
+                    },
+                    "isExtendedPartnerCode": {
+                        "type": "boolean"
+                    },
+                    "isExtendedPartner2Code": {
+                        "type": "boolean"
+                    },
+                    "isExtendedCmdCode": {
+                        "type": "boolean"
+                    },
+                    "isExtendedCustomsCode": {
+                        "type": "boolean"
+                    },
+                    "isExtendedMotCode": {
+                        "type": "boolean"
+                    },
+                    "totalRecords": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "datasetChecksum": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "lengthCmdCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "firstReleased": {
+                        "type": "string",
+                        "description": "ISO 8601 date-time without a UTC offset, e.g. 2023-03-09T19:23:39.45"
+                    },
+                    "lastReleased": {
+                        "type": "string",
+                        "description": "ISO 8601 date-time without a UTC offset, e.g. 2023-03-09T19:23:39.45"
+                    }
+                },
+                "description": "Availability of one tariffline dataset (reporter / period / classification)."
+            },
+            "DataAvailabilityTarifflineResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds tariffline dataset availability rows.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DataAvailabilityTariffline"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            },
+            "MetadataNote": {
+                "type": "object",
+                "properties": {
+                    "datasetCode": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Dataset identifier. Exceeds the JavaScript safe-integer range - parse as 64-bit / BigInt / string."
+                    },
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "period": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "reporterCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "reporterDescription": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "currency": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "importConvFactor": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "exportConvFactor": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "tradeSystem": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "importValuation": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "exportValuation": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "importPartnerCountry": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "exportPartnerCountry": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "importPartner2Country": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "exportPartner2Country": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "publicationNote": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "publicationDate": {
+                        "type": "string",
+                        "description": "ISO 8601 date-time without a UTC offset, e.g. 2023-03-09T19:23:39.45"
+                    },
+                    "publicationDateShort": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "description": "A metadata note for one dataset."
+            },
+            "MetadataDataset": {
+                "type": "object",
+                "description": "Metadata notes grouped by dataset.",
+                "properties": {
+                    "reporterCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "period": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "datasetCode": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Dataset identifier. Exceeds the JavaScript safe-integer range - parse as 64-bit / BigInt / string."
+                    },
+                    "notes": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MetadataNote"
+                        }
+                    }
+                }
+            },
+            "MetadataResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds metadata grouped by dataset.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MetadataDataset"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            },
+            "SuvRecord": {
+                "type": "object",
+                "properties": {
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "period": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "flowCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "cmdCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "qtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "qtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "uvMin": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "suv": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "uvMax": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isUniModalDistribution": {
+                        "type": "boolean",
+                        "nullable": true
+                    }
+                },
+                "description": "Standard unit value (SUV) and its range for one commodity / flow / period."
+            },
+            "SuvResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds standard unit values.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SuvRecord"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            },
+            "MbsRecord": {
+                "type": "object",
+                "properties": {
+                    "series_Type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "table_Type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "table_Type_Desc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "country_Code": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "country_Type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "country_English_Name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "year": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "period_Type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "period_Number": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "period": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "period_In_Date": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "trade_Flow": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "trade_Flow_Desc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "commodity_Classification": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "commodity_Group_Code": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "commodity_Group_Name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partner_Country_Code": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "partner_Country_English_Name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "base_Year": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "currency_Type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "value": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "value_Unit": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "value_Type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "value_Type_Desc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "estimation_Type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "estimation_Type_Desc": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "description": "One Monthly Bulletin of Statistics (MBS) observation."
+            },
+            "MbsResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds MBS observations.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MbsRecord"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            },
+            "LiveUpdateRecord": {
+                "type": "object",
+                "properties": {
+                    "size": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "File size in bytes"
+                    },
+                    "startedAt": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "completedAt": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "lastUpdated": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Long date, e.g. \"Thursday, September 24, 2026\""
+                    },
+                    "queuedAt": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "releaseStatus": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Released | In progress | Failed | Coming soon"
+                    },
+                    "reporterCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "period": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                    }
+                },
+                "description": "Release-pipeline status of one dataset."
+            },
+            "LiveUpdateResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds the 50 most recently updated releases.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/LiveUpdateRecord"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            }
+        }
+    },
+    "security": [
+        {
+            "apiKeyHeader": []
+        },
+        {
+            "apiKeyQuery": []
+        }
+    ]
+}

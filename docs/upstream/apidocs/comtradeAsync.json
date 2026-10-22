@@ -1,0 +1,784 @@
+{
+    "openapi": "3.0.1",
+    "info": {
+        "title": "comtradeAsync",
+        "description": "Premium APIs for asynchronous requests. You will be notified through email about your results sets. Please add your email in the userId parameter. You must also pass subscription key. See examples at https://bit.ly/42JNSaZ",
+        "version": "v1"
+    },
+    "servers": [
+        {
+            "url": "https://comtradeapi.un.org/async/v1"
+        }
+    ],
+    "paths": {
+        "/get/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "get",
+                "description": "Submit the async request.",
+                "operationId": "get-get",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "SS",
+                                "S4",
+                                "S3",
+                                "S2",
+                                "S1",
+                                "BE",
+                                "BE5",
+                                "EB",
+                                "EB02",
+                                "EB10",
+                                "TM"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partnerCode",
+                        "in": "query",
+                        "description": "Partner code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partner2Code",
+                        "in": "query",
+                        "description": "Second partner/consignment code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "cmdCode",
+                        "in": "query",
+                        "description": "Commodity code. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "flowCode",
+                        "in": "query",
+                        "description": "Trade flow code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values (case-insensitive): M, X, RX, RM, MIP, XIP, MOP, XOP, MIF, XIF, DX, FM. Omit to not filter.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "customsCode",
+                        "in": "query",
+                        "description": "Customs code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values: C00, C01, C02, C03, C04, C05, C06, C07, C08, C09, C10, C11, C12, C13, C14, C15, C20. Omit to not filter.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^((C|c)([0][0-9]|[1][0-5]|20))(,(C|c)([0][0-9]|[1][0-5]|20))*$"
+                        }
+                    },
+                    {
+                        "name": "motCode",
+                        "in": "query",
+                        "description": "Mode of transport code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values: 0, 1000, 2000, 2100, 2200, 2900, 3000, 3100, 3200, 3900, 9000, 9100, 9110, 9120, 9190, 9200, 9300, 9900. Omit to not filter.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^(0|1000|2000|2100|2200|2900|3000|3100|3200|3900|9000|9100|9110|9120|9190|9200|9300|9900)(,(0|1000|2000|2100|2200|2900|3000|3100|3200|3900|9000|9100|9110|9120|9190|9200|9300|9900))*$"
+                        }
+                    },
+                    {
+                        "name": "aggregateBy",
+                        "in": "query",
+                        "description": "Add parameters in csv list on which you want the results to be aggregated. Comma-separated list of: cmdCode, period, partnerCode, partner2Code, reporterCode, customsCode, motCode",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "breakdownMode",
+                        "in": "query",
+                        "description": "Mode to choose from",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "classic",
+                                "plus"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted: the export is queued and the requester is emailed when it's ready.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AsyncSubmitResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.21 secs",
+                                    "count": 0,
+                                    "requestId": "3f2b8c1e-7d4a-4f6e-9b1a-2c5d8e0f4a67",
+                                    "message": "Your request is accepted.You will be notified through your email when the data is ready for download",
+                                    "data": {},
+                                    "error": false
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid parameter value, or no valid requester email.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Daily quota exhausted, or the subscription does not include API access (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getTariffline/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "getTariffline",
+                "description": "Submit the async request for tariffline data",
+                "operationId": "get-gettariffline",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "EB10",
+                                "EB02",
+                                "EB10S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partnerCode",
+                        "in": "query",
+                        "description": "Partner code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partner2Code",
+                        "in": "query",
+                        "description": "Second partner/consignment code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "cmdCode",
+                        "in": "query",
+                        "description": "Commodity code. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "flowCode",
+                        "in": "query",
+                        "description": "Trade flow code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values (case-insensitive): M, X, RX, RM, MIP, XIP, MOP, XOP, MIF, XIF, DX, FM. Omit to not filter.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "customsCode",
+                        "in": "query",
+                        "description": "Customs code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values: C00, C01, C02, C03, C04, C05, C06, C07, C08, C09, C10, C11, C12, C13, C14, C15, C20. Omit to not filter.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^((C|c)([0][0-9]|[1][0-5]|20))(,(C|c)([0][0-9]|[1][0-5]|20))*$"
+                        }
+                    },
+                    {
+                        "name": "motCode",
+                        "in": "query",
+                        "description": "Mode of transport code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values: 0, 1000, 2000, 2100, 2200, 2900, 3000, 3100, 3200, 3900, 9000, 9100, 9110, 9120, 9190, 9200, 9300, 9900. Omit to not filter.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^(0|1000|2000|2100|2200|2900|3000|3100|3200|3900|9000|9100|9110|9120|9190|9200|9300|9900)(,(0|1000|2000|2100|2200|2900|3000|3100|3200|3900|9000|9100|9110|9120|9190|9200|9300|9900))*$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted: the export is queued and the requester is emailed when it's ready.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AsyncSubmitResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.21 secs",
+                                    "count": 0,
+                                    "requestId": "3f2b8c1e-7d4a-4f6e-9b1a-2c5d8e0f4a67",
+                                    "message": "Your request is accepted.You will be notified through your email when the data is ready for download",
+                                    "data": {},
+                                    "error": false
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid parameter value, or no valid requester email.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Daily quota exhausted, or the subscription does not include API access (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getDa": {
+            "get": {
+                "summary": "getDa",
+                "description": "Get the status of async -- including the location of file for download.",
+                "operationId": "get-getda",
+                "parameters": [
+                    {
+                        "name": "batchId",
+                        "in": "query",
+                        "description": "",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Status of the caller's requests (all of them, or the one matching batchId).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AsyncStatusResponse"
+                                },
+                                "example": {
+                                    "userId": "user@example.org",
+                                    "elapsedTime": "0.18 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "partitionKey": "user@example.org",
+                                            "rowKey": "3f2b8c1e-7d4a-4f6e-9b1a-2c5d8e0f4a67",
+                                            "timestamp": "2026-09-24T14:09:37.512+00:00",
+                                            "eTag": {},
+                                            "uri": "https://*****/*****.zip",
+                                            "size": "18874368",
+                                            "startTime": "2026-09-24T14:05:12.4810000Z",
+                                            "endTime": "2026-09-24T14:09:37.1200000Z",
+                                            "status": "Completed",
+                                            "error": null,
+                                            "period": "2022",
+                                            "typeCode": "C",
+                                            "freqCode": "A",
+                                            "flowCode": "M,X",
+                                            "reporterCode": "842",
+                                            "cmdCode": "AG6",
+                                            "partnerCode": null,
+                                            "clCode": "HS",
+                                            "partner2Code": null,
+                                            "customsCode": null,
+                                            "motCode": null,
+                                            "mosCode": null,
+                                            "recordCount": 1210614.0,
+                                            "userId": "user@example.org",
+                                            "reqId": "3f2b8c1e-7d4a-4f6e-9b1a-2c5d8e0f4a67",
+                                            "requestType": "Final",
+                                            "breakdownMode": null,
+                                            "aggregateBy": null,
+                                            "objectId": "*****",
+                                            "emailId": "user@example.org",
+                                            "ipAddress": "*****"
+                                        }
+                                    ],
+                                    "error": false
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Daily quota exhausted, or the subscription does not include API access (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "apiKeyHeader": {
+                "type": "apiKey",
+                "name": "Ocp-Apim-Subscription-Key",
+                "in": "header"
+            },
+            "apiKeyQuery": {
+                "type": "apiKey",
+                "name": "subscription-key",
+                "in": "query"
+            }
+        },
+        "schemas": {
+            "ValidationError": {
+                "type": "object",
+                "properties": {
+                    "memberNames": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Parameters that failed validation."
+                    },
+                    "errorMessage": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "description": "Error body returned by the backend with a 4xx/5xx status.",
+                "properties": {
+                    "error": {
+                        "type": "string",
+                        "description": "Error message."
+                    },
+                    "details": {
+                        "type": "array",
+                        "nullable": true,
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "description": "Per-parameter validation failures (400 only); null otherwise."
+                    }
+                }
+            },
+            "GatewayError": {
+                "type": "object",
+                "description": "Returned by API Management before the request reaches the backend.",
+                "properties": {
+                    "statusCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "AsyncSubmitResponse": {
+                "type": "object",
+                "description": "Returned with 202 Accepted once the request is queued.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Always 0."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Request id; pass it as batchId to getDa to track progress."
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "type": "object",
+                        "description": "Always an empty object."
+                    },
+                    "error": {
+                        "type": "boolean",
+                        "description": "Always false."
+                    }
+                }
+            },
+            "AsyncBatchRecord": {
+                "type": "object",
+                "properties": {
+                    "partitionKey": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "The requester's email"
+                    },
+                    "rowKey": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Request id (same as reqId)"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "ISO 8601 date-time with UTC offset"
+                    },
+                    "eTag": {
+                        "type": "object",
+                        "description": "Always an empty object."
+                    },
+                    "uri": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Download URL of the zipped result; set once status is Completed."
+                    },
+                    "size": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Result file size in bytes"
+                    },
+                    "startTime": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "endTime": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Submitted | Processing | Completed | Failed"
+                    },
+                    "error": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Failure detail when status is Failed"
+                    },
+                    "period": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "flowCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "reporterCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "cmdCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partnerCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "clCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partner2Code": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "customsCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "motCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "mosCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "recordCount": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "userId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "reqId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "requestType": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "breakdownMode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "aggregateBy": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "objectId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "emailId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ipAddress": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "description": "Status of one asynchronous export request."
+            },
+            "AsyncStatusResponse": {
+                "type": "object",
+                "description": "Status of the caller's asynchronous requests.",
+                "properties": {
+                    "userId": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "The requester's email."
+                    },
+                    "elapsedTime": {
+                        "type": "string"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AsyncBatchRecord"
+                        }
+                    },
+                    "error": {
+                        "type": "boolean",
+                        "description": "Always false."
+                    }
+                }
+            }
+        }
+    },
+    "security": [
+        {
+            "apiKeyHeader": []
+        },
+        {
+            "apiKeyQuery": []
+        }
+    ]
+}

@@ -1,0 +1,1167 @@
+{
+    "openapi": "3.0.1",
+    "info": {
+        "title": "comtradebulk",
+        "description": "Premium APIs to get bulk files. A subscription key is required. See examples at https://bit.ly/42JNSaZ",
+        "version": "v1"
+    },
+    "servers": [
+        {
+            "url": "https://comtradeapi.un.org/bulk/v1"
+        }
+    ],
+    "paths": {
+        "/get/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "get",
+                "description": "Get the list of bulk files including their URLs for download.",
+                "operationId": "get-get",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "description": "Type of trade: C for commodities and S for service",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "description": "Trade frequency: A for annual and M for monthly",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "description": "Product classifications: HS, SITC, BEC (for goods) or EBOPS (for services).",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "H6",
+                                "H5",
+                                "H4",
+                                "H3",
+                                "H2",
+                                "H1",
+                                "H0",
+                                "S4",
+                                "S3",
+                                "S2",
+                                "S1",
+                                "BE",
+                                "BE5",
+                                "EB",
+                                "EB02",
+                                "EB10",
+                                "EB10S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "publishedDateFrom",
+                        "in": "query",
+                        "description": "Publication date From YYYY-MM-DD",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "publishedDateTo",
+                        "in": "query",
+                        "description": "Publication date To YYYY-MM-DD",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "isOrig",
+                        "in": "query",
+                        "description": "Original Reported Classification (1 is Original 0 is converted from original)",
+                        "schema": {
+                            "enum": [
+                                "0",
+                                "1"
+                            ],
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BulkFilesResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.35 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "fileUrl": "https://comtradeapi.un.org/bulk/v1/file/842/*****",
+                                            "fileSize": "12.34 MB",
+                                            "isOriginalClassification": true,
+                                            "reporterCode": 842,
+                                            "freqCode": "A",
+                                            "typeCode": "C",
+                                            "classificationCode": "H6",
+                                            "refPeriodId": 20220101,
+                                            "period": 2022,
+                                            "publicationDate": "2023-03-09T19:23:39Z",
+                                            "partitionKey": "842",
+                                            "rowKey": "*****",
+                                            "timestamp": "2023-03-09T19:25:02.114+00:00",
+                                            "eTag": ""
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\"Session Invalid\" (no requester email), or APIM quota / access denial.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/file/{reporterCode}/{fileHash}": {
+            "get": {
+                "summary": "getBulkFile",
+                "description": "Download the bulk file by providing the fileHash obtained from /get",
+                "operationId": "get-getbulkfile",
+                "parameters": [
+                    {
+                        "name": "reporterCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d+$"
+                        },
+                        "description": "Reporter code"
+                    },
+                    {
+                        "name": "fileHash",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "File hash, from the rowKey of the catalogue (get / getClassic / getTariffline) response"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The bulk file (gzip-compressed text). Content-Type is the stored blob's type; Content-Disposition carries the file name.",
+                        "headers": {
+                            "Content-Disposition": {
+                                "schema": {
+                                    "type": "string"
+                                },
+                                "description": "attachment; filename*=..."
+                            },
+                            "Content-Length": {
+                                "schema": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "No requester email, the file is not available to a trial subscription, the download failed, or APIM quota / access denial. No body from the backend."
+                    },
+                    "404": {
+                        "description": "No file with this reporterCode / fileHash. No body."
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getTariffline/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "getTariffline",
+                "description": "Get the list of tariff line bulk files including their URLs for download.",
+                "operationId": "get-gettariffline",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "description": "Type of trade: C for commodities and S for service",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "description": "Trade frequency: A for annual and M for monthly",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "description": "Product classifications: HS, SITC, BEC (for goods) or EBOPS (for services).",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "H6",
+                                "H5",
+                                "H4",
+                                "H3",
+                                "H2",
+                                "H1",
+                                "H0",
+                                "S4",
+                                "S3",
+                                "S2",
+                                "S1",
+                                "BE",
+                                "BE5",
+                                "EB",
+                                "EB02",
+                                "EB10",
+                                "EB10S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "publishedDateFrom",
+                        "in": "query",
+                        "description": "Publication date From YYYY-MM-DD",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "publishedDateTo",
+                        "in": "query",
+                        "description": "Publication date To YYYY-MM-DD",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BulkFilesTarifflineResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.35 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "fileUrl": "https://comtradeapi.un.org/bulk/v1/fileTariffline/36/*****",
+                                            "fileSize": "12.34 MB",
+                                            "reporterCode": 36,
+                                            "freqCode": "M",
+                                            "typeCode": "C",
+                                            "classificationCode": "H6",
+                                            "period": 202301,
+                                            "publicationDate": "2023-03-09T19:23:39Z",
+                                            "partitionKey": "36",
+                                            "rowKey": "*****",
+                                            "timestamp": "2023-03-09T19:25:02.114+00:00",
+                                            "eTag": ""
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\"Session Invalid\" (no requester email), or APIM quota / access denial.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/fileTariffline/{reporterCode}/{fileHash}": {
+            "get": {
+                "summary": "getTarifflineFile",
+                "description": "Download the tariffline bulk file by providing the fileHash obtained from /getTariffline",
+                "operationId": "get-gettarifflinefile",
+                "parameters": [
+                    {
+                        "name": "reporterCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d+$"
+                        },
+                        "description": "Reporter code"
+                    },
+                    {
+                        "name": "fileHash",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "File hash, from the rowKey of the catalogue (get / getClassic / getTariffline) response"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The bulk file (gzip-compressed text). Content-Type is the stored blob's type; Content-Disposition carries the file name.",
+                        "headers": {
+                            "Content-Disposition": {
+                                "schema": {
+                                    "type": "string"
+                                },
+                                "description": "attachment; filename*=..."
+                            },
+                            "Content-Length": {
+                                "schema": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "No requester email, the file is not available to a trial subscription, the download failed, or APIM quota / access denial. No body from the backend."
+                    },
+                    "404": {
+                        "description": "No file with this reporterCode / fileHash. No body."
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getClassic/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "getClassic",
+                "description": "Get the list of bulk files in classic format (by partner and commodity) including their URLs for download.",
+                "operationId": "65ee35954fd6fb81199545ee",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "description": "Type of trade: C for commodities and S for service",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "description": "Trade frequency: A for annual and M for monthly",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "description": "Product classifications: HS, SITC, BEC (for goods) or EBOPS (for services).",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "H6",
+                                "H5",
+                                "H4",
+                                "H3",
+                                "H2",
+                                "H1",
+                                "H0",
+                                "S4",
+                                "S3",
+                                "S2",
+                                "S1",
+                                "BE",
+                                "BE5",
+                                "EB",
+                                "EB02",
+                                "EB10",
+                                "EBSDMX"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "publishedDateFrom",
+                        "in": "query",
+                        "description": "Publication date From YYYY-MM-DD",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "publishedDateTo",
+                        "in": "query",
+                        "description": "Publication date To YYYY-MM-DD",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BulkFilesClassicResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.35 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "fileUrl": "https://comtradeapi.un.org/bulk/v1/fileClassic/842/*****",
+                                            "fileSize": "12.34 MB",
+                                            "isOriginalClassification": true,
+                                            "reporterCode": 842,
+                                            "freqCode": "A",
+                                            "typeCode": "C",
+                                            "classificationCode": "H6",
+                                            "refPeriodId": 20220101,
+                                            "period": 2022,
+                                            "publicationDate": "2023-03-09T19:23:39Z",
+                                            "partitionKey": "842",
+                                            "rowKey": "*****",
+                                            "timestamp": "2023-03-09T19:25:02.114+00:00",
+                                            "eTag": ""
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\"Session Invalid\" (no requester email), or APIM quota / access denial.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/fileClassic/{reporterCode}/{fileHash}": {
+            "get": {
+                "summary": "getBulkFileClassic",
+                "description": "Download the bulk file in classic format (by partner and commodity) by providing the fileHash obtained from /getClassic",
+                "operationId": "65ee35d62184008de4e10163",
+                "parameters": [
+                    {
+                        "name": "reporterCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d+$"
+                        },
+                        "description": "Reporter code"
+                    },
+                    {
+                        "name": "fileHash",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "File hash, from the rowKey of the catalogue (get / getClassic / getTariffline) response"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The bulk file (gzip-compressed text). Content-Type is the stored blob's type; Content-Disposition carries the file name.",
+                        "headers": {
+                            "Content-Disposition": {
+                                "schema": {
+                                    "type": "string"
+                                },
+                                "description": "attachment; filename*=..."
+                            },
+                            "Content-Length": {
+                                "schema": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "No requester email, the file is not available to a trial subscription, the download failed, or APIM quota / access denial. No body from the backend."
+                    },
+                    "404": {
+                        "description": "No file with this reporterCode / fileHash. No body."
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "apiKeyHeader": {
+                "type": "apiKey",
+                "name": "Ocp-Apim-Subscription-Key",
+                "in": "header"
+            },
+            "apiKeyQuery": {
+                "type": "apiKey",
+                "name": "subscription-key",
+                "in": "query"
+            },
+            "oauth2comtrade-oauth-unb2c-2": {
+                "type": "oauth2",
+                "flows": {
+                    "authorizationCode": {
+                        "authorizationUrl": "https://unb2c.b2clogin.com/unb2c.onmicrosoft.com/oauth2/v2.0/authorize?p=b2c_1_signup_signin_comtrade",
+                        "tokenUrl": "https://unb2c.b2clogin.com/unb2c.onmicrosoft.com/oauth2/v2.0/token?p=b2c_1_signup_signin_comtrade",
+                        "scopes": {
+                            "https://unb2c.onmicrosoft.com/comtradeapibe/comtradeapifunction.read": "https://unb2c.onmicrosoft.com/comtradeapibe/comtradeapifunction.read"
+                        }
+                    }
+                }
+            }
+        },
+        "schemas": {
+            "ValidationError": {
+                "type": "object",
+                "properties": {
+                    "memberNames": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Parameters that failed validation."
+                    },
+                    "errorMessage": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "description": "Error body returned by the backend with a 4xx/5xx status.",
+                "properties": {
+                    "error": {
+                        "type": "string",
+                        "description": "Error message."
+                    },
+                    "details": {
+                        "type": "array",
+                        "nullable": true,
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "description": "Per-parameter validation failures (400 only); null otherwise."
+                    }
+                }
+            },
+            "GatewayError": {
+                "type": "object",
+                "description": "Returned by API Management before the request reaches the backend.",
+                "properties": {
+                    "statusCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "BulkFileRecord": {
+                "type": "object",
+                "properties": {
+                    "fileUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Download URL (the matching file/{reporterCode}/{fileHash} operation)."
+                    },
+                    "fileSize": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Human-readable size, e.g. \"12.34 MB\""
+                    },
+                    "isOriginalClassification": {
+                        "type": "boolean"
+                    },
+                    "reporterCode": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "refPeriodId": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                    },
+                    "period": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                    },
+                    "publicationDate": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "ISO 8601 date-time with UTC offset"
+                    },
+                    "partitionKey": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Reporter code"
+                    },
+                    "rowKey": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "File hash"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "ISO 8601 date-time with UTC offset"
+                    },
+                    "eTag": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Always an empty string."
+                    }
+                },
+                "description": "One downloadable bulk file (final data)."
+            },
+            "BulkFilesResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds final-data bulk files.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/BulkFileRecord"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            },
+            "BulkFileClassicRecord": {
+                "type": "object",
+                "properties": {
+                    "fileUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Download URL (the matching file/{reporterCode}/{fileHash} operation)."
+                    },
+                    "fileSize": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Human-readable size, e.g. \"12.34 MB\""
+                    },
+                    "isOriginalClassification": {
+                        "type": "boolean"
+                    },
+                    "reporterCode": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "refPeriodId": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                    },
+                    "period": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                    },
+                    "publicationDate": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "ISO 8601 date-time with UTC offset"
+                    },
+                    "partitionKey": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Reporter code"
+                    },
+                    "rowKey": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "File hash"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "ISO 8601 date-time with UTC offset"
+                    },
+                    "eTag": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Always an empty string."
+                    }
+                },
+                "description": "One downloadable bulk file (classic layout)."
+            },
+            "BulkFilesClassicResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds classic-layout bulk files.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/BulkFileClassicRecord"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            },
+            "BulkFileTarifflineRecord": {
+                "type": "object",
+                "properties": {
+                    "fileUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Download URL (the matching file/{reporterCode}/{fileHash} operation)."
+                    },
+                    "fileSize": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Human-readable size, e.g. \"12.34 MB\""
+                    },
+                    "reporterCode": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "period": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                    },
+                    "publicationDate": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "ISO 8601 date-time with UTC offset"
+                    },
+                    "partitionKey": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Reporter code"
+                    },
+                    "rowKey": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "File hash"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "ISO 8601 date-time with UTC offset"
+                    },
+                    "eTag": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Always an empty string."
+                    }
+                },
+                "description": "One downloadable tariffline bulk file."
+            },
+            "BulkFilesTarifflineResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds tariffline bulk files.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/BulkFileTarifflineRecord"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            }
+        }
+    },
+    "security": [
+        {
+            "apiKeyHeader": [],
+            "oauth2comtrade-oauth-unb2c-2": [
+                "https://unb2c.onmicrosoft.com/comtradeapibe/comtradeapifunction.read"
+            ]
+        },
+        {
+            "apiKeyQuery": [],
+            "oauth2comtrade-oauth-unb2c-2": [
+                "https://unb2c.onmicrosoft.com/comtradeapibe/comtradeapifunction.read"
+            ]
+        }
+    ]
+}
