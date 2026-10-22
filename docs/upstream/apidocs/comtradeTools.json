@@ -1,0 +1,1192 @@
+{
+    "openapi": "3.0.1",
+    "info": {
+        "title": "Comtrade Tools",
+        "description": "APIs Tools to get some trade indicators. A subscription key is required.  https://uncomtrade.org/docs/un-comtrade-tools/",
+        "version": "v1"
+    },
+    "servers": [
+        {
+            "url": "https://comtradeapi.un.org/tools/v1"
+        }
+    ],
+    "paths": {
+        "/getTradeBalance/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "getTradeBalance",
+                "description": "(EXPERIMENTAL - USE SPARINGLY) Extract trade data in a pivoted flow (exports and imports) layout. See the detailed description at https://uncomtrade.org/docs/list-of-references-parameter-codes/",
+                "operationId": "67c5e15c82a9a2df9de48685",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "description": "Type of trade: C for commodities and S for service",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "description": "Trade frequency: A for annual and M for monthly",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "description": "Product classifications: HS, SITC, BEC (for goods) or EBOPS (for services).",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "S4",
+                                "S3",
+                                "S2",
+                                "S1",
+                                "BE4",
+                                "BE5",
+                                "EB",
+                                "EB10",
+                                "EB02",
+                                "EBSDMX"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partnerCode",
+                        "in": "query",
+                        "description": "Partner code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partner2Code",
+                        "in": "query",
+                        "description": "Second partner/consignment code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "cmdCode",
+                        "in": "query",
+                        "description": "Commodity code. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "customsCode",
+                        "in": "query",
+                        "description": "Customs code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values: C00, C01, C02, C03, C04, C05, C06, C07, C08, C09, C10, C11, C12, C13, C14, C15, C20. Omit to not filter.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^((C|c)([0][0-9]|[1][0-5]|20))(,(C|c)([0][0-9]|[1][0-5]|20))*$"
+                        }
+                    },
+                    {
+                        "name": "motCode",
+                        "in": "query",
+                        "description": "Mode of transport code. Multi value input should be in the form of csv (Codes separated by comma (,)) Allowed values: 0, 1000, 2000, 2100, 2200, 2900, 3000, 3100, 3200, 3900, 9000, 9100, 9110, 9120, 9190, 9200, 9300, 9900. Omit to not filter.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^(0|1000|2000|2100|2200|2900|3000|3100|3200|3900|9000|9100|9110|9120|9190|9200|9300|9900)(,(0|1000|2000|2100|2200|2900|3000|3100|3200|3900|9000|9100|9110|9120|9190|9200|9300|9900))*$"
+                        }
+                    },
+                    {
+                        "name": "aggregateBy",
+                        "in": "query",
+                        "description": "Add parameters in csv list on which you want the results to be aggregated. Comma-separated list of: cmdCode, period, partnerCode, partner2Code, reporterCode, customsCode, motCode",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "breakdownMode",
+                        "in": "query",
+                        "description": "Mode to choose from",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "classic",
+                                "plus"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "includeDesc",
+                        "in": "query",
+                        "description": "Include descriptions of data variables",
+                        "schema": {
+                            "enum": [
+                                true,
+                                false
+                            ],
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TradeBalanceResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.35 secs",
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "typeCode": "C",
+                                            "freqCode": "A",
+                                            "refPeriodId": 20220101,
+                                            "refYear": 2022,
+                                            "refMonth": 52,
+                                            "period": "2022",
+                                            "reporterCode": 842,
+                                            "reporterISO": null,
+                                            "reporterDesc": null,
+                                            "partnerCode": 0,
+                                            "partnerISO": null,
+                                            "partnerDesc": null,
+                                            "partner2Code": 0,
+                                            "partner2ISO": null,
+                                            "partner2Desc": null,
+                                            "classificationCode": "H6",
+                                            "classificationSearchCode": "HS",
+                                            "isOriginalClassification": true,
+                                            "cmdCode": "TOTAL",
+                                            "cmdDesc": null,
+                                            "aggrLevel": null,
+                                            "isLeaf": null,
+                                            "customsCode": "C00",
+                                            "customsDesc": null,
+                                            "mosCode": "0",
+                                            "motCode": 0,
+                                            "motDesc": null,
+                                            "qtyUnitCode": -1,
+                                            "qtyUnitAbbr": null,
+                                            "qtyX": 0.0,
+                                            "qtyM": 0.0,
+                                            "isQtyEstimated": false,
+                                            "altQtyUnitCode": -1,
+                                            "altQtyUnitAbbr": null,
+                                            "altQtyX": 0.0,
+                                            "altQtyM": 0.0,
+                                            "isAltQtyEstimated": false,
+                                            "netWgtX": 0.0,
+                                            "netWgtM": 0.0,
+                                            "isNetWgtEstimated": true,
+                                            "grossWgtX": 0.0,
+                                            "grossWgtM": 0.0,
+                                            "isGrossWgtEstimated": false,
+                                            "cifvalueX": null,
+                                            "cifvalueM": 3372902165775.0,
+                                            "fobvalueX": 2064786787854.0,
+                                            "fobvalueM": 3243389128166.0,
+                                            "primaryValueX": 2064786787854.0,
+                                            "primaryValueM": 3372902165775.0,
+                                            "primaryValueBal": -1308115377921.0,
+                                            "legacyEstimationFlag": 4,
+                                            "isReported": false,
+                                            "isAggregate": true
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid or missing parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Free-tier user not on the allow-list (\"User not allowed\"), or APIM quota / access denial.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/getBilateralData/{typeCode}/{freqCode}/{clCode}": {
+            "get": {
+                "summary": "getBilateralData",
+                "description": "(EXPERIMENTAL - USE SPARINGLY) Extract basic trade data joined with mirror partner data. Useful to analyze bilateral trade asymmetries. See the detailed description at https://uncomtrade.org/docs/list-of-references-parameter-codes/",
+                "operationId": "67c5e17e637a37bcdec9bb39",
+                "parameters": [
+                    {
+                        "name": "typeCode",
+                        "in": "path",
+                        "description": "Type of trade: C for commodities and S for service",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "C",
+                                "S"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "freqCode",
+                        "in": "path",
+                        "description": "Trade frequency: A for annual and M for monthly",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "A",
+                                "M"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "clCode",
+                        "in": "path",
+                        "description": "Product classifications: HS, SITC, BEC (for goods) or EBOPS (for services).",
+                        "required": true,
+                        "schema": {
+                            "enum": [
+                                "HS",
+                                "S4",
+                                "S3",
+                                "S2",
+                                "S1",
+                                "BE4",
+                                "BE5",
+                                "EB",
+                                "EB10",
+                                "EB02",
+                                "EBSDMX"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "reporterCode",
+                        "in": "query",
+                        "description": "Reporter code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "description": "Year or month. Year should be 4 digit year. Month should be six digit integer with the values of the form YYYYMM. Ex: 201002 for 2010 February. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "partnerCode",
+                        "in": "query",
+                        "description": "Partner code (Possible values are code of the countries separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "cmdCode",
+                        "in": "query",
+                        "description": "Commodity code. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "flowCode",
+                        "in": "query",
+                        "description": "Trade flow code. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "schema": {
+                            "enum": [
+                                "M",
+                                "X"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "includeDesc",
+                        "in": "query",
+                        "description": "Include descriptions of data variables",
+                        "schema": {
+                            "enum": [
+                                true,
+                                false
+                            ],
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BilateralDataResponse"
+                                },
+                                "example": {
+                                    "elapsedTime": "0.35 secs",
+                                    "timestampRequested": "2026-09-24 14:05:12.481",
+                                    "note": null,
+                                    "count": 1,
+                                    "data": [
+                                        {
+                                            "typeCode": "C",
+                                            "freqCode": "A",
+                                            "refPeriodId": 20220101,
+                                            "refYear": 2022,
+                                            "refMonth": 52,
+                                            "period": "2022",
+                                            "reporterCode": 842,
+                                            "reporterISO": "USA",
+                                            "reporterDesc": "USA",
+                                            "flowCode": "M",
+                                            "flowDesc": null,
+                                            "partnerCode": 156,
+                                            "partnerISO": "CHN",
+                                            "partnerDesc": "China",
+                                            "classificationCode": "H6",
+                                            "classificationSearchCode": "HS",
+                                            "isOriginalClassification": true,
+                                            "cmdCode": "TOTAL",
+                                            "cmdDesc": null,
+                                            "aggrLevel": null,
+                                            "isLeaf": null,
+                                            "customsCode": "C00",
+                                            "customsDesc": null,
+                                            "mosCode": "0",
+                                            "motCode": 0,
+                                            "motDesc": null,
+                                            "qtyUnitCode": -1,
+                                            "qtyUnitAbbr": null,
+                                            "mirrorQtyUnitCode": null,
+                                            "mirrorQtyUnitAbbr": null,
+                                            "mirror2QtyUnitCode": null,
+                                            "mirror2QtyUnitAbbr": null,
+                                            "qty": 0.0,
+                                            "mirrorQty": null,
+                                            "mirror2Qty": null,
+                                            "isQtyEstimated": false,
+                                            "altQtyUnitCode": -1,
+                                            "altQtyUnitAbbr": null,
+                                            "altQty": 0.0,
+                                            "mirrorAltQtyUnitCode": null,
+                                            "mirrorAltQtyUnitAbbr": null,
+                                            "mirror2AltQtyUnitCode": null,
+                                            "mirror2AltQtyUnitAbbr": null,
+                                            "mirrorAltQty": null,
+                                            "mirror2AltQty": null,
+                                            "isAltQtyEstimated": false,
+                                            "netWgt": 0.0,
+                                            "mirrorNetWgt": null,
+                                            "mirror2NetWgt": null,
+                                            "isNetWgtEstimated": true,
+                                            "grossWgt": 0.0,
+                                            "mirrorGrossWgt": null,
+                                            "mirror2GrossWgt": null,
+                                            "isGrossWgtEstimated": false,
+                                            "cifvalue": 3372902165775.0,
+                                            "fobvalue": 3243389128166.0,
+                                            "primaryValue": 575322164446.0,
+                                            "isExtendedPartnerCode": false,
+                                            "mirrorPrimaryValue": 562094586000.0,
+                                            "primaryValueDisc": 13227578446.0,
+                                            "mirror2PrimaryValue": 0.0,
+                                            "isExtendedPartner2Code": false,
+                                            "legacyEstimationFlag": 4,
+                                            "isReported": false,
+                                            "isAggregate": true
+                                        }
+                                    ],
+                                    "error": ""
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid or missing parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Daily quota exhausted, or the subscription does not include API access (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "apiKeyHeader": {
+                "type": "apiKey",
+                "name": "Ocp-Apim-Subscription-Key",
+                "in": "header"
+            },
+            "apiKeyQuery": {
+                "type": "apiKey",
+                "name": "subscription-key",
+                "in": "query"
+            }
+        },
+        "schemas": {
+            "ValidationError": {
+                "type": "object",
+                "properties": {
+                    "memberNames": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Parameters that failed validation."
+                    },
+                    "errorMessage": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "description": "Error body returned by the backend with a 4xx/5xx status.",
+                "properties": {
+                    "error": {
+                        "type": "string",
+                        "description": "Error message."
+                    },
+                    "details": {
+                        "type": "array",
+                        "nullable": true,
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "description": "Per-parameter validation failures (400 only); null otherwise."
+                    }
+                }
+            },
+            "GatewayError": {
+                "type": "object",
+                "description": "Returned by API Management before the request reaches the backend.",
+                "properties": {
+                    "statusCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "TradeBalanceRecord": {
+                "type": "object",
+                "properties": {
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "refPeriodId": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "refYear": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "refMonth": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "period": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "reporterCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "reporterISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "reporterDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partnerCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "partnerISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partnerDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partner2Code": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "partner2ISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partner2Desc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationSearchCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "isOriginalClassification": {
+                        "type": "boolean"
+                    },
+                    "cmdCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "cmdDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "aggrLevel": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "isLeaf": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "customsCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "customsDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "mosCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "motCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "motDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "qtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "qtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "qtyX": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "qtyM": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isQtyEstimated": {
+                        "type": "boolean"
+                    },
+                    "altQtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "altQtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "altQtyX": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "altQtyM": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isAltQtyEstimated": {
+                        "type": "boolean"
+                    },
+                    "netWgtX": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "netWgtM": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isNetWgtEstimated": {
+                        "type": "boolean"
+                    },
+                    "grossWgtX": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "grossWgtM": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isGrossWgtEstimated": {
+                        "type": "boolean"
+                    },
+                    "cifvalueX": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "cifvalueM": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "fobvalueX": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "fobvalueM": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "primaryValueX": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "primaryValueM": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "primaryValueBal": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "legacyEstimationFlag": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "isReported": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "isAggregate": {
+                        "type": "boolean",
+                        "nullable": true
+                    }
+                },
+                "description": "One row of trade balance: X = exports, M = imports, primaryValueBal = X - M."
+            },
+            "TradeBalanceResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds trade balance rows.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TradeBalanceRecord"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            },
+            "BilateralDataRecord": {
+                "type": "object",
+                "properties": {
+                    "typeCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "freqCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "refPeriodId": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "refYear": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "refMonth": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "period": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "reporterCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "reporterISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "reporterDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "flowCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "flowDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partnerCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "partnerISO": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "partnerDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "classificationSearchCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "isOriginalClassification": {
+                        "type": "boolean"
+                    },
+                    "cmdCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "cmdDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "aggrLevel": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "isLeaf": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "customsCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "customsDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "mosCode": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "motCode": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "motDesc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "qtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "qtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "mirrorQtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "mirrorQtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "mirror2QtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "mirror2QtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "qty": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "mirrorQty": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "mirror2Qty": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isQtyEstimated": {
+                        "type": "boolean"
+                    },
+                    "altQtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "altQtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "altQty": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "mirrorAltQtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "mirrorAltQtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "mirror2AltQtyUnitCode": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "mirror2AltQtyUnitAbbr": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "mirrorAltQty": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "mirror2AltQty": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isAltQtyEstimated": {
+                        "type": "boolean"
+                    },
+                    "netWgt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "mirrorNetWgt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "mirror2NetWgt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isNetWgtEstimated": {
+                        "type": "boolean"
+                    },
+                    "grossWgt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "mirrorGrossWgt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "mirror2GrossWgt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "isGrossWgtEstimated": {
+                        "type": "boolean"
+                    },
+                    "cifvalue": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "fobvalue": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "primaryValue": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "isExtendedPartnerCode": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "mirrorPrimaryValue": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "primaryValueDisc": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "mirror2PrimaryValue": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "isExtendedPartner2Code": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "legacyEstimationFlag": {
+                        "type": "integer",
+                        "format": "int32",
+                        "nullable": true
+                    },
+                    "isReported": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "isAggregate": {
+                        "type": "boolean",
+                        "nullable": true
+                    }
+                },
+                "description": "One row of bilateral data: reported values alongside the partner's mirror values."
+            },
+            "BilateralDataResponse": {
+                "type": "object",
+                "description": "Response envelope; data holds bilateral data rows.",
+                "properties": {
+                    "elapsedTime": {
+                        "type": "string",
+                        "description": "Server processing time, e.g. \"0.42 secs\"."
+                    },
+                    "timestampRequested": {
+                        "type": "string",
+                        "description": "UTC, yyyy-MM-dd HH:mm:ss.fff"
+                    },
+                    "note": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Data-gap note for the requested reporters/partners, if any."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Number of items in data."
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/BilateralDataRecord"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Empty string on success."
+                    }
+                },
+                "required": [
+                    "elapsedTime",
+                    "count",
+                    "data",
+                    "error"
+                ]
+            }
+        }
+    },
+    "security": [
+        {
+            "apiKeyHeader": []
+        },
+        {
+            "apiKeyQuery": []
+        }
+    ]
+}
