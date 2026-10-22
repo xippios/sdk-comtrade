@@ -31,7 +31,6 @@ the repository root::
 """
 
 import argparse
-import copy
 import gzip
 import hashlib
 import html
@@ -46,7 +45,7 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode, urljoin
+from urllib.parse import urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup, Tag
 from markdownify import ATX, BACKSLASH, MarkdownConverter
@@ -239,94 +238,99 @@ def _report(path: str, response: Response) -> None:
     )
 
 
-def fetch_file(path: str, url: str, *, with_etag: bool) -> Entry:
-    """Fetch one JSON file to keep byte for byte as served."""
-    response = fetch(url)
-    document = _json(response)
-    if path.startswith("apidocs/") and not (isinstance(document, dict) and "openapi" in document):
-        raise SystemExit(f"GET {url}: not an OpenAPI document")
+def _entry(path: str, response: Response, *, with_etag: bool) -> Entry:
     _report(path, response)
     modified = _iso_http_date(response.last_modified)
     if with_etag and response.etag:
         modified += f", ETag {response.etag}"
-    return Entry(path, url, modified, response.body)
+    return Entry(path, response.url, modified, response.body)
 
 
-def _cells(row: Tag) -> list[Tag]:
-    return [cell for cell in row.find_all(["td", "th"], recursive=False) if isinstance(cell, Tag)]
+def fetch_spec(base: str, product: Product) -> tuple[Entry, str]:
+    """Fetch one product's OpenAPI document as served, with its ``openapi`` version."""
+    response = fetch(base + product.file)
+    document = _json(response)
+    version = document.get("openapi") if isinstance(document, dict) else None
+    if not (isinstance(version, str) and version.startswith("3.")):
+        raise SystemExit(f"GET {response.url}: expected OpenAPI 3.x, found openapi={version!r}")
+    return _entry(f"apidocs/{product.file}", response, with_etag=True), version
 
 
-def _span(cell: Tag, name: str) -> int:
-    value = str(cell.get(name) or "1").strip()
-    return int(value) if value.isdigit() and int(value) > 0 else 1
+def fetch_reference(name: str) -> Entry:
+    """Fetch one reference file as served; it must parse as JSON."""
+    response = fetch(REFERENCE_BASE + name)
+    _json(response)
+    return _entry(f"reference/{name}", response, with_etag=False)
 
 
-def _expand_spans(soup: BeautifulSoup, table: Tag) -> None:
-    """Repeat each cell that spans rows or columns in every slot it covers.
+_TABLE_TAGS = {"table", "thead", "tbody", "tfoot", "tr", "th", "td"}
+_KEPT_TAGS = _TABLE_TAGS | {"a", "br", "strong", "em", "b", "i", "code"}
+"""Tags a table with merged cells keeps; any other tag is dropped and its text kept."""
 
-    A Markdown table has neither ``rowspan`` nor ``colspan``. A cell that alone spans a
-    whole row (a section label) is kept once and the row padded with empty cells.
+
+def _tags(root: Tag, *names: str, recursive: bool = True) -> list[Tag]:
+    found = root.find_all(list(names) or True, recursive=recursive)
+    return [tag for tag in found if isinstance(tag, Tag)]
+
+
+def _has_merged_cells(table: Tag) -> bool:
+    return any(c.has_attr("rowspan") or c.has_attr("colspan") for c in _tags(table, "th", "td"))
+
+
+def _html_table(table: Tag) -> str:
+    """A table with merged cells as plain HTML, since a pipe table cannot merge cells.
+
+    Only ``rowspan``/``colspan`` (and a link's ``href``) survive; an image becomes its alt
+    text or, without one, its file name; other markup is dropped and its text kept.
     """
-    rows = [row for row in table.find_all("tr") if isinstance(row, Tag)]
-    if not any(c.has_attr("rowspan") or c.has_attr("colspan") for r in rows for c in _cells(r)):
-        return
-    grid: list[list[Tag | None]] = []
-    carried: dict[int, tuple[Tag, int]] = {}  # column -> (cell, rows it still covers)
-    for row in rows:
-        queue = _cells(row)
-        slots: list[Tag | None] = []
-        while queue or any(column >= len(slots) for column in carried):
-            column = len(slots)
-            if column in carried:
-                cell, left = carried.pop(column)
-                if left > 1:
-                    carried[column] = (cell, left - 1)
-                slots.append(cell)
-            elif queue:
-                cell = queue.pop(0)
-                rowspan = _span(cell, "rowspan")
-                for offset in range(_span(cell, "colspan")):
-                    if rowspan > 1:
-                        carried[column + offset] = (cell, rowspan - 1)
-                    slots.append(cell)
-            else:
-                slots.append(None)
-        grid.append(slots)
-    width = max(len(slots) for slots in grid)
-    for row, slots in zip(rows, grid, strict=True):
-        slots.extend([None] * (width - len(slots)))
-        if width > 1 and slots[0] is not None and all(slot is slots[0] for slot in slots):
-            slots[1:] = [None] * (width - 1)
-        cells: list[Tag] = []
-        for slot in slots:
-            cell = soup.new_tag("td") if slot is None else copy.copy(slot)
-            cell.attrs.pop("rowspan", None)
-            cell.attrs.pop("colspan", None)
-            cells.append(cell)
-        row.clear()
-        for cell in cells:
-            row.append(cell)
+    for image in _tags(table, "img"):
+        alt = str(image.get("alt") or "").strip()
+        image.replace_with(alt or Path(urlsplit(str(image.get("src") or "")).path).name)
+    for tag in _tags(table):
+        if tag.name not in _KEPT_TAGS:
+            tag.unwrap()
+            continue
+        kept = ("rowspan", "colspan") if tag.name in ("th", "td") else ("href",)
+        tag.attrs = {name: value for name, value in tag.attrs.items() if name in kept}
+    lines = ["<table>"]
+    for row in _tags(table, "tr"):
+        cells = []
+        for cell in _tags(row, "th", "td", recursive=False):
+            spans = "".join(f' {name}="{html.escape(str(v))}"' for name, v in cell.attrs.items())
+            content = re.sub(r"\s+", " ", cell.decode_contents()).strip()
+            content = re.sub(r"^(?:<br/>\s*)+|(?:\s*<br/>)+$", "", content)
+            cells.append(f"<{cell.name}{spans}>{content}</{cell.name}>")
+        lines.append("<tr>" + "".join(cells) + "</tr>")
+    return "\n".join([*lines, "</table>"])
 
 
 def to_markdown(fragment: str, base: str) -> str:
-    """Convert an article body to Markdown: ATX headings, pipe tables, absolute links."""
+    """Convert an article body to Markdown, with absolute links and ATX headings.
+
+    Tables become pipe tables, except a table with merged cells, which stays HTML.
+    """
     soup = BeautifulSoup(fragment, "html.parser")
-    for tag in soup.find_all(["button", "svg", "script", "style", "noscript"]):
+    for tag in _tags(soup, "button", "svg", "script", "style", "noscript"):
         tag.decompose()
-    for tag in soup.find_all(True):
-        if isinstance(tag, Tag):
-            for attribute in ("href", "src"):
-                value = tag.get(attribute)
-                if isinstance(value, str):
-                    tag[attribute] = urljoin(base, value.strip())
-    for table in soup.find_all("table"):
-        if isinstance(table, Tag):
-            _expand_spans(soup, table)
+    for tag in _tags(soup):
+        for attribute in ("href", "src"):
+            value = tag.get(attribute)
+            if isinstance(value, str):
+                tag[attribute] = urljoin(base, value.strip())
+    merged: list[str] = []
+    for table in _tags(soup, "table"):
+        if _has_merged_cells(table):
+            placeholder = soup.new_tag("p")
+            placeholder.string = f"XIPPIOSTABLE{len(merged)}X"
+            merged.append(_html_table(table))
+            table.replace_with(placeholder)
     converter = MarkdownConverter(
         heading_style=ATX, bullets="-", escape_underscores=False, newline_style=BACKSLASH
     )
-    text = converter.convert_soup(soup).replace("\xa0", " ")
-    lines = [line.rstrip() for line in text.strip().splitlines()]
+    text = converter.convert_soup(soup)
+    for index, table_html in enumerate(merged):
+        text = text.replace(f"XIPPIOSTABLE{index}X", table_html)
+    lines = [line.rstrip() for line in text.replace("\xa0", " ").strip().splitlines()]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)) + "\n"
 
 
@@ -358,8 +362,16 @@ def _cell(value: str) -> str:
     return value.replace("|", r"\|")
 
 
-def render_fetched(bundle: str, products: list[Product], entries: list[Entry], day: str) -> str:
-    """The whole of ``FETCHED.md``."""
+def render_fetched(
+    bundle: str,
+    apim_base: str,
+    products: list[Product],
+    versions: list[str],
+    entries: list[Entry],
+    day: str,
+) -> str:
+    """The whole of ``FETCHED.md``; ``versions`` holds each product's ``openapi`` value."""
+    found = ", ".join(sorted(set(versions)))
     lines = [
         "# Upstream documentation snapshot \N{EM DASH} UN Comtrade",
         "",
@@ -372,8 +384,8 @@ def render_fetched(bundle: str, products: list[Product], entries: list[Entry], d
         "## How ApiDocs is captured",
         "",
         "ApiDocs is a React app that embeds Swagger UI. Its JavaScript bundle holds a table of",
-        "API products, each an OpenAPI 3.0.1 file under",
-        "`https://comtradeapi.un.org/files/v1/app/apim/` with the subscription tiers that may",
+        f"API products, each an OpenAPI file (version {found} as fetched) under",
+        f"`{apim_base}` with the subscription tiers that may",
         "see it. The page loads only the products of the viewer's tier (anonymous, free or",
         'premium) and merges them client-side into one document, "UN Comtrade API Products",',
         "with one collapsible Swagger UI tag per product, paths prefixed with the product's",
@@ -383,9 +395,9 @@ def render_fetched(bundle: str, products: list[Product], entries: list[Entry], d
         "",
         "Help Center articles come from the WordPress REST API,",
         f"`{HELP_API}?slug=<slug>`, as the article body only",
-        "(no theme, no navigation), converted to Markdown. A table cell that spans several",
-        "rows or columns upstream is repeated in each of them; a section label spanning a",
-        "whole row is kept once.",
+        "(no theme, no navigation), converted to Markdown. A table with merged cells",
+        "(`rowspan`/`colspan`) stays an HTML table that keeps only the spans and links, with",
+        "images as their alt text or file name; every other table becomes a pipe table.",
         "",
         f"Regenerate: `{COMMAND}`",
         "",
@@ -393,11 +405,12 @@ def render_fetched(bundle: str, products: list[Product], entries: list[Entry], d
         "",
         f"In the ApiDocs bundle `{bundle}`:",
         "",
-        "| Key | Label | File | Tiers |",
-        "| --- | --- | --- | --- |",
+        "| Key | Label | File | Tiers | OpenAPI |",
+        "| --- | --- | --- | --- | --- |",
     ]
     lines += [
-        f"| {_cell(p.key)} | {_cell(p.label)} | {p.file} | {', '.join(p.tiers)} |" for p in products
+        f"| {_cell(p.key)} | {_cell(p.label)} | {p.file} | {', '.join(p.tiers)} | {_cell(v)} |"
+        for p, v in zip(products, versions, strict=True)
     ]
     lines += [
         "",
@@ -416,6 +429,8 @@ def render_fetched(bundle: str, products: list[Product], entries: list[Entry], d
 
 def write_snapshot(out: Path, entries: list[Entry], fetched_md: str) -> None:
     """Write every file, drop files the new snapshot no longer has, write ``FETCHED.md``."""
+    if out.exists() and any(out.iterdir()) and not (out / "FETCHED.md").is_file():
+        raise SystemExit(f"{out} is neither empty nor a snapshot (no FETCHED.md); not writing")
     keep = {entry.path for entry in entries}
     for subdir in SUBDIRS:
         directory = out / subdir
@@ -442,17 +457,16 @@ def main() -> None:
     for product in products:
         tiers = ", ".join(product.tiers)
         _log(f"  product {product.key} ({product.label}): {product.file} [{tiers}]")
-    entries = [
-        fetch_file(f"apidocs/{p.file}", apim_base + p.file, with_etag=True) for p in products
-    ]
+    specs = [fetch_spec(apim_base, product) for product in products]
+    entries = [entry for entry, _ in specs]
+    versions = [version for _, version in specs]
+    _log(f"  OpenAPI versions: {', '.join(sorted(set(versions)))}")
     _log("Help Center articles")
     entries += [fetch_article(slug) for slug in HELP_SLUGS]
     _log("Reference files")
-    entries += [
-        fetch_file(f"reference/{name}", REFERENCE_BASE + name, with_etag=False)
-        for name in REFERENCE_FILES
-    ]
-    write_snapshot(out, entries, render_fetched(bundle, products, entries, day))
+    entries += [fetch_reference(name) for name in REFERENCE_FILES]
+    fetched_md = render_fetched(bundle, apim_base, products, versions, entries, day)
+    write_snapshot(out, entries, fetched_md)
     _log(f"Wrote {len(entries)} files and FETCHED.md under {out}")
 
 
