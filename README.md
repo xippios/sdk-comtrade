@@ -42,8 +42,17 @@ Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 75
 Every argument is checked before the call: coded ones (`type_code`, `cl_code`,
 `flow_code`, `customs_code`, `mot_code`, `aggregate_by`, `breakdown_mode`) against
 the lists packaged from upstream's reference files and spec (`xippios.comtrade.enums`),
-the others by shape; a mistake raises `InvalidRequestError` naming the closest valid
-value.
+`reporter_code` against the packaged `Reporters.json` and `partner_code` and
+`partner2_code` against `partnerAreas.json`, the others by shape; a mistake raises
+`InvalidRequestError` naming the closest valid value (`756` names `757`, Switzerland).
+
+```python
+from xippios.comtrade import list_commodities, list_partners, list_reporters
+
+list_reporters().data  # 255 reporters, packaged with this version: no call
+list_partners().data  # 310 partner areas, 0 World among them
+list_commodities("HS").data  # 8,262 HS codes, fetched keyless once per process
+```
 
 `get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
 result without a second call, and a count above 100,000 raises `QueryTooLarge` with the
@@ -67,8 +76,10 @@ yours to track.
 ```
 
 Tools are read-only and named `comtrade_<verb>_<noun>`. Results are capped at
-200 rows or 64 KB with a note on how to narrow the query. `--http` serves streamable
-HTTP instead of stdio.
+200 rows or 64 KB with a note on how to narrow the query. The list tools take no filter
+yet, so `comtrade_list_reporters`, `comtrade_list_partners` and `comtrade_list_commodities`
+show the first rows of their table only (200 of 255 reporters, in upstream's alphabetical
+order). `--http` serves streamable HTTP instead of stdio.
 
 ## Status
 
@@ -76,6 +87,9 @@ HTTP instead of stdio.
 | --- | --- | --- | --- |
 | `data/v1/get/{typeCode}/{freqCode}/{clCode}` with `countOnly=true` | `get_counts(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, ...)` | `comtrade_get_counts` | alpha |
 | `data/v1/get/{typeCode}/{freqCode}/{clCode}` | `get_data(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, ...)` | `comtrade_get_data` | alpha |
+| `files/v1/app/reference/Reporters.json`, packaged | `list_reporters()` | `comtrade_list_reporters` | alpha |
+| `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners()` | `comtrade_list_partners` | alpha |
+| `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code)` | `comtrade_list_commodities` | alpha |
 
 ## Upstream terms and attribution
 

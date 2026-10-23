@@ -47,9 +47,19 @@ and how `_client.py` treats them:
   https://comtradeplus.un.org/MyComtrade/APIPortal into the environment.
 
 The reference files under `files/v1/app/reference/` are public: `reference_client`
-fetches them without the key, so `scripts/refresh_reference.py` needs none and costs no
-quota. Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757
-in `Reporters.json`; 756 is no reporter and simply counts 0.
+fetches them without the key and keeps each for the life of the process (core's GET
+cache, `REFERENCE_CACHE`; tests empty it before each test), so
+`scripts/refresh_reference.py` and `list_commodities` need no key and cost no quota.
+Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757 in
+`Reporters.json`. Upstream answers 756, which is no reporter, with count 0; the tasks
+refuse it before the call, naming 757, because they check `reporter_code` against the
+packaged `Reporters.json` and partner codes against `partnerAreas.json`. Both tables
+share one code space (a code in both is the same area) but differ: 0 World and 56 other
+areas are partners only, 97 European Union and 975 ASEAN reporters only.
+
+The MCP result cap (200 rows or 64 KB) cuts `list_reporters` (255 rows) and
+`list_partners` (310) in upstream's alphabetical order, past Switzerland and the USA;
+the tasks take no filter yet.
 
 When recording fixtures, budget the calls. The package client retries 5xx and transport
 errors up to four attempts, each a keyed call (a count on `clCode=H6` answered HTTP 500
@@ -94,7 +104,8 @@ src/xippios/comtrade/
   http.py          FastAPI router
   params.py        packaged value lists: PACKAGED_LISTS, packaged_values(), validate_get()
   enums.py         StrEnums generated from the packaged lists; never edited by hand
-  reference/       packaged code lists (CSV/JSON) plus README with provenance
+  reference/       packaged value lists (JSON), tables (CSV, provenance in tables.json)
+                   plus README with provenance
 scripts/
   refresh_reference.py   fetches the packaged lists through api/ and regenerates enums.py
   refresh_upstream.py    regenerates docs/upstream/ and its FETCHED.md from upstream
@@ -153,7 +164,7 @@ key patterns before committing. Fixtures are never typed in by hand.
 ```bash
 uv sync --all-extras
 uv run pytest                      # offline, replays fixtures
-uv run pytest -m live              # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY; 4 keyed calls
+uv run pytest -m live              # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY; 4 keyed calls, 3 keyless
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pre-commit run --all-files
