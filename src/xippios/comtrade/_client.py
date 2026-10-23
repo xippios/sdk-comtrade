@@ -7,8 +7,8 @@ the key.
 
 Limits of a Basic Individual (free) key, ``docs/upstream/help/subscriptions.md``: 1 call
 per second, 500 calls per day, 100,000 records per call. Upstream's own headers agree
-(``x-ratelimit-limit: 1`` and ``x-ratelimit-operation-limit: 60`` on the recorded
-backend answers). The bucket below allows 60 calls a minute with no burst, so calls are spaced a
+(``x-ratelimit-limit: 1`` and ``x-ratelimit-operation-limit: 60`` on the recorded backend
+answers). The bucket below allows 60 calls a minute with no burst, so calls are spaced a
 second apart. The daily quota is not enforced here; ``countOnly`` calls count against it.
 """
 
