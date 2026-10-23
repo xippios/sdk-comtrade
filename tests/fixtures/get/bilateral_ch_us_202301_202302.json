@@ -1,0 +1,74 @@
+{
+  "recorded_at": "2026-10-23T06:13:29.280927Z",
+  "request": {
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/data/v1/get/C/M/HS?reporterCode=757&period=202301%2C202302&partnerCode=842&partner2Code=0&cmdCode=TOTAL&flowCode=X&customsCode=C00&motCode=0&breakdownMode=classic&includeDesc=true"
+  },
+  "response": {
+    "body": "{\"elapsedTime\":\"2.69 secs\",\"count\":2,\"data\":[{\"typeCode\":\"C\",\"freqCode\":\"M\",\"refPeriodId\":20230101,\"refYear\":2023,\"refMonth\":1,\"period\":\"202301\",\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"flowCode\":\"X\",\"flowDesc\":\"Export\",\"partnerCode\":842,\"partnerISO\":\"USA\",\"partnerDesc\":\"USA\",\"partner2Code\":0,\"partner2ISO\":\"W00\",\"partner2Desc\":\"World\",\"classificationCode\":\"H6\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"cmdCode\":\"TOTAL\",\"cmdDesc\":\"All Commodities\",\"aggrLevel\":0,\"isLeaf\":false,\"customsCode\":\"C00\",\"customsDesc\":\"TOTAL CPC\",\"mosCode\":\"0\",\"motCode\":0,\"motDesc\":\"TOTAL MOT\",\"qtyUnitCode\":-1,\"qtyUnitAbbr\":\"N/A\",\"qty\":0.0,\"isQtyEstimated\":false,\"altQtyUnitCode\":-1,\"altQtyUnitAbbr\":\"N/A\",\"altQty\":0.0,\"isAltQtyEstimated\":false,\"netWgt\":0.0,\"isNetWgtEstimated\":true,\"grossWgt\":0.0,\"isGrossWgtEstimated\":false,\"cifvalue\":null,\"fobvalue\":5599746596.095,\"primaryValue\":5599746596.095,\"legacyEstimationFlag\":4,\"isReported\":false,\"isAggregate\":true},{\"typeCode\":\"C\",\"freqCode\":\"M\",\"refPeriodId\":20230201,\"refYear\":2023,\"refMonth\":2,\"period\":\"202302\",\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"flowCode\":\"X\",\"flowDesc\":\"Export\",\"partnerCode\":842,\"partnerISO\":\"USA\",\"partnerDesc\":\"USA\",\"partner2Code\":0,\"partner2ISO\":\"W00\",\"partner2Desc\":\"World\",\"classificationCode\":\"H6\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"cmdCode\":\"TOTAL\",\"cmdDesc\":\"All Commodities\",\"aggrLevel\":0,\"isLeaf\":false,\"customsCode\":\"C00\",\"customsDesc\":\"TOTAL CPC\",\"mosCode\":\"0\",\"motCode\":0,\"motDesc\":\"TOTAL MOT\",\"qtyUnitCode\":-1,\"qtyUnitAbbr\":\"N/A\",\"qty\":0.0,\"isQtyEstimated\":false,\"altQtyUnitCode\":-1,\"altQtyUnitAbbr\":\"N/A\",\"altQty\":0.0,\"isAltQtyEstimated\":false,\"netWgt\":0.0,\"isNetWgtEstimated\":true,\"grossWgt\":0.0,\"isGrossWgtEstimated\":false,\"cifvalue\":null,\"fobvalue\":4435010292.211,\"primaryValue\":4435010292.211,\"legacyEstimationFlag\":4,\"isReported\":false,\"isAggregate\":true}],\"error\":\"\"}",
+    "body_base64": false,
+    "headers": [
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "x-frame-options",
+        "deny"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-xss-protection",
+        "1;mode=block"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000;includeSubDomains"
+      ],
+      [
+        "content-security-policy",
+        "frame-src 'self'"
+      ],
+      [
+        "x-permitted-cross-domain-policies",
+        "none"
+      ],
+      [
+        "referrer-policy",
+        "no-referrer-when-downgrade"
+      ],
+      [
+        "permissions-policy",
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "0"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1"
+      ],
+      [
+        "x-ratelimit-operation-remaining",
+        "55"
+      ],
+      [
+        "x-ratelimit-operation-limit",
+        "60"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Fri, 23 Oct 2026 06:13:27 GMT"
+      ]
+    ],
+    "status": 200
+  }
+}

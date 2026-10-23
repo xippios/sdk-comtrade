@@ -94,3 +94,31 @@ def recorded_params(fixtures_dir: Path) -> Callable[[str], dict[str, str]]:
         return dict(httpx.URL(fixture.request.url).params)
 
     return _params
+
+
+@pytest.fixture
+def replay_query(respx_mock: respx.MockRouter, fixtures_dir: Path) -> Callable[[str], respx.Route]:
+    """Mount ``tests/fixtures/get/<case>.json`` for exactly the query it was recorded with.
+
+    The slices' calls share one path and differ only in their parameters (the chunks of a
+    commodity series in ``period``), so the route matches the recorded query parameters
+    as a whole. A request that differs in any parameter, a ``countOnly`` count included,
+    finds no route and fails the test.
+    """
+
+    def _replay(case: str) -> respx.Route:
+        fixture = load_fixture(fixture_path(fixtures_dir, "get", case))
+        url = httpx.URL(fixture.request.url)
+        route = respx_mock.route(
+            method=fixture.request.method, host=url.host, path=url.path, params__eq=url.params
+        )
+        route.mock(
+            return_value=httpx.Response(
+                fixture.response.status,
+                headers=fixture.response.headers,
+                content=fixture.response.content,
+            )
+        )
+        return route
+
+    return _replay

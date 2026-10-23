@@ -49,6 +49,7 @@ __all__ = [
     "TradeDataItem",
     "TradeDataRecord",
     "TradeDataResponse",
+    "TradeFlowRecord",
 ]
 
 
@@ -123,6 +124,57 @@ class TradeDataRecord(UpstreamModel):
     legacy_estimation_flag: int | None = Field(validation_alias="legacyEstimationFlag")
     is_reported: bool | None = Field(validation_alias="isReported")
     is_aggregate: bool | None = Field(validation_alias="isAggregate")
+
+
+class TradeFlowRecord(UpstreamModel):
+    """One total trade flow: a projection of ``TradeDataRecord`` for the task-shaped slices.
+
+    One reporter, one partner, one product code, one flow and one period, at the total
+    of the breakdowns the slices pin (``partner2Code`` 0, ``customsCode`` ``C00``,
+    ``motCode`` 0, ``breakdownMode`` ``classic``). Fields keep their upstream names in
+    snake_case (ADR-0003), with the values of ``TradeDataRecord``: nothing is renamed or
+    computed. ``primary_value`` is upstream's primary trade value (taken from the CIF or
+    FOB value, in ``cifvalue``/``fobvalue``). ``ref_month`` is 52 on annual rows, as
+    upstream sends it. ``classification_code`` is the edition the reporter used (``"H6"``
+    for Switzerland 2023 under ``clCode`` ``HS``). The ``*_iso`` and ``*_desc`` fields are
+    filled because the slices send ``includeDesc``.
+
+    At ``TOTAL`` and chapter level the rows are mostly UN Comtrade's aggregates, not
+    figures a country reported: ``is_aggregate`` ("aggregated by UNSD") true and
+    ``is_reported`` ("reported by country") false on every row of the slice fixtures
+    except Switzerland's chapter 27 exports in 2010 and 2011. Such rows carry no
+    quantity: ``qty`` 0 with ``qty_unit_code`` -1 (``qty_unit_abbr`` ``"N/A"``) and
+    ``net_wgt`` 0 or ``None``, ``is_net_wgt_estimated`` often true. Read the trade values
+    there, not ``qty``/``net_wgt``; ``is_qty_estimated`` and ``is_net_wgt_estimated``
+    stand next to the numbers they flag.
+    """
+
+    freq_code: str | None
+    ref_year: int
+    ref_month: int
+    period: str | None
+    reporter_code: int
+    reporter_iso: str | None
+    reporter_desc: str | None
+    flow_code: str | None
+    flow_desc: str | None
+    partner_code: int
+    partner_iso: str | None
+    partner_desc: str | None
+    classification_code: str | None
+    cmd_code: str | None
+    cmd_desc: str | None
+    qty_unit_code: int | None
+    qty_unit_abbr: str | None
+    qty: Decimal | None
+    is_qty_estimated: bool
+    net_wgt: Decimal | None
+    is_net_wgt_estimated: bool
+    cifvalue: Decimal | None
+    fobvalue: Decimal | None
+    primary_value: Decimal
+    is_reported: bool | None
+    is_aggregate: bool | None
 
 
 class TradeDataResponse(UpstreamModel):

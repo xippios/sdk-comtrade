@@ -7,11 +7,15 @@ in ``_client`` are internal.
 
 from xippios.comtrade._version import __version__
 from xippios.comtrade.tasks import (
+    get_bilateral_flows,
+    get_commodity_series,
     get_counts,
     get_data,
     get_data_availability,
     get_live_update,
     get_metadata,
+    get_top_partners,
+    get_world_trade,
     list_commodities,
     list_partners,
     list_reporters,
@@ -19,11 +23,15 @@ from xippios.comtrade.tasks import (
 
 __all__ = [
     "__version__",
+    "get_bilateral_flows",
+    "get_commodity_series",
     "get_counts",
     "get_data",
     "get_data_availability",
     "get_live_update",
     "get_metadata",
+    "get_top_partners",
+    "get_world_trade",
     "list_commodities",
     "list_partners",
     "list_reporters",

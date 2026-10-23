@@ -62,8 +62,10 @@ share one code space (a code in both is the same area) but differ: 0 World and 5
 areas are partners only, 97 European Union and 975 ASEAN reporters only.
 
 The MCP result cap (200 rows or 64 KB) cuts `list_reporters` (255 rows) and
-`list_partners` (310) in upstream's alphabetical order, past Switzerland and the USA;
-the tasks take no filter yet.
+`list_partners` (310) in upstream's alphabetical order, past Switzerland and the USA,
+and shows only the top of a classification; so the three list tasks take `search`, a
+case-insensitive substring of the code, the ISO alpha-3 (reporters, partners) or the
+text, and their docstrings tell agents to search.
 
 When recording fixtures, budget the calls. The package client retries 429, 5xx and
 transport errors up to four attempts, each a keyed call (`clCode=H6` on `data/v1/get`
@@ -93,6 +95,25 @@ What the recorded answers established (2026-10-23). The fixtures are named in
 - `data/v1/getMetadata`: honours `reporterCode` and `period`, which the spec omits and
   `comtradeapicall` sends; answers `H6` like `HS`.
 - `data/v1/getLiveUpdate`: 50 rows but `count` 174; no `publishedDate` field.
+
+The task-shaped slices (wave 2: `get_bilateral_flows`, `get_commodity_series`,
+`get_world_trade`, `get_top_partners`) call `data/v1/get` through `api.get` with
+`params.SLICE_PINS`: `typeCode` C, `breakdownMode` classic, `partner2Code` 0, `motCode` 0,
+`customsCode` C00, `includeDesc` true, so one row is reporter × partner × product code ×
+period, projected into `TradeFlowRecord` with `UpstreamModel.project`. Each is bounded by
+its arguments (product codes × periods; periods; 255 reporters; 310 partners), so none
+counts first; `QueryTooLarge(bound, bound=True)` refuses a bound over 100,000 before the
+call, which is why the slices take single product codes, not `AG2` or `27??`. A
+commodity series is capped by calls instead: at most 120 periods
+(`params.MAX_SERIES_PERIODS`, ten calls of 12 against 500 a day).
+`params.validate_slice` resolves an area given as code or ISO alpha-3 (an expired code
+gives way to the one in use; among partners the code that is also a reporter code wins,
+842 not 840, as `partners_ch_total_2023.json` shows) and derives `freqCode` from the
+period format (`YYYY` A, `YYYYMM` M, a mix refused). `get_commodity_series` sends the
+periods 12 per call, in the order given, and sorts the joined rows by period.
+`get_top_partners` drops partner 0, World, because it is the total over all partners, not a
+partner, and ranks the rest by `primary_value` here; `get_world_trade` sorts the same way,
+so a capped MCP result (104 of 167 rows for HS 27 imports 2023) keeps the largest.
 
 ## Read first, in this order
 
@@ -131,7 +152,9 @@ src/xippios/comtrade/
   params.py        packaged lists and tables: PACKAGED_LISTS, packaged_values(),
                    PACKAGED_TABLES, packaged_table(), packaged_table_info(),
                    classification_files(); checks run before a call: validate_get(),
-                   validate_datasets(), validate_classification_file()
+                   validate_datasets(), validate_classification_file(); for the
+                   slices validate_slice() (areas by code or ISO alpha-3, periods of
+                   one format), SLICE_PINS and MAX_SERIES_PERIODS
   enums.py         StrEnums generated from the packaged lists; never edited by hand
   reference/       packaged value lists (JSON), tables (CSV, provenance in tables.json)
                    plus README with provenance
@@ -193,7 +216,7 @@ key patterns before committing. Fixtures are never typed in by hand.
 ```bash
 uv sync --all-extras
 uv run pytest                      # offline, replays fixtures
-uv run pytest -m live              # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY; 7 keyed calls, 3 keyless
+uv run pytest -m live              # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY; 11 keyed calls, 3 keyless
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pre-commit run --all-files

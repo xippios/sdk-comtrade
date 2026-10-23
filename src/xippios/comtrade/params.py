@@ -8,7 +8,9 @@ carries the provenance of every file. Value lists are ``<name>.json``
 (``packaged_table``), their origin and fetch date in ``tables.json``. ``validate_get``
 checks the arguments of a ``data/v1/get`` call against them, and the free-form ones by
 shape, before anything is sent (ADR-0007); ``validate_datasets`` does the same for
-``data/v1/getDa`` and ``data/v1/getMetadata``.
+``data/v1/getDa`` and ``data/v1/getMetadata``; ``validate_slice`` resolves and checks the
+arguments of the task-shaped slices (an area as a code or ISO alpha-3, periods of one
+format) into a ``data/v1/get`` request with ``SLICE_PINS``.
 """
 
 import difflib
@@ -16,7 +18,7 @@ import functools
 import re
 from collections.abc import Mapping, Sequence
 from datetime import date
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from pydantic import Field
 from xippios.core import InvalidRequestError, UpstreamModel, load_json, load_table
@@ -28,6 +30,7 @@ from xippios.comtrade.models import CountryAreaCodeIso, PartnerArea, Reporter, T
 __all__ = [
     "PACKAGED_LISTS",
     "PACKAGED_TABLES",
+    "SLICE_PINS",
     "ListException",
     "PackagedTable",
     "PackagedValues",
@@ -38,6 +41,7 @@ __all__ = [
     "validate_classification_file",
     "validate_datasets",
     "validate_get",
+    "validate_slice",
 ]
 
 PACKAGE = "xippios.comtrade"
@@ -496,3 +500,302 @@ def validate_classification_file(cl_code: str) -> dict[str, Any]:
             source=SOURCE,
         )
     return {"cl_code": cl_code}
+
+
+SLICE_PINS: Mapping[str, Any] = {
+    "type_code": "C",
+    "partner2_code": "0",
+    "mot_code": "0",
+    "customs_code": "C00",
+    "breakdown_mode": "classic",
+    "include_desc": True,
+}
+"""What every task-shaped slice sends besides its own arguments: goods, the total row only.
+
+``breakdownMode`` ``classic`` returns the total row alone, as pinning ``partner2Code`` 0,
+``customsCode`` ``C00`` and ``motCode`` 0 does (under ``tests/fixtures/get/``:
+``ch_exports_2023_breakdown_mode_classic.json``, ``ch_exports_2023_totals.json``), so
+one row is one reporter, partner, product code, flow and period. ``includeDesc`` fills
+the ``*_iso`` and ``*_desc`` fields (``ch_exports_2023_include_desc.json``).
+"""
+
+MAX_SERIES_PERIODS = 10 * MAX_PERIODS
+"""Most periods one ``get_commodity_series`` call takes: 120, ten calls of 12.
+
+Each chunk of 12 periods is a keyed call, and a Basic Individual key allows 500 calls a
+day (``docs/upstream/help/subscriptions.md``), so the series is capped by calls rather
+than records: ten years of months or a century of years per call.
+"""
+
+_SLICE_ORDER = (
+    "type_code", "freq_code", "cl_code", "reporter_code", "partner_code", "partner2_code",
+    "period", "cmd_code", "flow_code", "mot_code", "customs_code", "breakdown_mode",
+    "include_desc",
+)  # fmt: skip
+"""``validate_get``'s order, so a slice's ``meta.request`` reads like ``get_data``'s."""
+
+
+class _Area(NamedTuple):
+    code: str
+    desc: str
+    iso3: str
+    in_use: bool
+
+
+@functools.cache
+def _area_rows(kind: str) -> tuple[_Area, ...]:
+    """The reporter or partner table as (code, description, ISO alpha-3, still in use)."""
+    if kind == "reporter":
+        return tuple(
+            _Area(
+                code=str(row.reporter_code),
+                desc=row.reporter_desc.strip(),
+                iso3=row.reporter_code_iso_alpha3.strip(),
+                in_use=row.entry_expired_date is None,
+            )
+            for row in packaged_table("Reporters", Reporter)
+        )
+    return tuple(
+        _Area(
+            code=str(row.partner_code),
+            desc=row.partner_desc.strip(),
+            iso3=row.partner_code_iso_alpha3.strip(),
+            in_use=row.entry_expired_date is None,
+        )
+        for row in packaged_table("partnerAreas", PartnerArea)
+    )
+
+
+def _by_iso3(iso3: str, kind: str) -> list[_Area]:
+    """The codes of ``kind`` an ISO alpha-3 code resolves to: one, or several if ambiguous.
+
+    Several codes can share an alpha-3 code: a code no longer used (``entry_expired_date``
+    set, such as 280 Fed. Rep. of Germany until 1990 next to 276 Germany) gives way to the
+    one in use; among partners, the code that is also a reporter code wins (757
+    Switzerland, not 756; 842 USA, not 840): Switzerland's 2023 partner rows carry 842,
+    251 France and 579 Norway, never 840, 250 or 578
+    (``tests/fixtures/get/partners_ch_total_2023.json``). What is still ambiguous after
+    that (A79: 473 LAIA, nes and 636 Rest of America, nes) stays several.
+    """
+    found = [area for area in _area_rows(kind) if area.iso3 == iso3]
+    if len(found) > 1:
+        found = [area for area in found if area.in_use] or found
+    if len(found) > 1 and kind == "partner":
+        reporters = {area.code for area in _area_rows("reporter")}
+        found = [area for area in found if area.code in reporters] or found
+    return found
+
+
+def _resolve_iso3(argument: str, value: str, kind: str, problems: list[str]) -> str | None:
+    """The one code of ``kind`` behind an ISO alpha-3 code, or a problem naming the closest.
+
+    ``_by_iso3`` picks the code; an ambiguous alpha-3 code is refused, naming every
+    candidate. The closest-value hint for an unknown one names the code that alpha-3 code
+    resolves to (``'USA' (842, USA)`` among partners, not 840).
+    """
+    wanted = value.upper()
+    found = _by_iso3(wanted, kind)
+    if len(found) == 1:
+        return found[0].code
+    _, upstream_file, task = _AREA_TABLES[kind]
+    if found:
+        problems.append(
+            f"{argument} {value!r} is the ISO alpha-3 code of several UN Comtrade {kind} codes "
+            f"({upstream_file}): {', '.join(f'{a.code!r} ({a.desc})' for a in found)}; "
+            "give the numeric code"
+        )
+        return None
+    other = "partner" if kind == "reporter" else "reporter"
+    elsewhere = _by_iso3(wanted, other)
+    if elsewhere:
+        problems.append(
+            f"{argument} {value!r} ({elsewhere[0].code}, {elsewhere[0].desc}) is a {other} "
+            f"area only, not a UN Comtrade {kind} ({upstream_file})"
+        )
+        return None
+    rows = _area_rows(kind)
+    options = {area.iso3: area.iso3 for area in rows} | {
+        area.desc.upper(): area.iso3 for area in rows
+    }
+    closest = _closest(value, list(options))
+    hint = ""
+    if closest:
+        iso3 = options[closest]
+        named = " or ".join(f"{area.code}, {area.desc}" for area in _by_iso3(iso3, kind))
+        hint = f"; closest: {iso3!r} ({named})"
+    problems.append(
+        f"{argument} {value!r} is neither a UN Comtrade {kind} code nor the ISO alpha-3 code "
+        f"of one ({upstream_file}){hint}; {task} lists every code"
+    )
+    return None
+
+
+def _resolve_area(argument: str, value: str | None, kind: str, problems: list[str]) -> str | None:
+    """One reporter or partner, given as UN Comtrade's code or an ISO alpha-3 code, as the code."""
+    if value is None:
+        return None
+    if "," in value:
+        problems.append(f"{argument} {value!r} must be one area, e.g. '757' or 'CHE'")
+        return None
+    if _AREA.fullmatch(value):
+        before = len(problems)
+        _check_areas(argument, value, kind, problems)
+        return value if len(problems) == before else None
+    return _resolve_iso3(argument, value, kind, problems)
+
+
+def _slice_periods(
+    argument: str, value: str, problems: list[str], *, at_most: int
+) -> tuple[str | None, list[str]]:
+    """Periods of one format: the ``freqCode`` they imply (``A`` or ``M``) and the members."""
+    members = _members(argument, value, problems)
+    if not members:
+        return None, []
+    for member in members:
+        if not _PERIOD.fullmatch(member):
+            digits = re.sub(r"\D", "", member)
+            hint = f"; closest: {digits!r}" if _PERIOD.fullmatch(digits) else ""
+            problems.append(
+                f"{argument} {member!r} is neither a year (YYYY, e.g. '2023') nor a month "
+                f"(YYYYMM, e.g. '202305'){hint}"
+            )
+    valid = [member for member in members if _PERIOD.fullmatch(member)]
+    if len(valid) < len(members):
+        return None, []
+    lengths = {len(member) for member in members}
+    if len(lengths) > 1:
+        years = [m for m in members if len(m) == 4]
+        months = [m for m in members if len(m) == 6]
+        problems.append(
+            f"{argument} {value!r} mixes years ({', '.join(years)}) and months "
+            f"({', '.join(months)}); the frequency follows from the format, so give years "
+            f"only ('{','.join(years)}', annual) or months only ('{','.join(months)}', monthly)"
+        )
+        return None, []
+    twice = sorted({member for member in members if members.count(member) > 1})
+    if twice:
+        problems.append(f"{argument} names {', '.join(map(repr, twice))} more than once")
+    if at_most == 1 and len(members) > 1:
+        problems.append(f"{argument} {value!r} must be one year or month, e.g. '2023' or '202305'")
+    elif len(members) > at_most > MAX_PERIODS:
+        problems.append(
+            f"{argument} has {len(members)} values; get_commodity_series takes at most "
+            f"{at_most}, {at_most // MAX_PERIODS} calls of {MAX_PERIODS}, against a daily "
+            "quota of 500 calls on a free key; split the series"
+        )
+    elif len(members) > at_most:
+        problems.append(
+            f"{argument} has {len(members)} values; UN Comtrade takes at most {at_most} per "
+            "call (get_commodity_series splits longer series)"
+        )
+    return ("A" if lengths == {4} else "M"), members
+
+
+def _slice_commodities(
+    argument: str, value: str, cl_code: str, problems: list[str], *, one: bool
+) -> list[str]:
+    """Product codes that each name one code, so the slice's rows are bounded by their number.
+
+    ``TOTAL`` and codes of ``cl_code``'s shape pass, each once; the aggregation levels
+    (``AG2``) and wildcards (``27??``) expand to an unknown number of codes upstream, so
+    they are refused with a pointer to ``get_data``, which counts first.
+    """
+    if one and "," in value:
+        problems.append(f"{argument} {value!r} must be one product code, e.g. 'TOTAL' or '27'")
+        return []
+    members = _members(argument, value, problems)
+    folded = [member.upper() for member in members]
+    twice = sorted({member for member in folded if folded.count(member) > 1})
+    if twice:
+        problems.append(f"{argument} names {', '.join(map(repr, twice))} more than once")
+    shape, example = _CMD_SHAPES[_family(cl_code)]
+    for member in members:
+        if member.upper() == "TOTAL":
+            continue
+        if _KEYWORD.fullmatch(member) or member.endswith(("*", "?")):
+            problems.append(
+                f"{argument} {member!r} expands to many product codes; the slices take "
+                "codes such as 'TOTAL', '27' or '2709' (get_data takes levels and wildcards "
+                "and counts first)"
+            )
+        elif not shape.fullmatch(member):
+            problems.append(
+                f"{argument} {member!r} is not a {cl_code} product code: use 'TOTAL' or codes "
+                f"made of {example}"
+            )
+    return members
+
+
+def validate_slice(
+    cl_code: str,
+    flow: str,
+    *,
+    reporter: str | None = None,
+    partner: str | None = None,
+    commodity: str | None = None,
+    commodities: str | None = None,
+    period: str | None = None,
+    periods: str | None = None,
+    max_periods: int = MAX_PERIODS,
+    n: int | None = None,
+) -> dict[str, Any]:
+    """Resolve and check the arguments of a task-shaped slice into a ``data/v1/get`` request.
+
+    ``reporter`` and ``partner`` take one area, as UN Comtrade's code (``"757"``) or an ISO
+    alpha-3 code (``"CHE"``, ``"W00"`` for World), checked against the packaged
+    ``Reporters.json`` and ``partnerAreas.json``; ``None`` leaves the parameter out (every
+    reporter or partner). ``commodity`` takes one product code, ``commodities`` several,
+    comma-separated, each naming one code (``TOTAL``, ``27``, ``2709``). ``period`` takes
+    one year or month, ``periods`` several of one format, at most ``max_periods`` (12, one
+    call; ``MAX_SERIES_PERIODS`` for a series sent 12 at a time); the format sets
+    ``freqCode``, ``A`` for ``YYYY`` and ``M`` for ``YYYYMM``. ``flow`` is one flow code.
+    ``n``, how many rows a ranking keeps, is at least 1; it is not an upstream parameter,
+    so it is not returned (the task records it in ``meta.request`` itself). Nothing is
+    sent.
+
+    Returns:
+        The ``get_data`` arguments, ``SLICE_PINS`` included, in ``validate_get``'s order:
+        the resolved codes, ``freq_code`` from the periods, ``period`` and ``cmd_code`` as
+        given.
+
+    Raises:
+        InvalidRequestError: Naming every problem, with the closest valid value where
+            there is one.
+    """
+    problems: list[str] = []
+    _check_list("cl_code", cl_code, "clCode", problems)
+    if "," in flow:
+        problems.append(f"flow {flow!r} must be one flow code, e.g. 'X' or 'M'")
+    else:
+        _check_list("flow", flow, "flowCode", problems, case_insensitive=True)
+    reporter_code = _resolve_area("reporter", reporter, "reporter", problems)
+    partner_code = _resolve_area("partner", partner, "partner", problems)
+    cmd_argument, cmd_value = (
+        ("commodity", commodity) if commodity is not None else ("commodities", commodities)
+    )
+    if cmd_value is None:  # pragma: no cover - every slice names its product codes
+        raise TypeError("validate_slice needs commodity or commodities")
+    family = cl_code if cl_code in _allowed("clCode") else "HS"
+    _slice_commodities(cmd_argument, cmd_value, family, problems, one=commodity is not None)
+    period_argument, period_value = (
+        ("period", period) if period is not None else ("periods", periods)
+    )
+    if period_value is None:  # pragma: no cover - every slice names its periods
+        raise TypeError("validate_slice needs period or periods")
+    at_most = 1 if period is not None else max_periods
+    freq_code, _ = _slice_periods(period_argument, period_value, problems, at_most=at_most)
+    if n is not None and n < 1:
+        problems.append(f"n {n!r} must be at least 1; closest: 1")
+    if problems:
+        raise InvalidRequestError("; ".join(problems) + ".", source=SOURCE)
+    arguments: dict[str, Any] = {
+        **SLICE_PINS,
+        "freq_code": freq_code,
+        "cl_code": cl_code,
+        "reporter_code": reporter_code,
+        "partner_code": partner_code,
+        "period": period_value,
+        "cmd_code": cmd_value,
+        "flow_code": flow,
+    }
+    return {name: arguments[name] for name in _SLICE_ORDER if arguments[name] is not None}

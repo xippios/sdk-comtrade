@@ -51,8 +51,30 @@ the lists packaged from upstream's reference files and spec (`xippios.comtrade.e
 from xippios.comtrade import list_commodities, list_partners, list_reporters
 
 list_reporters().data  # 255 reporters, packaged with this version: no call
+list_reporters(search="switz").data  # code, ISO alpha-3 or name, any case: 757
 list_partners().data  # 310 partner areas, 0 World among them
-list_commodities("HS").data  # 8,262 HS codes, fetched keyless once per process
+list_commodities("HS", search="coffee").data  # from 8,262 HS codes, fetched keyless once
+```
+
+Four task-shaped slices answer the common questions in one call each (the series in one
+call per 12 periods), at the total of every breakdown, one row per reporter × partner ×
+product code × period. Areas are UN Comtrade's codes or ISO alpha-3 codes; `YYYY` periods
+ask for annual data, `YYYYMM` for monthly:
+
+```python
+from xippios.comtrade import (
+    get_bilateral_flows,
+    get_commodity_series,
+    get_top_partners,
+    get_world_trade,
+)
+
+get_bilateral_flows("CHE", "USA", "TOTAL,27", "2022,2023", "X").data  # 4 rows
+years = ",".join(str(year) for year in range(2010, 2024))
+get_commodity_series("757", "27", "X", years).data  # 14 years, two calls, by period
+get_world_trade("27", "2023", "M").data[0].reporter_desc  # 'China': largest first
+[r.partner_desc for r in get_top_partners("CHE", "TOTAL", "2023", "X", 3).data]
+# ['USA', 'Germany', 'China']: World, the total, is dropped
 ```
 
 Release dates are per dataset, so they sit on the rows, not in `meta.published_at`:
@@ -89,10 +111,11 @@ some calls spaced exactly 1 s apart), the daily quota is yours to track.
 ```
 
 Tools are read-only and named `comtrade_<verb>_<noun>`. Results are capped at
-200 rows or 64 KB with a note on how to narrow the query. The list tools take no filter
-yet, so `comtrade_list_reporters`, `comtrade_list_partners` and `comtrade_list_commodities`
-show the first rows of their table only (200 of 255 reporters, in upstream's alphabetical
-order). `--http` serves streamable HTTP instead of stdio.
+200 rows or 64 KB with a note on how to narrow the query. Unfiltered,
+`comtrade_list_reporters`, `comtrade_list_partners` and `comtrade_list_commodities` show
+the first rows of their table only (200 of 255 reporters, in upstream's alphabetical
+order), so they take `search`: `{"search": "switz"}` returns 757 Switzerland. `--http`
+serves streamable HTTP instead of stdio.
 
 ## Status
 
@@ -103,9 +126,13 @@ order). `--http` serves streamable HTTP instead of stdio.
 | `data/v1/getDa/{typeCode}/{freqCode}/{clCode}` | `get_data_availability(type_code, freq_code, cl_code, *, reporter_code=, period=, published_date_from=, published_date_to=)` | `comtrade_get_data_availability` | alpha |
 | `data/v1/getMetadata/{typeCode}/{freqCode}/{clCode}` | `get_metadata(type_code, freq_code, cl_code, *, reporter_code=, period=)` | `comtrade_get_metadata` | alpha |
 | `data/v1/getLiveUpdate` | `get_live_update()` | `comtrade_get_live_update` | alpha |
-| `files/v1/app/reference/Reporters.json`, packaged | `list_reporters()` | `comtrade_list_reporters` | alpha |
-| `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners()` | `comtrade_list_partners` | alpha |
-| `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code)` | `comtrade_list_commodities` | alpha |
+| `data/v1/get/C/{A,M}/{clCode}`, total row, one reporter and partner | `get_bilateral_flows(reporter, partner, commodities, periods, flow, *, cl_code="HS")` | `comtrade_get_bilateral_flows` | alpha |
+| `data/v1/get/C/{A,M}/{clCode}`, total row, partner World, 12 periods per call, at most 120 | `get_commodity_series(reporter, commodity, flow, periods, *, cl_code="HS")` | `comtrade_get_commodity_series` | alpha |
+| `data/v1/get/C/{A,M}/{clCode}`, total row, every reporter, partner World | `get_world_trade(commodity, period, flow, *, cl_code="HS")` | `comtrade_get_world_trade` | alpha |
+| `data/v1/get/C/{A,M}/{clCode}`, total row, every partner, ranked | `get_top_partners(reporter, commodity, period, flow, n, *, cl_code="HS")` | `comtrade_get_top_partners` | alpha |
+| `files/v1/app/reference/Reporters.json`, packaged | `list_reporters(search=None)` | `comtrade_list_reporters` | alpha |
+| `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(search=None)` | `comtrade_list_partners` | alpha |
+| `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
 
 ## Upstream terms and attribution
 
