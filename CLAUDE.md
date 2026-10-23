@@ -12,7 +12,7 @@ that works here; the family rules it points to apply as well.
 | API base URL | `https://comtradeapi.un.org` |
 | Documentation | https://comtradeplus.un.org/ApiDocs, snapshotted in `docs/upstream/` |
 | Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header |
-| Rate limit | 1 per second, no burst (60 per minute), enforced client-side in `_client.py` |
+| Rate limit | 1 per second documented; the client spaces calls 1.5 s apart, no burst (`_client.py`) |
 | Write tools | no, this package is read-only |
 
 The snapshot in `docs/upstream/` is the reference for names, parameters and semantics.
@@ -24,10 +24,13 @@ wrapper from memory of the API.
 The limits of a Basic Individual (free) key, from `docs/upstream/help/subscriptions.md`,
 and how `_client.py` treats them:
 
-- **1 call per second.** `RATE_LIMIT = RateLimit(per_minute=60, burst=1)`: the bucket
-  never bursts, so calls are spaced a second apart. Upstream's headers agree
-  (`x-ratelimit-limit: 1`, `x-ratelimit-operation-limit: 60`). Replay tests pay that
-  second too.
+- **1 call per second.** Documented, and upstream's headers agree (`x-ratelimit-limit: 1`,
+  `x-ratelimit-operation-limit: 60`), but the gateway's window is not exact: with calls
+  spaced exactly 1.0 s apart, 9 of 18 drew HTTP 429 "Rate limit is exceeded. Try again in
+  1 seconds." (`Retry-After: 1`, `count_rate_limited.json`); at 1.5 s 2 of 39, at 2.0 s
+  none of 10 (2026-10-23). So `RATE_LIMIT = RateLimit(per_minute=40, burst=1)`: one call
+  every 1.5 s, never a burst. Core retries a 429 after `Retry-After`, each retry a call.
+  Replay tests pay the 1.5 s too.
 - **500 calls per day.** Not enforced client-side. `countOnly` calls count against it,
   so `get_data` costs two calls (count, then data) and `get_counts` one. Over the quota
   API Management answers 403 "Out of call volume quota. Quota will be replenished in

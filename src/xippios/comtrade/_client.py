@@ -8,8 +8,8 @@ keeps every file it fetched for the life of the process (``REFERENCE_CACHE``).
 Limits of a Basic Individual (free) key, ``docs/upstream/help/subscriptions.md``: 1 call
 per second, 500 calls per day, 100,000 records per call. Upstream's own headers agree
 (``x-ratelimit-limit: 1`` and ``x-ratelimit-operation-limit: 60`` on the recorded backend
-answers). The bucket below allows 60 calls a minute with no burst, so calls are spaced a
-second apart. The daily quota is not enforced here; ``countOnly`` calls count against it.
+answers). The bucket below spaces calls 1.5 s apart (``RATE_LIMIT``). The daily quota is
+not enforced here; ``countOnly`` calls count against it.
 """
 
 import dataclasses
@@ -33,7 +33,14 @@ from xippios.comtrade._version import __version__
 SOURCE = "comtrade"
 BASE_URL = "https://comtradeapi.un.org"
 API_KEY_ENV = "COMTRADE_API_KEY"  # pragma: allowlist secret (a variable name, not a key)
-RATE_LIMIT = RateLimit(per_minute=60, burst=1)
+RATE_LIMIT = RateLimit(per_minute=40, burst=1)
+"""One call every 1.5 s, no burst: upstream's 1 call per second with a margin.
+
+Spaced exactly 1.0 s apart, 9 of 18 calls drew HTTP 429 "Rate limit is exceeded. Try
+again in 1 seconds." with ``Retry-After: 1`` (2026-10-23, ``count_rate_limited.json``):
+the gateway's one-second window is not exact. At 1.5 s 2 of 39 calls drew one, at 2.0 s
+none of 10. Core retries a 429 after ``Retry-After``; every retry is another call.
+"""
 TIMEOUTS = Timeouts(read=180.0)
 """Read timeout 180 s, the rest at the family defaults (conventions §6).
 

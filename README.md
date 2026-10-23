@@ -58,8 +58,8 @@ list_commodities("HS").data  # 8,262 HS codes, fetched keyless once per process
 result without a second call, and a count above 100,000 raises `QueryTooLarge` with the
 count before anything is fetched, because upstream would cut the answer at 100,000 rows
 without saying so. A free key allows 1 call per second and 500 calls per day, and
-`countOnly` calls count; the client spaces calls a second apart, the daily quota is
-yours to track.
+`countOnly` calls count; the client spaces calls 1.5 s apart (upstream's gateway refuses
+some calls spaced exactly 1 s apart), the daily quota is yours to track.
 
 ## MCP
 

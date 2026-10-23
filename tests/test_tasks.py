@@ -1,5 +1,6 @@
 """Structural checks every task must satisfy. Per-task tests with recorded fixtures go below."""
 
+import dataclasses
 import inspect
 import json
 import os
@@ -14,10 +15,12 @@ import httpx
 import pytest
 import respx
 from xippios.core import (
+    AsyncClient,
     AuthError,
     InvalidRequestError,
     NotFoundError,
     RateLimitError,
+    RetryPolicy,
     UpstreamError,
 )
 from xippios.core.http import status_for
@@ -27,6 +30,7 @@ from xippios.comtrade import __version__, api, enums, tasks
 from xippios.comtrade._client import (
     API_KEY_ENV,
     BASE_URL,
+    RATE_LIMIT,
     TIMEOUTS,
     _quota_reset,
     auth,
@@ -779,6 +783,26 @@ async def test_reference_files_are_fetched_without_the_key(respx_mock: respx.Moc
     assert [row.id for row in rows] == ["X"]
     assert "Ocp-Apim-Subscription-Key" not in route.calls.last.request.headers
     assert "subscription-key" not in route.calls.last.request.url.params
+
+
+def test_calls_are_spaced_one_and_a_half_seconds_apart() -> None:
+    assert config.rate_limit is RATE_LIMIT
+    assert (RATE_LIMIT.per_minute, RATE_LIMIT.capacity) == (40, 1)
+    assert 1 / RATE_LIMIT.per_second == 1.5
+
+
+@pytest.mark.anyio
+async def test_upstreams_rate_limit_answer_is_a_rate_limit_error(replay_get: Replay) -> None:
+    """Recorded when calls were spaced exactly 1.0 s apart; core retries it after 1 s."""
+    route = replay_get("count_rate_limited")
+    once = AsyncClient(dataclasses.replace(config, retry=RetryPolicy(max_attempts=1)), auth=auth)
+    with pytest.raises(RateLimitError) as info:
+        await once.get_json(
+            "/data/v1/get/C/A/H1", params={"reporterCode": "757", "countOnly": "true"}
+        )
+    assert info.value.retry_after == 1.0
+    assert "Rate limit is exceeded" in str(info.value)
+    assert route.call_count == 1
 
 
 def test_read_timeout_is_three_minutes_the_rest_family_defaults() -> None:
