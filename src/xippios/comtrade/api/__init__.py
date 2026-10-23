@@ -6,3 +6,8 @@ takes the parameters as upstream names them (snake_cased), calls
 mirror the payload. No composition and no defaults beyond upstream's own. The reference
 is the snapshot in ``docs/upstream/``.
 """
+
+from xippios.comtrade.api.get import get, get_count_only
+from xippios.comtrade.api.reference import reference
+
+__all__ = ["get", "get_count_only", "reference"]
