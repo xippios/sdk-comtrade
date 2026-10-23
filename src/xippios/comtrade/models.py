@@ -49,6 +49,7 @@ __all__ = [
     "TradeDataItem",
     "TradeDataRecord",
     "TradeDataResponse",
+    "TradeFlowRecord",
 ]
 
 
@@ -123,6 +124,48 @@ class TradeDataRecord(UpstreamModel):
     legacy_estimation_flag: int | None = Field(validation_alias="legacyEstimationFlag")
     is_reported: bool | None = Field(validation_alias="isReported")
     is_aggregate: bool | None = Field(validation_alias="isAggregate")
+
+
+class TradeFlowRecord(UpstreamModel):
+    """One total trade flow: a projection of ``TradeDataRecord`` for the task-shaped slices.
+
+    One reporter, one partner, one product code, one flow and one period, at the total
+    of the breakdowns the slices pin (``partner2Code`` 0, ``customsCode`` ``C00``,
+    ``motCode`` 0, ``breakdownMode`` ``classic``). Fields keep their upstream names in
+    snake_case (ADR-0003), with the values of ``TradeDataRecord``: nothing is renamed or
+    computed. ``primary_value`` is upstream's primary trade value (taken from the CIF or
+    FOB value, in ``cifvalue``/``fobvalue``); ``net_wgt`` and ``qty`` are as reported,
+    ``qty`` in the unit ``qty_unit_code``/``qty_unit_abbr`` names (``-1``/``"N/A"`` where
+    there is none). ``ref_month`` is 52 on annual rows, as upstream sends it.
+    ``classification_code`` is the edition the reporter used (``"H6"`` for Switzerland
+    2023 under ``clCode`` ``HS``). The ``*_iso`` and ``*_desc`` fields are filled because
+    the slices send ``includeDesc``.
+    """
+
+    freq_code: str | None
+    ref_year: int
+    ref_month: int
+    period: str | None
+    reporter_code: int
+    reporter_iso: str | None
+    reporter_desc: str | None
+    flow_code: str | None
+    flow_desc: str | None
+    partner_code: int
+    partner_iso: str | None
+    partner_desc: str | None
+    classification_code: str | None
+    cmd_code: str | None
+    cmd_desc: str | None
+    qty_unit_code: int | None
+    qty_unit_abbr: str | None
+    qty: Decimal | None
+    net_wgt: Decimal | None
+    cifvalue: Decimal | None
+    fobvalue: Decimal | None
+    primary_value: Decimal
+    is_reported: bool | None
+    is_aggregate: bool | None
 
 
 class TradeDataResponse(UpstreamModel):
