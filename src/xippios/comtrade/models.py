@@ -8,20 +8,29 @@ Within-source hygiene only: numbers become numbers, upstream enumerations become
 ``StrEnum``. No cross-source normalisation (ADR-0003): an upstream concept stays an
 upstream concept.
 
-Shapes come from ``components.schemas`` in ``docs/upstream/apidocs/comtrade.json`` and from
-the recorded fixtures under ``tests/fixtures/get/``. Trade values and quantities are
+Shapes come from ``components.schemas`` in ``docs/upstream/apidocs/comtrade.json``, from
+the recorded fixtures under ``tests/fixtures/`` and, for the reference tables, from the
+public files under ``files/v1/app/reference/``. Trade values and quantities are
 ``Decimal`` (ADR-0008) and travel as JSON numbers through the adapters.
 """
 
+from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, model_validator
 from xippios.core import UpstreamModel
 
 __all__ = [
+    "Commodity",
+    "CountryAreaCodeIso",
+    "PartnerArea",
+    "QuantityUnit",
     "Reference",
     "ReferenceCode",
+    "Reporter",
     "TradeDataCountResponse",
+    "TradeDataItem",
     "TradeDataRecord",
     "TradeDataResponse",
 ]
@@ -161,3 +170,152 @@ class Reference(UpstreamModel):
     variable: str
     description: str
     fileuri: str
+
+
+class QuantityUnit(UpstreamModel):
+    """One entry of ``QuantityUnits.json``, the units of ``qty`` and ``altQty``.
+
+    Attributes:
+        qty_code: The unit's code, as ``qtyUnitCode``/``altQtyUnitCode`` carry it on trade
+            rows; ``-1`` is "Not available or not specified or no quantity."
+        qty_abbr: Upstream's abbreviation, e.g. ``"kg"``.
+        qty_description: Upstream's description, e.g. ``"Weight in kilograms"``.
+    """
+
+    qty_code: int = Field(validation_alias="qtyCode")
+    qty_abbr: str = Field(validation_alias="qtyAbbr")
+    qty_description: str = Field(validation_alias="qtyDescription")
+
+
+class _TableRow(UpstreamModel):
+    """A row of a reference table packaged as CSV, where an empty cell is an absent key.
+
+    Upstream leaves keys out of some rows (``entryExpiredDate`` on areas still in use);
+    the packaged CSV writes those as empty cells. No upstream value is an empty string
+    (checked by ``scripts/refresh_reference.py``), so reading an empty cell as absent
+    loses nothing.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _empty_cell_is_absent(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            return {key: value for key, value in data.items() if value != ""}
+        return data
+
+
+class Reporter(_TableRow):
+    """One reporter area of ``Reporters.json``: a country or area that reports trade.
+
+    Codes are UN Comtrade's own, close to but not always ISO 3166 numeric: Switzerland is
+    757 here, 756 in ISO. Every column of the file, in its order, under its upstream name
+    in snake_case. ``entry_effective_date`` and ``entry_expired_date`` bound the period
+    the code is used for (``entry_expired_date`` is ``None`` for codes still in use);
+    ``is_group`` marks groups such as 97 European Union. Dates carry no UTC offset
+    upstream and are kept naive.
+    """
+
+    id: int
+    text: str
+    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_desc: str = Field(validation_alias="reporterDesc")
+    reporter_note: str | None = Field(default=None, validation_alias="reporterNote")
+    reporter_code_iso_alpha2: str | None = Field(
+        default=None, validation_alias="reporterCodeIsoAlpha2"
+    )
+    reporter_code_iso_alpha3: str = Field(validation_alias="reporterCodeIsoAlpha3")
+    entry_effective_date: datetime = Field(validation_alias="entryEffectiveDate")
+    entry_expired_date: datetime | None = Field(default=None, validation_alias="entryExpiredDate")
+    is_group: bool = Field(validation_alias="isGroup")
+
+
+class PartnerArea(_TableRow):
+    """One partner area of ``partnerAreas.json``: a country, area or group traded with.
+
+    Every column of the file, in its order, under its upstream name in snake_case;
+    upstream spells three of them with a capital first letter (``PartnerCode``,
+    ``PartnerDesc``, ``PartnerCodeIsoAlpha2``/``3``). Partner 0 is World, a group. The
+    codes are the reporters' code space: a code in both files names the same area with
+    the same ISO alpha-3, but the sets differ (World 0, and areas such as 756, are
+    partners only; 97 European Union and 975 ASEAN are reporters only).
+    """
+
+    id: int
+    text: str
+    partner_code: int = Field(validation_alias="PartnerCode")
+    partner_desc: str = Field(validation_alias="PartnerDesc")
+    partner_note: str | None = Field(default=None, validation_alias="partnerNote")
+    partner_code_iso_alpha2: str | None = Field(
+        default=None, validation_alias="PartnerCodeIsoAlpha2"
+    )
+    partner_code_iso_alpha3: str = Field(validation_alias="PartnerCodeIsoAlpha3")
+    entry_effective_date: datetime = Field(validation_alias="entryEffectiveDate")
+    entry_expired_date: datetime | None = Field(default=None, validation_alias="entryExpiredDate")
+    is_group: bool = Field(validation_alias="isGroup")
+
+
+class CountryAreaCodeIso(_TableRow):
+    """One row of ``country_area_code_iso.json``, UN Comtrade's area code to ISO alpha-3.
+
+    Covers every reporter and partner code (312 rows when packaged). Some ``iso3`` values
+    are UN Comtrade's own, e.g. ``"W00"`` for 0 World, ``"_AC"`` for 472.
+    """
+
+    country_area_code: int
+    iso3: str
+
+
+class TradeDataItem(_TableRow):
+    """One data item of ``TradeDataItems.json``: a column of the trade data and where it occurs.
+
+    Attributes:
+        data_item: The column as upstream spells it, e.g. ``"primaryValue"``.
+        description: Upstream's description.
+        is_in_data_api_commodity: Present in the data API for goods.
+        is_in_data_api_services: Present in the data API for services.
+        is_in_bulk_file_final: Present in the final-data bulk files.
+        is_in_bulk_file_tariffline: Present in the tariff-line bulk files.
+    """
+
+    data_item: str = Field(validation_alias="dataItem")
+    description: str
+    is_in_data_api_commodity: bool = Field(validation_alias="isInDataAPICommodity")
+    is_in_data_api_services: bool = Field(validation_alias="isInDataAPIServices")
+    is_in_bulk_file_final: bool = Field(validation_alias="isInBulkFileFinal")
+    is_in_bulk_file_tariffline: bool = Field(validation_alias="isInBulkFileTariffline")
+
+
+class Commodity(UpstreamModel):
+    """One product code of a classification file such as ``HS.json`` (``cmdCode`` values).
+
+    The files differ in their columns, so only ``id``, ``text`` and ``parent`` are in every
+    one: ``isLeaf`` and the aggregation level are missing from the EBOPS files,
+    ``standardUnitAbbr`` is only in the HS files, ``cmdCode`` and ``descriptionOriginal``
+    only in ``SS.json``. The aggregation level is spelt ``aggrLevel`` in ``HS.json`` (as
+    ``TradeDataItems.json`` names the data item) and ``aggrlevel`` in the other files;
+    both are read into ``aggr_level``.
+
+    Attributes:
+        id: The code as ``cmd_code`` takes it, e.g. ``"TOTAL"``, ``"09"``, ``"0901"``,
+            ``"090111"``; for EBOPS ``"200"`` (EB, EB02, EB10) or ``"S"`` (EB10S) is the
+            services total.
+        text: Upstream's label, e.g. ``"0901 - Coffee, whether or not roasted or ..."``.
+        parent: The ``id`` of the parent code; ``"#"`` for a top-level code.
+        is_leaf: ``True`` for the most detailed codes (upstream sends ``"1"``/``"0"``).
+        aggr_level: Aggregation level: 0 for ``TOTAL``, then 2, 4, 6 digits for HS.
+        standard_unit_abbr: Standard unit of quantity, e.g. ``"kg"``; ``"n/a"`` above
+            the 6-digit level and on some 6-digit codes.
+        cmd_code: ``SS.json`` only: the code in the original SITC revision.
+        description_original: ``SS.json`` only: the label in the original revision.
+    """
+
+    id: str
+    text: str
+    parent: str
+    is_leaf: bool | None = Field(default=None, validation_alias="isLeaf")
+    aggr_level: int | None = Field(
+        default=None, validation_alias=AliasChoices("aggrLevel", "aggrlevel")
+    )
+    standard_unit_abbr: str | None = Field(default=None, validation_alias="standardUnitAbbr")
+    cmd_code: str | None = Field(default=None, validation_alias="cmdCode")
+    description_original: str | None = Field(default=None, validation_alias="descriptionOriginal")

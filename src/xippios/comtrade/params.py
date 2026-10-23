@@ -1,26 +1,42 @@
-"""Packaged value lists for UN Comtrade and the checks run before a data call (conventions §3).
+"""Packaged reference data for UN Comtrade and the checks run before a call (conventions §3).
 
-Small, stable upstream lists ship inside the package under ``reference/`` so lookups and
-checks need no network call; ``scripts/refresh_reference.py`` writes them and the matching
-``StrEnum`` classes in ``enums.py``, never by hand. ``reference/README.md`` carries the
-provenance of every file. ``validate_get`` checks the arguments of a ``data/v1/get`` call
-against them, and the free-form ones by shape, before anything is sent (ADR-0007).
+Small, stable upstream lists and tables ship inside the package under ``reference/`` so
+lookups and checks need no network call; ``scripts/refresh_reference.py`` writes them and
+the matching ``StrEnum`` classes in ``enums.py``, never by hand. ``reference/README.md``
+carries the provenance of every file. Value lists are ``<name>.json``
+(``packaged_values``); tables are ``<name>.csv`` with upstream's columns
+(``packaged_table``), their origin and fetch date in ``tables.json``. ``validate_get``
+checks the arguments of a ``data/v1/get`` call against them, and the free-form ones by
+shape, before anything is sent (ADR-0007).
 """
 
 import difflib
 import functools
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 from pydantic import Field
-from xippios.core import InvalidRequestError, UpstreamModel, load_json
+from xippios.core import InvalidRequestError, UpstreamModel, load_json, load_table
 
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.errors import MAX_PERIODS
+from xippios.comtrade.models import CountryAreaCodeIso, PartnerArea, Reporter, TradeDataItem
 
-__all__ = ["PACKAGED_LISTS", "ListException", "PackagedValues", "packaged_values", "validate_get"]
+__all__ = [
+    "PACKAGED_LISTS",
+    "PACKAGED_TABLES",
+    "ListException",
+    "PackagedTable",
+    "PackagedValues",
+    "classification_files",
+    "packaged_table",
+    "packaged_table_info",
+    "packaged_values",
+    "validate_classification_file",
+    "validate_get",
+]
 
 PACKAGE = "xippios.comtrade"
 
@@ -33,8 +49,21 @@ PACKAGED_LISTS: tuple[str, ...] = (
     "motCode",
     "aggregateBy",
     "breakdownMode",
+    "mosCode",
+    "qtyUnitCode",
 )
 """Names of the lists that ship inside the package; keep in step with the refresh script."""
+
+PACKAGED_TABLES: Mapping[str, type[UpstreamModel]] = {
+    "Reporters": Reporter,
+    "partnerAreas": PartnerArea,
+    "country_area_code_iso": CountryAreaCodeIso,
+    "TradeDataItems": TradeDataItem,
+}
+"""Tables that ship as ``reference/<name>.csv``, named after the upstream file, and their row
+model; keep in step with the refresh script."""
+
+TABLES_INDEX = "tables.json"
 
 
 class ListException(UpstreamModel):
@@ -70,11 +99,54 @@ class PackagedValues(UpstreamModel):
     values: list[str]
 
 
+class PackagedTable(UpstreamModel):
+    """Provenance of one packaged table: an entry of ``reference/tables.json``.
+
+    Attributes:
+        file: The CSV file under ``reference/``, e.g. ``"Reporters.csv"``.
+        origin: The upstream file it was written from.
+        fetched: Day it was fetched.
+        rows: Rows it holds.
+    """
+
+    file: str
+    origin: str
+    fetched: date
+    rows: int
+
+
 def packaged_values(name: str) -> PackagedValues | None:
     """The packaged list ``name``, or ``None`` when it is not packaged."""
     if name not in PACKAGED_LISTS:
         return None
     return PackagedValues.model_validate(load_json(PACKAGE, f"{name}.json"))
+
+
+def packaged_table_info(name: str) -> PackagedTable | None:
+    """Provenance of the packaged table ``name``, or ``None`` when it is not packaged."""
+    if name not in PACKAGED_TABLES:
+        return None
+    return PackagedTable.model_validate(load_json(PACKAGE, TABLES_INDEX)[name])
+
+
+@functools.cache
+def _table(name: str) -> tuple[UpstreamModel, ...]:
+    return tuple(load_table(PACKAGE, f"{name}.csv", PACKAGED_TABLES[name]))
+
+
+def packaged_table[M: UpstreamModel](name: str, model: type[M]) -> list[M]:
+    """Rows of the packaged table ``name`` (``reference/<name>.csv``) as ``model`` instances.
+
+    Args:
+        name: A key of ``PACKAGED_TABLES``, e.g. ``"Reporters"``.
+        model: Its row model, e.g. ``Reporter``.
+
+    Raises:
+        KeyError: When ``name`` is not packaged or ``model`` is not its row model.
+    """
+    if PACKAGED_TABLES.get(name) is not model:
+        raise KeyError(f"{name!r} is not a packaged table of {model.__name__} rows")
+    return list(cast(tuple[M, ...], _table(name)))
 
 
 @functools.cache
@@ -158,14 +230,70 @@ def _check_list(
         )
 
 
-def _check_areas(argument: str, value: str | None, problems: list[str]) -> None:
+_AREA_TABLES: dict[str, tuple[str, str, str]] = {
+    "reporter": ("Reporters", "Reporters.json", "list_reporters"),
+    "partner": ("partnerAreas", "partnerAreas.json", "list_partners"),
+}
+"""Kind of area code: (packaged table, upstream file, the task that lists the codes)."""
+
+
+@functools.cache
+def _areas(kind: str) -> dict[str, tuple[str, str]]:
+    """Codes of the reporter or partner table: code to (description, ISO alpha-3)."""
+    if kind == "reporter":
+        return {
+            str(row.reporter_code): (row.reporter_desc.strip(), row.reporter_code_iso_alpha3)
+            for row in packaged_table("Reporters", Reporter)
+        }
+    return {
+        str(row.partner_code): (row.partner_desc.strip(), row.partner_code_iso_alpha3)
+        for row in packaged_table("partnerAreas", PartnerArea)
+    }
+
+
+@functools.cache
+def _iso3() -> dict[str, str]:
+    return {
+        str(row.country_area_code): row.iso3
+        for row in packaged_table("country_area_code_iso", CountryAreaCodeIso)
+    }
+
+
+def _area_hint(member: str, kind: str) -> str:
+    """Why ``member`` is not a code of ``kind``, and the code to use instead if there is one.
+
+    ``country_area_code_iso.json`` gives the ISO alpha-3 of every reporter and partner
+    code, and a code of the table with the same alpha-3 is the same area: 756, Switzerland
+    as a partner, is 757 among the reporters. Failing that, a code of the other table is
+    named as such (0 World is a partner only), and anything else gets the most similar
+    code of the table.
+    """
+    areas = _areas(kind)
+    alpha3 = _iso3().get(member)
+    same = [code for code, (_, iso3) in areas.items() if alpha3 and iso3 == alpha3]
+    if same:
+        return f"; closest: {same[0]!r} ({areas[same[0]][0]})"
+    other = "partner" if kind == "reporter" else "reporter"
+    if member in _areas(other):
+        return f"; {member!r} ({_areas(other)[member][0]}) is a {other} code only"
+    closest = _closest(member, list(areas))
+    return f"; closest: {closest!r} ({areas[closest][0]})" if closest else ""
+
+
+def _check_areas(argument: str, value: str | None, kind: str, problems: list[str]) -> None:
     if value is None:
         return
+    _, upstream_file, task = _AREA_TABLES[kind]
     for member in _members(argument, value, problems):
         if not _AREA.fullmatch(member):
             problems.append(
                 f"{argument} {member!r} is not a numeric UN Comtrade area code; use codes "
                 "such as '757' (Switzerland) or '0' (World), separated by commas"
+            )
+        elif member not in _areas(kind):
+            problems.append(
+                f"{argument} {member!r} is not a UN Comtrade {kind} code ({upstream_file})"
+                f"{_area_hint(member, kind)}; {task} lists every code"
             )
 
 
@@ -217,8 +345,10 @@ def validate_get(
 ) -> dict[str, Any]:
     """Check the arguments of a ``data/v1/get`` call before anything is sent.
 
-    Coded parameters are checked against the packaged lists; area codes, periods and
-    product codes by shape only (membership is not checked). Values are never rewritten.
+    Coded parameters are checked against the packaged lists, reporter codes against
+    ``Reporters.json`` and partner and second-partner codes against ``partnerAreas.json``
+    (each member of a comma-separated list); periods and product codes by shape only.
+    Values are never rewritten.
 
     Returns:
         The arguments that are set, under the task's parameter names, in signature order.
@@ -231,9 +361,9 @@ def validate_get(
     _check_list("type_code", type_code, "typeCode", problems)
     _check_list("freq_code", freq_code, "freqCode", problems)
     _check_list("cl_code", cl_code, "clCode", problems)
-    _check_areas("reporter_code", reporter_code, problems)
-    _check_areas("partner_code", partner_code, problems)
-    _check_areas("partner2_code", partner2_code, problems)
+    _check_areas("reporter_code", reporter_code, "reporter", problems)
+    _check_areas("partner_code", partner_code, "partner", problems)
+    _check_areas("partner2_code", partner2_code, "partner", problems)
     _check_period(period, problems)
     if cl_code in _allowed("clCode"):
         _check_cmd_code(cmd_code, cl_code, problems)
@@ -264,3 +394,39 @@ def validate_get(
         "include_desc": include_desc,
     }
     return {name: value for name, value in arguments.items() if value is not None}
+
+
+def classification_files() -> tuple[str, ...]:
+    """The ``clCode`` values with a classification file ``<clCode>.json`` upstream.
+
+    The ``cmd:<clCode>`` categories of ``ListofReferences.json``: the packaged ``clCode``
+    list without the values added from the spec (``BE`` and ``TM``), for which upstream
+    serves no file (``BE.json`` and ``TM.json`` answered HTTP 404 ``BlobNotFound`` on
+    2026-10-23, ``tests/fixtures/reference/be_absent.json``).
+    """
+    packaged = packaged_values("clCode")
+    if packaged is None:  # pragma: no cover - clCode is always packaged
+        raise KeyError("clCode")
+    added = {item.value for item in packaged.exceptions if item.decision == "added"}
+    return tuple(value for value in packaged.values if value not in added)
+
+
+def validate_classification_file(cl_code: str) -> dict[str, Any]:
+    """Check that ``cl_code`` names a classification file before it is fetched.
+
+    Returns:
+        ``{"cl_code": cl_code}``, the arguments under the task's parameter names.
+
+    Raises:
+        InvalidRequestError: Naming the closest valid value and every valid one.
+    """
+    files = classification_files()
+    if cl_code not in files:
+        closest = _closest(cl_code, files)
+        hint = f"; closest: {closest!r}" if closest else ""
+        raise InvalidRequestError(
+            f"cl_code {cl_code!r} has no classification file at UN Comtrade{hint}. "
+            f"Valid values: {', '.join(files)}.",
+            source=SOURCE,
+        )
+    return {"cl_code": cl_code}

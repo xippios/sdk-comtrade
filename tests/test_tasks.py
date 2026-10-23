@@ -1,6 +1,7 @@
 """Structural checks every task must satisfy. Per-task tests with recorded fixtures go below."""
 
 import inspect
+import json
 from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
@@ -17,13 +18,30 @@ from xippios.comtrade import __version__, api, enums, tasks
 from xippios.comtrade._client import API_KEY_ENV, TIMEOUTS, _quota_reset, classify, config
 from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.mcp import server
-from xippios.comtrade.models import ReferenceCode
-from xippios.comtrade.params import PACKAGED_LISTS, packaged_values, validate_get
+from xippios.comtrade.models import (
+    Commodity,
+    CountryAreaCodeIso,
+    PartnerArea,
+    ReferenceCode,
+    Reporter,
+    TradeDataItem,
+)
+from xippios.comtrade.params import (
+    PACKAGED_LISTS,
+    PACKAGED_TABLES,
+    classification_files,
+    packaged_table,
+    packaged_table_info,
+    packaged_values,
+    validate_get,
+)
 
 TASKS = [getattr(tasks, name) for name in tasks.__all__]
 
 Replay = Callable[[str], respx.Route]
 Recorded = Callable[[str], dict[str, str]]
+
+UPSTREAM = Path(__file__).resolve().parents[1] / "docs" / "upstream"
 
 
 def test_package_has_a_version() -> None:
@@ -156,11 +174,58 @@ def test_query_too_large_is_an_invalid_request_for_http_too() -> None:
     assert status_for(QueryTooLarge(200_000)) == 422
 
 
-def test_a_code_that_is_not_a_reporter_counts_zero(replay_get: Replay) -> None:
-    """756 is Switzerland's ISO numeric code; Comtrade's reporter code is 757."""
+@pytest.mark.anyio
+async def test_a_code_that_is_not_a_reporter_counts_zero_upstream(replay_get: Replay) -> None:
+    """Layer 1: 756 is Switzerland's ISO numeric code, not a reporter; upstream counts 0."""
     replay_get("count_not_a_reporter_756")
-    result = tasks.get_data(**{**CH_EXPORTS_2023, "reporter_code": "756"})
-    assert result.data == []
+    response = await api.get_count_only(
+        "C", "A", "HS", reporter_code="756", period="2023", partner_code="0", cmd_code="TOTAL",
+        flow_code="X",
+    )  # fmt: skip
+    assert (response.count, response.error) == (0, "")
+
+
+def test_a_code_that_is_not_a_reporter_is_refused_naming_the_reporter(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """The task refuses 756 before the call: Reporters.json has Switzerland as 757."""
+    message = _refused(respx_mock, reporter_code="757,756")
+    assert (
+        "reporter_code '756' is not a UN Comtrade reporter code (Reporters.json); "
+        "closest: '757' (Switzerland); list_reporters lists every code" in message
+    )
+    assert "'757' is not" not in message
+
+
+def test_unknown_partner_codes_are_refused(respx_mock: respx.MockRouter) -> None:
+    message = _refused(respx_mock, partner_code="0,9999", partner2_code="97")
+    assert "partner_code '9999' is not a UN Comtrade partner code (partnerAreas.json)" in message
+    assert "list_partners lists every code" in message
+    assert "partner_code '0'" not in message
+    assert (
+        "partner2_code '97' is not a UN Comtrade partner code (partnerAreas.json); "
+        "'97' (European Union) is a reporter code only" in message
+    )
+
+
+def test_world_is_a_partner_not_a_reporter(respx_mock: respx.MockRouter) -> None:
+    message = _refused(respx_mock, reporter_code="0")
+    assert "reporter_code '0' is not a UN Comtrade reporter code" in message
+    assert "'0' (World) is a partner code only" in message
+
+
+def test_every_member_of_an_area_list_is_checked() -> None:
+    checked = validate_get(
+        "C", "A", "HS", reporter_code="757,842,276,156", partner_code="0,276,756",
+        partner2_code="0",
+    )  # fmt: skip
+    assert checked["reporter_code"] == "757,842,276,156"
+    assert checked["partner_code"] == "0,276,756"
+    with pytest.raises(InvalidRequestError) as info:
+        validate_get("C", "A", "HS", reporter_code="757,999,842,1000")
+    message = str(info.value)
+    assert "reporter_code '999' is not" in message
+    assert "reporter_code '1000' is not" in message
 
 
 @pytest.mark.anyio
@@ -347,6 +412,11 @@ def test_enums_match_the_packaged_lists() -> None:
     assert enums.MotCode._0.value == "0"
     assert enums.ClCode.EB10S.value == "EB10S"
     assert enums.FlowCode.XIF.value == "XIF"
+    assert [member.value for member in enums.MosCode] == ["0", "Mode 1", "Mode 2", "Mode 3",
+                                                          "Mode 4"]  # fmt: skip
+    assert enums.QtyUnitCode("-1").name == "_1"
+    assert enums.QtyUnitCode("8").name == "_8"
+    assert len(enums.QtyUnitCode) == 41
 
 
 def test_list_exceptions_rest_on_recorded_answers(fixtures_dir: Path) -> None:
@@ -513,3 +583,63 @@ def test_http_route_end_to_end(replay_get: Replay) -> None:
         assert rows[0]["customs_code"] == "C03"
         refused = http.get("/comtrade/get_counts", params={**CH_EXPORTS_2023, "flow_code": "XX"})
         assert refused.status_code == 422
+
+
+# Packaged reference tables.
+
+
+@pytest.mark.parametrize("name", list(PACKAGED_TABLES))
+def test_packaged_tables_match_their_provenance(name: str) -> None:
+    info = packaged_table_info(name)
+    assert info is not None
+    assert info.file == f"{name}.csv"
+    assert info.origin == f"https://comtradeapi.un.org/files/v1/app/reference/{name}.json"
+    assert len(packaged_table(name, PACKAGED_TABLES[name])) == info.rows
+    assert packaged_table_info("Frequency") is None
+    with pytest.raises(KeyError):
+        packaged_table(name, Commodity)
+
+
+def test_reporters_and_partners_share_one_code_space() -> None:
+    """A code in both tables is the same area; World and others are partners only."""
+    reporters = {row.reporter_code: row for row in packaged_table("Reporters", Reporter)}
+    partners = {row.partner_code: row for row in packaged_table("partnerAreas", PartnerArea)}
+    assert set(reporters) - set(partners) == {97, 975}
+    assert len(set(partners) - set(reporters)) == 57
+    assert {0, 756, 899} <= set(partners) - set(reporters)
+    for code in set(reporters) & set(partners):
+        assert reporters[code].reporter_code_iso_alpha3 == partners[code].partner_code_iso_alpha3
+    iso = {row.country_area_code: row.iso3 for row in packaged_table(
+        "country_area_code_iso", CountryAreaCodeIso)}  # fmt: skip
+    assert set(iso) == set(reporters) | set(partners)
+    assert (iso[756], iso[757], iso[0]) == ("CHE", "CHE", "W00")
+
+
+def test_trade_data_items_describe_the_record_columns() -> None:
+    items = {row.data_item: row for row in packaged_table("TradeDataItems", TradeDataItem)}
+    assert len(items) == 50
+    primary = items["primaryValue"]
+    assert primary.description.startswith("Primary trade values")
+    assert primary.is_in_data_api_commodity is True
+    assert items["mosCode"].is_in_data_api_services is True
+
+
+def test_classification_files_are_the_cmd_categories_of_list_of_references() -> None:
+    index = json.loads((UPSTREAM / "reference" / "ListofReferences.json").read_text("utf-8-sig"))
+    categories = [row["category"] for row in index["results"]]
+    expected = [name.removeprefix("cmd:") for name in categories if name.startswith("cmd:")]
+    assert list(classification_files()) == expected
+    assert "BE" not in classification_files()
+    assert "TM" not in classification_files()
+
+
+def test_hs_spells_the_level_aggr_level_the_other_files_aggrlevel() -> None:
+    """Model check: HS.json (2 MB, not recorded) spells it ``aggrLevel``; the live test reads it."""
+    hs = Commodity.model_validate(
+        {"id": "0901", "text": "0901 - Coffee", "parent": "09", "isLeaf": "0", "aggrLevel": 4,
+         "standardUnitAbbr": "n/a"}
+    )  # fmt: skip
+    b4 = Commodity.model_validate(
+        {"id": "1", "text": "1 - Food", "parent": "TOTAL", "isLeaf": "0", "aggrlevel": 1}
+    )
+    assert (hs.aggr_level, b4.aggr_level) == (4, 1)

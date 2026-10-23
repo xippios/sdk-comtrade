@@ -1,0 +1,12 @@
+{
+  "param": "mosCode",
+  "fetched": "2026-10-23",
+  "origin": "https://comtradeapi.un.org/files/v1/app/reference/ModeOfSupply.json",
+  "values": [
+    "0",
+    "Mode 1",
+    "Mode 2",
+    "Mode 3",
+    "Mode 4"
+  ]
+}

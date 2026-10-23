@@ -3,11 +3,22 @@
 Writes ``reference/<name>.json`` for every list in ``LISTS`` and ``SPEC_LISTS`` (values,
 fetch date, origin), then regenerates ``enums.py`` with one ``StrEnum`` per list through
 ``xippios.core.reference.render_str_enums``. Names are the upstream parameter names.
+Writes ``reference/<name>.csv`` for every table in ``TABLES`` and their origin and fetch
+date to ``reference/tables.json``.
 
 - ``LISTS`` come from UN Comtrade's public reference files, fetched through the layer-1
   wrapper ``api.reference`` (no key needed or sent): the codes of ``tradeRegimes.json``,
-  ``ModeOfTransportCodes.json`` and ``CustomsCodes.json``, and the ``clCode`` values as the
-  ``cmd:<clCode>`` categories of ``ListofReferences.json``.
+  ``ModeOfTransportCodes.json``, ``CustomsCodes.json`` and ``ModeOfSupply.json``, the
+  ``qtyCode`` values of ``QuantityUnits.json`` (the codes ``qtyUnitCode`` carries), and the
+  ``clCode`` values as the ``cmd:<clCode>`` categories of ``ListofReferences.json``.
+- ``TABLES`` are reference files that are tables rather than value lists:
+  ``Reporters.json``, ``partnerAreas.json``, ``TradeDataItems.json`` and
+  ``country_area_code_iso.json``. The last is not in ``ListofReferences.json``; it is the
+  table the official ``comtradeapicall`` package (1.3.2, ``convertCountryIso3ToCode``)
+  reads to map ISO alpha-3 codes to UN Comtrade's. Each is written as CSV, one column per
+  upstream key under its upstream name, in the row model's order (``params.PACKAGED_TABLES``);
+  a key the model does not know, or an empty value (which the CSV could not tell from an
+  absent key), stops the script. None of them has nested fields, so none stays JSON.
 - ``SUPPLEMENTS`` reconcile two of those with the spec, where the two disagree. The
   values the spec documents for ``flowCode`` are all added (``MIF`` and ``XIF`` are
   missing from ``tradeRegimes.json``). For ``clCode``, a value of the spec's enum is added
@@ -27,6 +38,8 @@ result with ruff::
     uv run ruff format src/xippios/comtrade/enums.py
 """
 
+import csv
+import io
 import json
 import re
 from collections.abc import Awaitable, Callable
@@ -34,12 +47,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from xippios.core import sync
+from xippios.core import UpstreamModel, parse, sync
 from xippios.core.reference import render_str_enums
 
 from xippios.comtrade import api
-from xippios.comtrade.models import Reference, ReferenceCode
-from xippios.comtrade.params import PACKAGED_LISTS
+from xippios.comtrade._client import SOURCE
+from xippios.comtrade.models import QuantityUnit, Reference, ReferenceCode
+from xippios.comtrade.params import PACKAGED_LISTS, PACKAGED_TABLES, TABLES_INDEX
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_DIR = ROOT / "src/xippios/comtrade"
@@ -65,6 +79,10 @@ async def _cl_codes() -> list[str]:
     ]
 
 
+async def _qty_codes() -> list[str]:
+    return [str(unit.qty_code) for unit in await api.reference("QuantityUnits.json", QuantityUnit)]
+
+
 LISTS: dict[str, tuple[str, Callable[[], Awaitable[list[str]]]]] = {
     "clCode": (
         f"{FILES}ListofReferences.json, the cmd:<clCode> categories",
@@ -73,8 +91,18 @@ LISTS: dict[str, tuple[str, Callable[[], Awaitable[list[str]]]]] = {
     "flowCode": (f"{FILES}tradeRegimes.json", lambda: _codes("tradeRegimes.json")),
     "customsCode": (f"{FILES}CustomsCodes.json", lambda: _codes("CustomsCodes.json")),
     "motCode": (f"{FILES}ModeOfTransportCodes.json", lambda: _codes("ModeOfTransportCodes.json")),
+    "mosCode": (f"{FILES}ModeOfSupply.json", lambda: _codes("ModeOfSupply.json")),
+    "qtyUnitCode": (f"{FILES}QuantityUnits.json, the qtyCode values", _qty_codes),
 }
 """Lists from reference files: name to (origin, fetcher through ``api/``)."""
+
+TABLES: dict[str, str] = {
+    "Reporters": "Reporters.json",
+    "partnerAreas": "partnerAreas.json",
+    "country_area_code_iso": "country_area_code_iso.json",
+    "TradeDataItems": "TradeDataItems.json",
+}
+"""Tables from reference files: name of the packaged CSV (``params.PACKAGED_TABLES``) to file."""
 
 
 def _parameter(spec: dict[str, Any], name: str) -> dict[str, Any]:
@@ -223,11 +251,47 @@ def _write(
         print(f"  {exception['value']}: {exception['decision']}, {exception['evidence']}")  # noqa: T201
 
 
+def _columns(model: type[UpstreamModel]) -> list[str]:
+    """The upstream keys of a row model, in field order."""
+    return [
+        field.validation_alias if isinstance(field.validation_alias, str) else name
+        for name, field in model.model_fields.items()
+    ]
+
+
+def _cell(value: object) -> str:
+    return value if isinstance(value, str) else json.dumps(value)
+
+
+def _write_table(name: str, file: str, today: str) -> dict[str, Any]:
+    model = PACKAGED_TABLES[name]
+    origin = f"{FILES}{file}"
+    rows = sync(api.reference_rows)(file)
+    columns = _columns(model)
+    for row in rows:
+        unknown = sorted(set(row) - set(columns))
+        if unknown:
+            raise SystemExit(f"{file}: columns {unknown} are not in {model.__name__}")
+        if any(value in ("", None) for value in row.values()):
+            raise SystemExit(f"{file}: an empty value cannot be told from an absent key: {row}")
+        parse(model, row, source=SOURCE, endpoint=f"files/v1/app/reference/{file}")
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=columns, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows({key: _cell(value) for key, value in row.items()} for row in rows)
+    path = REFERENCE / f"{name}.csv"
+    path.write_text(buffer.getvalue(), encoding="utf-8")
+    print(f"{path.name}: {len(rows)} rows from {origin}")  # noqa: T201
+    return {"file": path.name, "origin": origin, "fetched": today, "rows": len(rows)}
+
+
 def main() -> None:
-    """Fetch and derive every list, write its file and regenerate ``enums.py``."""
+    """Fetch and derive every list and table, write their files and regenerate ``enums.py``."""
     names = [*LISTS, *SPEC_LISTS]
     if sorted(names) != sorted(PACKAGED_LISTS):
         raise SystemExit(f"params.PACKAGED_LISTS {PACKAGED_LISTS} does not match {names}")
+    if sorted(TABLES) != sorted(PACKAGED_TABLES):
+        raise SystemExit(f"params.PACKAGED_TABLES {list(PACKAGED_TABLES)} does not match {TABLES}")
     today = datetime.now(UTC).date().isoformat()
     spec = json.loads(SPEC.read_text(encoding="utf-8"))
     snapshot = _snapshot_date()
@@ -259,6 +323,9 @@ def main() -> None:
         source = source.replace(plain, f'"""Values of ``{name}`` (fetched {dates[name]})."""')
     ENUMS.write_text(source, encoding="utf-8")
     print(f"{ENUMS.name}: {len(ordered)} enums")  # noqa: T201
+    index = {name: _write_table(name, file, today) for name, file in TABLES.items()}
+    (REFERENCE / TABLES_INDEX).write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
+    print(f"{TABLES_INDEX}: {len(index)} tables")  # noqa: T201
 
 
 if __name__ == "__main__":

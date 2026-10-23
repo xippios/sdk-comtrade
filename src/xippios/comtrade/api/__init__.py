@@ -9,6 +9,6 @@ snapshot in ``docs/upstream/``.
 """
 
 from xippios.comtrade.api.get import get, get_count_only
-from xippios.comtrade.api.reference import reference
+from xippios.comtrade.api.reference import reference, reference_rows
 
-__all__ = ["get", "get_count_only", "reference"]
+__all__ = ["get", "get_count_only", "reference", "reference_rows"]
