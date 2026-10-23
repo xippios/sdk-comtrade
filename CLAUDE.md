@@ -12,7 +12,7 @@ that works here; the family rules it points to apply as well.
 | API base URL | `https://comtradeapi.un.org` |
 | Documentation | https://comtradeplus.un.org/ApiDocs, snapshotted in `docs/upstream/` |
 | Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header |
-| Rate limit | 1 per second documented; the client spaces calls 1.5 s apart, no burst (`_client.py`) |
+| Rate limit | 1 per second documented; the client spaces calls 1.5 s apart (40 per minute), no burst (`_client.py`) |
 | Write tools | no, this package is read-only |
 
 The snapshot in `docs/upstream/` is the reference for names, parameters and semantics.

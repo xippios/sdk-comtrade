@@ -14,7 +14,9 @@ build/
 
 # local secrets are never files, but belt and braces
 .env
+.env.*
 .envrc
+.envrc.*
 
 # editors
 .idea/

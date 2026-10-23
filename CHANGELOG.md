@@ -113,3 +113,9 @@ All notable changes to this project are documented here. The format follows
   where `country_area_code_iso.json` knows it (`756` names `757`, Switzerland), or saying
   that a code belongs to the other table (`0` World is a partner only). Upstream itself
   answers a code that is no reporter with an empty result.
+- Template updated to sdk-template v0.1.5 (`/add-endpoint` asks for
+  `Field(validation_alias=...)`, not `alias=`; `/refresh-reference-data` formats the
+  regenerated `enums.py`; `/refresh-upstream` runs `scripts/refresh_upstream.py` where it
+  exists; `.gitignore` covers `.env.*` and `.envrc.*`; the MCP instructions name the
+  `comtrade_list_*` tools; `_client.__all__` exports `auth`). `.copier-answers.yml` now
+  records `rate_limit_per_minute: 40`, the limit `RATE_LIMIT` already applies.

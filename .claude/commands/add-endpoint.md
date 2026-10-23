@@ -9,10 +9,13 @@ Work on a branch `feature/<operation>`. Follow the three layers (ADR-0001) exact
    publication date or release identifier the response carries.
 
 2. **Models** in `src/xippios/comtrade/models.py`: one `UpstreamModel` subclass per
-   payload object. Field names are the upstream names in snake_case (use `Field(alias=...)`
-   for the upstream spelling). Dates become `datetime.date`/`datetime`, numbers become
-   `int`/`Decimal`/`float`, upstream enumerations become `StrEnum`. No renaming to match
-   another source.
+   payload object. Field names are the upstream names in snake_case; where upstream spells
+   one differently, accept that spelling with `Field(validation_alias=...)`, never
+   `Field(alias=...)`: the adapters serialise by alias, so `alias=` would hand agents
+   upstream camelCase rows while tool arguments are snake_case. With `validation_alias`
+   the upstream spelling is accepted on input and every output surface stays snake_case.
+   Dates become `datetime.date`/`datetime`, numbers become `int`/`Decimal`/`float`,
+   upstream enumerations become `StrEnum`. No renaming to match another source.
 
 3. **Endpoint wrapper** in `src/xippios/comtrade/api/<operation>.py`: one async
    function named after the operation, parameters as upstream names them, calling

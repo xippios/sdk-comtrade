@@ -12,10 +12,16 @@ with `xippios.core.reference`. It comes from the upstream, never from memory.
    it writes `reference/<name>.json` with the fetch date and regenerates `enums.py`.
    Tables that are not plain value lists go under `reference/` as CSV with upstream
    column names, written by the same script.
-4. Update the provenance table in `reference/README.md`: file, origin (endpoint or
+4. Format the regenerated `enums.py`, in this order:
+   `uv run ruff format src/xippios/comtrade/enums.py && uv run ruff check --fix src/xippios/comtrade/enums.py`.
+   `render_str_enums` in xippios-core currently writes `__all__` unsorted on one line
+   (ruff RUF022 and, past 100 characters, E501); formatting first leaves only the sort
+   for `--fix`. The fix in core is tracked as row 12 of the family's `COORDINATION.md`
+   queue (`render_str_enums`); drop this step once a core release carries it.
+5. Update the provenance table in `reference/README.md`: file, origin (endpoint or
    URL), fetch date.
-5. If a `list_<thing>` task does not exist yet for this list, add one with
+6. If a `list_<thing>` task does not exist yet for this list, add one with
    `/add-endpoint` so agents can look the codes up; it should return the packaged data,
    not call upstream.
-6. Run the checks and open the PR with the diff summarised: how many rows changed, any
+7. Run the checks and open the PR with the diff summarised: how many rows changed, any
    codes that disappeared (those may break existing fixtures or callers). Do not merge.
