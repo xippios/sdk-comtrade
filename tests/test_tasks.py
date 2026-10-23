@@ -3,6 +3,7 @@
 import inspect
 import json
 from collections.abc import Callable
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,13 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from xippios.core import AuthError, InvalidRequestError, RateLimitError, UpstreamError
+from xippios.core import (
+    AuthError,
+    InvalidRequestError,
+    NotFoundError,
+    RateLimitError,
+    UpstreamError,
+)
 from xippios.core.http import status_for
 from xippios.core.testing import load_fixture, mcp_call
 
@@ -40,6 +47,7 @@ TASKS = [getattr(tasks, name) for name in tasks.__all__]
 
 Replay = Callable[[str], respx.Route]
 Recorded = Callable[[str], dict[str, str]]
+ReplayFixture = Callable[[str, str], respx.Route]
 
 UPSTREAM = Path(__file__).resolve().parents[1] / "docs" / "upstream"
 
@@ -585,7 +593,7 @@ def test_http_route_end_to_end(replay_get: Replay) -> None:
         assert refused.status_code == 422
 
 
-# Packaged reference tables.
+# Reference lists: reporters and partners are packaged, commodities fetched keyless.
 
 
 @pytest.mark.parametrize("name", list(PACKAGED_TABLES))
@@ -598,6 +606,51 @@ def test_packaged_tables_match_their_provenance(name: str) -> None:
     assert packaged_table_info("Frequency") is None
     with pytest.raises(KeyError):
         packaged_table(name, Commodity)
+
+
+def test_list_reporters_returns_the_packaged_table(respx_mock: respx.MockRouter) -> None:
+    result = tasks.list_reporters()
+    assert not respx_mock.calls, "packaged: no upstream call"
+    assert len(result.data) == 255
+    assert result.meta.endpoint == "files/v1/app/reference/Reporters.json"
+    assert result.meta.vintage == "2026-10-23"
+    assert result.meta.published_at is None
+    assert result.meta.request == {}
+    by_code = {row.reporter_code: row for row in result.data}
+    switzerland = by_code[757]
+    assert (switzerland.text, switzerland.reporter_note) == (
+        "Switzerland",
+        "Switzerland, Liechtenstein",
+    )
+    assert (switzerland.reporter_code_iso_alpha2, switzerland.reporter_code_iso_alpha3) == (
+        "CH",
+        "CHE",
+    )
+    assert switzerland.entry_effective_date == datetime(1900, 1, 1)
+    assert switzerland.entry_expired_date is None
+    assert switzerland.is_group is False
+    assert 756 not in by_code
+    assert {842, 276, 156} <= set(by_code)
+    assert sorted(code for code, row in by_code.items() if row.is_group) == [97, 490, 975]
+    assert all(isinstance(row.entry_effective_date, datetime) for row in result.data)
+    assert sum(row.entry_expired_date is not None for row in result.data) == 33
+    assert all(row.id == row.reporter_code for row in result.data)
+
+
+def test_list_partners_returns_the_packaged_table(respx_mock: respx.MockRouter) -> None:
+    result = tasks.list_partners()
+    assert not respx_mock.calls, "packaged: no upstream call"
+    assert len(result.data) == 310
+    assert result.meta.endpoint == "files/v1/app/reference/partnerAreas.json"
+    assert result.meta.vintage == "2026-10-23"
+    assert result.meta.published_at is None
+    by_code = {row.partner_code: row for row in result.data}
+    world = by_code[0]
+    assert (world.text, world.partner_code_iso_alpha3, world.is_group) == ("World", "W00", True)
+    assert world.partner_code_iso_alpha2 is None
+    assert by_code[757].partner_desc == "Switzerland"
+    assert by_code[756].partner_desc == "Switzerland "  # upstream's trailing space, kept
+    assert by_code[756].partner_note is None
 
 
 def test_reporters_and_partners_share_one_code_space() -> None:
@@ -633,6 +686,47 @@ def test_classification_files_are_the_cmd_categories_of_list_of_references() -> 
     assert "TM" not in classification_files()
 
 
+def test_list_commodities_fetches_the_file_without_the_key(
+    replay_fixture: ReplayFixture,
+) -> None:
+    route = replay_fixture("reference", "b4")
+    result = tasks.list_commodities("B4")
+    assert len(result.data) == 30
+    assert result.meta.endpoint == "files/v1/app/reference/B4.json"
+    assert result.meta.request == {"cl_code": "B4"}
+    assert result.meta.published_at is None
+    assert result.meta.vintage is None
+    total = result.data[0]
+    assert (total.id, total.parent, total.is_leaf, total.aggr_level) == ("TOTAL", "#", False, 0)
+    assert total.text == "Total of all BEC4 categories"
+    leaves = [row for row in result.data if row.is_leaf]
+    assert leaves
+    assert all(row.aggr_level and row.aggr_level > 0 for row in leaves)
+    assert all(row.standard_unit_abbr is None and row.cmd_code is None for row in result.data)
+    sent = route.calls.last.request
+    assert "Ocp-Apim-Subscription-Key" not in sent.headers
+
+
+def test_list_commodities_keeps_the_file_for_the_process(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("reference", "b4")
+    first = tasks.list_commodities("B4")
+    second = tasks.list_commodities("B4")
+    assert route.call_count == 1
+    assert second.data == first.data
+
+
+def test_services_classifications_have_no_leaf_or_level(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("reference", "eb10s")
+    rows = tasks.list_commodities("EB10S").data
+    assert len(rows) == 152
+    assert (rows[0].id, rows[0].text, rows[0].parent) == (
+        "S",
+        "Total EBOPS 2010 SDMX Services",
+        "#",
+    )
+    assert all(row.is_leaf is None and row.aggr_level is None for row in rows)
+
+
 def test_hs_spells_the_level_aggr_level_the_other_files_aggrlevel() -> None:
     """Model check: HS.json (2 MB, not recorded) spells it ``aggrLevel``; the live test reads it."""
     hs = Commodity.model_validate(
@@ -643,3 +737,70 @@ def test_hs_spells_the_level_aggr_level_the_other_files_aggrlevel() -> None:
         {"id": "1", "text": "1 - Food", "parent": "TOTAL", "isLeaf": "0", "aggrlevel": 1}
     )
     assert (hs.aggr_level, b4.aggr_level) == (4, 1)
+
+
+def test_a_classification_without_a_file_is_refused(respx_mock: respx.MockRouter) -> None:
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.list_commodities("BE")
+    assert not respx_mock.calls
+    message = str(info.value)
+    assert "cl_code 'BE' has no classification file at UN Comtrade" in message
+    assert "Valid values: B4, B5, EB02, EB10, EB10S, EB, H0," in message
+    with pytest.raises(InvalidRequestError, match="closest: 'HS'"):
+        tasks.list_commodities("hs")
+
+
+@pytest.mark.anyio
+async def test_a_missing_reference_file_is_not_found(replay_fixture: ReplayFixture) -> None:
+    """Layer 1: upstream's blob store answers 404 BlobNotFound for BE.json."""
+    replay_fixture("reference", "be_absent")
+    with pytest.raises(NotFoundError, match="BlobNotFound"):
+        await api.reference("BE.json", Commodity)
+
+
+@pytest.mark.anyio
+async def test_list_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("reference", "b4")
+    payload = await mcp_call(server, "comtrade_list_commodities", {"cl_code": "B4"})
+    assert len(payload["data"]) == 30
+    assert payload["data"][0] == {
+        "id": "TOTAL", "text": "Total of all BEC4 categories", "parent": "#", "is_leaf": False,
+        "aggr_level": 0, "standard_unit_abbr": None, "cmd_code": None,
+        "description_original": None,
+    }  # fmt: skip
+    assert payload["meta"]["endpoint"] == "files/v1/app/reference/B4.json"
+    assert payload["meta"]["request"] == {"cl_code": "B4"}
+    # The MCP result cap (200 rows) cuts both tables, in upstream's alphabetical order:
+    # Switzerland (757) and USA (842) are past it. Python and HTTP results are whole.
+    reporters = await mcp_call(server, "comtrade_list_reporters", {})
+    assert reporters["meta"]["vintage"] == "2026-10-23"
+    assert len(reporters["data"]) == 200
+    assert reporters["note"].startswith("showing 200 of 255 rows")
+    assert reporters["data"][0]["text"] == "Afghanistan"
+    assert reporters["data"][0]["entry_effective_date"] == "1900-01-01T00:00:00"
+    assert not {757, 842} & {row["reporter_code"] for row in reporters["data"]}
+    partners = await mcp_call(server, "comtrade_list_partners", {})
+    assert partners["note"].startswith("showing 200 of 310 rows")
+    assert partners["data"][0]["partner_code"] == 4
+    with pytest.raises(AssertionError, match=r"InvalidRequestError.*no classification file"):
+        await mcp_call(server, "comtrade_list_commodities", {"cl_code": "TM"})
+
+
+def test_list_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    replay_fixture("reference", "b4")
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as http:
+        answer = http.get("/comtrade/list_commodities", params={"cl_code": "B4"})
+        assert answer.status_code == 200
+        assert len(answer.json()["data"]) == 30
+        reporters = http.get("/comtrade/list_reporters").json()
+        assert len(reporters["data"]) == 255, "HTTP results are not capped"
+        assert http.get("/comtrade/list_partners").json()["meta"]["vintage"] == "2026-10-23"
+        refused = http.get("/comtrade/list_commodities", params={"cl_code": "BE"})
+        assert refused.status_code == 422

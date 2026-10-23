@@ -1,9 +1,9 @@
 """The configured ``xippios.core`` client for UN Comtrade.
 
 One ``AsyncClient`` carries the subscription key for the data API: task functions share
-its rate limiter and cache, and the same instance serves the sync facades and the MCP
-server. The public reference files go through ``reference_client``, which never sends
-the key.
+its rate limiter, and the same instance serves the sync facades and the MCP server. The
+public reference files go through ``reference_client``, which never sends the key and
+keeps every file it fetched for the life of the process (``REFERENCE_CACHE``).
 
 Limits of a Basic Individual (free) key, ``docs/upstream/help/subscriptions.md``: 1 call
 per second, 500 calls per day, 100,000 records per call. Upstream's own headers agree
@@ -12,6 +12,7 @@ answers). The bucket below allows 60 calls a minute with no burst, so calls are 
 second apart. The daily quota is not enforced here; ``countOnly`` calls count against it.
 """
 
+import dataclasses
 import re
 
 import httpx
@@ -20,6 +21,7 @@ from xippios.core import (
     ClientConfig,
     HeaderKeyAuth,
     InvalidRequestError,
+    MemoryCache,
     RateLimit,
     RateLimitError,
     Timeouts,
@@ -117,15 +119,25 @@ config = ClientConfig(
 auth = HeaderKeyAuth("Ocp-Apim-Subscription-Key", API_KEY_ENV, source=SOURCE)
 client = AsyncClient(config, auth=auth)
 
+REFERENCE_CACHE = MemoryCache(ttl=None, maxsize=64)
+"""Core's GET cache for ``reference_client``: a file is fetched once per process.
+
+The files change rarely (``ListofReferences.json`` was last modified 2025-11-12 when the
+snapshot was taken) and the classification files are large (``HS.json`` is about 2 MB,
+8,262 codes), so ``list_commodities`` keeps what it fetched. No TTL; 64 entries hold every
+file ``ListofReferences.json`` lists. Only HTTP 200 answers are kept.
+"""
+
 # The reference files under files/v1/app/reference/ are public: the Help Center links
 # them without a key and scripts/refresh_upstream.py fetches them without one. They are
 # fetched keyless so a reference refresh never sends the key or spends quota.
-reference_client = AsyncClient(config)
+reference_client = AsyncClient(dataclasses.replace(config, cache=REFERENCE_CACHE))
 
 __all__ = [
     "API_KEY_ENV",
     "BASE_URL",
     "RATE_LIMIT",
+    "REFERENCE_CACHE",
     "SOURCE",
     "TIMEOUTS",
     "classify",

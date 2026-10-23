@@ -13,7 +13,7 @@ pytest.register_assert_rewrite("xippios.core.testing")
 
 from xippios.core.testing import fixture_path, load_fixture  # noqa: E402
 
-from xippios.comtrade._client import API_KEY_ENV, auth  # noqa: E402
+from xippios.comtrade._client import API_KEY_ENV, REFERENCE_CACHE, auth  # noqa: E402
 
 pytest_plugins = ["xippios.core.testing.plugin"]
 
@@ -41,6 +41,16 @@ def placeholder_api_key(request: pytest.FixtureRequest, monkeypatch: pytest.Monk
         return
     monkeypatch.setenv(API_KEY_ENV, PLACEHOLDER_KEY)
     monkeypatch.setattr(auth, "key", lambda: PLACEHOLDER_KEY)
+
+
+@pytest.fixture(autouse=True)
+def empty_reference_cache() -> None:
+    """``reference_client`` keeps every file for the process; each test starts without any.
+
+    Otherwise a file one test fetched would answer the next test from the cache and never
+    reach the route that test mounted.
+    """
+    REFERENCE_CACHE.clear()
 
 
 @pytest.fixture

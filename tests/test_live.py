@@ -2,7 +2,9 @@
 
 Every task function gets one live smoke test here, next to the reachability check. The
 whole module costs four keyed calls: the reachability check, one count, and the count
-plus the data call of ``get_data``. A Basic Individual key allows 500 calls per day.
+plus the data call of ``get_data``. A Basic Individual key allows 500 calls per day. The
+list tasks spend none: ``list_commodities`` and the checks of the packaged tables fetch
+the public reference files without the key (three keyless fetches).
 """
 
 from decimal import Decimal
@@ -10,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from xippios.comtrade import tasks
+from xippios.comtrade import api, tasks
 from xippios.comtrade._client import client
 
 pytestmark = [pytest.mark.live, pytest.mark.anyio]
@@ -52,3 +54,27 @@ async def test_get_data_live() -> None:
     assert total[0].reporter_code == 757
     assert isinstance(total[0].primary_value, Decimal)
     assert total[0].primary_value > 0
+
+
+async def test_list_reporters_live() -> None:
+    """The packaged table still matches upstream's file; a mismatch means a refresh is due."""
+    packaged = (await tasks.list_reporters_async()).data
+    upstream = await api.reference_rows("Reporters.json")
+    assert {row.reporter_code for row in packaged} == {row["reporterCode"] for row in upstream}
+    assert any(row.reporter_code == 757 for row in packaged)
+
+
+async def test_list_partners_live() -> None:
+    """The packaged table still matches upstream's file; a mismatch means a refresh is due."""
+    packaged = (await tasks.list_partners_async()).data
+    upstream = await api.reference_rows("partnerAreas.json")
+    assert {row.partner_code for row in packaged} == {row["PartnerCode"] for row in upstream}
+
+
+async def test_list_commodities_live() -> None:
+    result = await tasks.list_commodities_async("HS")
+    assert len(result.data) > 8000
+    total = result.data[0]
+    assert (total.id, total.aggr_level, total.parent) == ("TOTAL", 0, "#")
+    coffee = next(row for row in result.data if row.id == "090111")
+    assert (coffee.parent, coffee.aggr_level, coffee.is_leaf) == ("0901", 6, True)

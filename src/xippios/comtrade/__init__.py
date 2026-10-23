@@ -6,6 +6,19 @@ in ``_client`` are internal.
 """
 
 from xippios.comtrade._version import __version__
-from xippios.comtrade.tasks import get_counts, get_data
+from xippios.comtrade.tasks import (
+    get_counts,
+    get_data,
+    list_commodities,
+    list_partners,
+    list_reporters,
+)
 
-__all__ = ["__version__", "get_counts", "get_data"]
+__all__ = [
+    "__version__",
+    "get_counts",
+    "get_data",
+    "list_commodities",
+    "list_partners",
+    "list_reporters",
+]

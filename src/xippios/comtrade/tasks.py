@@ -9,12 +9,16 @@ exactly what is named there.
 Docstrings are read by agents: one sentence first, then ``Args:`` with examples of
 valid values for every parameter. ``/add-endpoint`` walks through the whole recipe.
 
-``meta.endpoint`` is the operation as the Help Center names it (``data/v1/get``) and
+``meta.endpoint`` is the operation as the Help Center names it (``data/v1/get``), or the
+reference file a list comes from (``files/v1/app/reference/Reporters.json``), and
 ``meta.request`` the task's own arguments that were set, so ``get_data(**meta.request)``
-repeats the call. ``meta.published_at`` stays empty: data rows carry no publication date.
-Upstream publishes its release dates through ``getMetadata`` and ``getLiveUpdate``, which
-are not wrapped yet; reading a date into a row's envelope from anywhere else would be a
-guess.
+repeats the call.
+
+``meta.published_at`` stays ``None`` on every task. Data rows carry no publication date,
+and where upstream does publish release dates it publishes one per reporter and period
+(``getDa``, ``getMetadata``, ``getLiveUpdate``); a single value for a whole result would
+be a guess. The lists packaged with this version (``list_reporters``, ``list_partners``)
+carry the day they were fetched as ``meta.vintage``.
 """
 
 from typing import Any
@@ -25,14 +29,32 @@ from xippios.comtrade import api
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.api.get import ENDPOINT
 from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
-from xippios.comtrade.models import TradeDataRecord
-from xippios.comtrade.params import validate_get
+from xippios.comtrade.models import Commodity, PartnerArea, Reporter, TradeDataRecord
+from xippios.comtrade.params import (
+    packaged_table,
+    packaged_table_info,
+    validate_classification_file,
+    validate_get,
+)
 
-__all__ = ["get_counts", "get_data"]
+__all__ = ["get_counts", "get_data", "list_commodities", "list_partners", "list_reporters"]
+
+REFERENCE = "files/v1/app/reference"
+"""Where upstream serves the reference files; ``meta.endpoint`` of the list tasks."""
 
 
 def _meta(request: dict[str, Any]) -> ResultMeta:
     return ResultMeta(source=SOURCE, endpoint=ENDPOINT, request=request)
+
+
+def _packaged_meta(name: str) -> ResultMeta:
+    info = packaged_table_info(name)
+    if info is None:  # pragma: no cover - the tables ship with the package
+        raise KeyError(name)
+    file = info.origin.rsplit("/", 1)[-1]
+    return ResultMeta(
+        source=SOURCE, endpoint=f"{REFERENCE}/{file}", vintage=info.fetched.isoformat()
+    )
 
 
 async def get_counts_async(
@@ -58,8 +80,9 @@ async def get_counts_async(
     most 100,000 records, so count first and split a larger query. A count of 0 means no
     data matches: an unreported period, a code that is not a reporter, a flow the
     reporter does not record. Every count costs one call of the key's daily quota (500
-    on a free key). Arguments are checked before the call; an unknown code raises
-    ``InvalidRequestError`` naming the closest valid one.
+    on a free key). Arguments are checked before the call, reporter and partner codes
+    against the packaged tables; an unknown code raises ``InvalidRequestError`` naming the
+    closest valid one (756 names 757, Switzerland).
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
@@ -71,12 +94,13 @@ async def get_counts_async(
             also ``"BE"`` and ``"TM"``, which the spec lists and upstream accepts.
         reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
             e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
-            ``"757,842"``. Some differ from ISO numeric codes: Switzerland is 757, not 756.
-            Omit for every reporter.
-        partner_code: Partner areas, comma-separated: ``"0"`` World (the total over all
-            partners), ``"276"`` Germany. Omit for every partner, one row each.
-        partner2_code: Second partner (consignment) areas, comma-separated; ``"0"`` is
-            the total.
+            ``"757,842"``, as ``list_reporters`` lists them. Some differ from ISO numeric
+            codes: Switzerland is 757, not 756. Omit for every reporter.
+        partner_code: Partner areas, comma-separated, as ``list_partners`` lists them:
+            ``"0"`` World (the total over all partners), ``"276"`` Germany. Omit for every
+            partner, one row each.
+        partner2_code: Second partner (consignment) areas, comma-separated, codes of
+            ``list_partners``; ``"0"`` is the total.
         period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), at most 12
             comma-separated, e.g. ``"2021,2022,2023"``.
         cmd_code: Product codes of ``cl_code``, comma-separated: ``"TOTAL"`` for all
@@ -161,12 +185,13 @@ async def get_data_async(
             also ``"BE"`` and ``"TM"``, which the spec lists and upstream accepts.
         reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
             e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
-            ``"757,842"``. Some differ from ISO numeric codes: Switzerland is 757, not 756.
-            Omit for every reporter.
-        partner_code: Partner areas, comma-separated: ``"0"`` World (the total over all
-            partners), ``"276"`` Germany. Omit for every partner, one row each.
-        partner2_code: Second partner (consignment) areas, comma-separated; ``"0"`` is
-            the total.
+            ``"757,842"``, as ``list_reporters`` lists them. Some differ from ISO numeric
+            codes: Switzerland is 757, not 756. Omit for every reporter.
+        partner_code: Partner areas, comma-separated, as ``list_partners`` lists them:
+            ``"0"`` World (the total over all partners), ``"276"`` Germany. Omit for every
+            partner, one row each.
+        partner2_code: Second partner (consignment) areas, comma-separated, codes of
+            ``list_partners``; ``"0"`` is the total.
         period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), at most 12
             comma-separated, e.g. ``"2021,2022,2023"``.
         cmd_code: Product codes of ``cl_code``, comma-separated: ``"TOTAL"`` for all
@@ -215,5 +240,63 @@ async def get_data_async(
     return Result(data=response.data, meta=_meta(request))
 
 
+async def list_reporters_async() -> Result[list[Reporter]]:
+    """List the reporters UN Comtrade has trade data from, with the codes reporter_code takes.
+
+    Answered from ``Reporters.json`` as packaged with this version, without an upstream
+    call; ``meta.vintage`` is the day it was fetched. 255 rows when packaged, one per
+    reporter code, current and historical (``entry_expired_date`` is set on codes no
+    longer used, such as 251 France until 1999). Codes are UN Comtrade's, not always ISO
+    numeric: ``757`` Switzerland (not 756), ``842`` USA, ``276`` Germany, ``156`` China;
+    ``97`` European Union and ``975`` ASEAN are groups (``is_group``). Over MCP the list
+    is cut at the result cap (200 rows or 64 KB); the Python and HTTP results are whole.
+    """
+    return Result(data=packaged_table("Reporters", Reporter), meta=_packaged_meta("Reporters"))
+
+
+async def list_partners_async() -> Result[list[PartnerArea]]:
+    """List the partner areas UN Comtrade records trade with, for partner_code and partner2_code.
+
+    Answered from ``partnerAreas.json`` as packaged with this version, without an upstream
+    call; ``meta.vintage`` is the day it was fetched. 310 rows when packaged: ``0`` World
+    (the total over all partners), countries in the reporters' code space (``757``
+    Switzerland, ``842`` USA, ``276`` Germany, ``156`` China) and areas that only occur as
+    partners, such as ``899`` "Areas, nes" or ``756`` Switzerland under its ISO code. Over
+    MCP the list is cut at the result cap (200 rows or 64 KB); the Python and HTTP results
+    are whole.
+    """
+    return Result(
+        data=packaged_table("partnerAreas", PartnerArea), meta=_packaged_meta("partnerAreas")
+    )
+
+
+async def list_commodities_async(cl_code: str) -> Result[list[Commodity]]:
+    """List the product codes of one UN Comtrade classification, the values cmd_code takes.
+
+    Fetched live from upstream's public classification file ``<cl_code>.json`` (no key, no
+    quota) and kept for the life of the process. The lists are large: ``"HS"`` has 8,262
+    codes (about 2 MB), each HS edition 6,000 to 7,000, SITC ``"SS"`` 7,863, BEC ``"B5"``
+    178, EBOPS ``"EB"`` 423. Every row has ``id`` (the code), ``text`` and ``parent``; the
+    goods files add ``is_leaf`` and ``aggr_level`` (0 for ``TOTAL``, then 2, 4 and 6 digits
+    for HS). Over MCP the list is cut at the result cap (200 rows or 64 KB), which shows
+    the top of the tree only. ``meta.vintage`` stays ``None``: the files carry no release
+    identifier.
+
+    Args:
+        cl_code: The classification, with a file upstream: ``"HS"`` (all HS editions
+            combined), an edition ``"H0"`` (1992) to ``"H6"`` (2022), SITC ``"SS"``
+            (combined) or ``"S1"`` to ``"S4"``, BEC ``"B4"`` or ``"B5"``, EBOPS ``"EB"``
+            (combined), ``"EB02"``, ``"EB10"`` or ``"EB10S"``. ``"BE"`` and ``"TM"``,
+            which ``get_data`` takes, have no file.
+    """
+    request = validate_classification_file(cl_code)
+    rows = await api.reference(f"{cl_code}.json", Commodity)
+    meta = ResultMeta(source=SOURCE, endpoint=f"{REFERENCE}/{cl_code}.json", request=request)
+    return Result(data=rows, meta=meta)
+
+
 get_counts = sync(get_counts_async)
 get_data = sync(get_data_async)
+list_commodities = sync(list_commodities_async)
+list_partners = sync(list_partners_async)
+list_reporters = sync(list_reporters_async)
