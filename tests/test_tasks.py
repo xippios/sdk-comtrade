@@ -413,11 +413,16 @@ def test_http_route_end_to_end(replay_get: Replay) -> None:
     from xippios.comtrade.http import router
 
     replay_get("count_ch_exports_2023")
+    replay_get("ch_exports_2023")
     app = FastAPI()
     app.include_router(router)
     with TestClient(app) as http:
         answer = http.get("/comtrade/get_counts", params=CH_EXPORTS_2023)
         assert answer.status_code == 200
         assert answer.json()["data"] == 32
+        rows = http.get("/comtrade/get_data", params=CH_EXPORTS_2023).json()["data"]
+        assert len(rows) == 32
+        assert rows[0]["primary_value"] == 5205025990.437
+        assert rows[0]["customs_code"] == "C03"
         refused = http.get("/comtrade/get_counts", params={**CH_EXPORTS_2023, "flow_code": "XX"})
         assert refused.status_code == 422
