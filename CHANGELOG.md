@@ -35,18 +35,6 @@ All notable changes to this project are documented here. The format follows
 - `api.reference_rows`: a reference file's rows as upstream sent them.
 - Replay tests check the request that goes out carries the placeholder key, never the
   shell's (ported from sdk-template).
-
-### Changed
-
-- Calls are spaced 1.5 s apart (`RATE_LIMIT = RateLimit(per_minute=40, burst=1)`): at
-  exactly 1.0 s, 9 of 18 calls drew HTTP 429 "Rate limit is exceeded" (2026-10-23).
-- `reporter_code` is checked against the packaged `Reporters.json`, `partner_code` and
-  `partner2_code` against `partnerAreas.json`, each member of a comma-separated list. An
-  unknown code raises `InvalidRequestError` before any call, naming the same area's code
-  where `country_area_code_iso.json` knows it (`756` names `757`, Switzerland), or saying
-  that a code belongs to the other table (`0` World is a partner only). Upstream itself
-  answers a code that is no reporter with an empty result.
-
 - `get_counts` and `get_data` on `data/v1/get/{typeCode}/{freqCode}/{clCode}`, MCP tools
   `comtrade_get_counts` and `comtrade_get_data`. `get_data` counts first with
   `countOnly`: zero returns an empty result without a second call, more than 100,000
@@ -80,3 +68,14 @@ All notable changes to this project are documented here. The format follows
   endings of the files kept byte for byte (the CRLF specs, one mixed-endings file).
 - `scripts/refresh_upstream.py`: regenerates the snapshot reproducibly, discovering the
   ApiDocs products from the page's bundle (`uv run scripts/refresh_upstream.py`).
+
+### Changed
+
+- Calls are spaced 1.5 s apart (`RATE_LIMIT = RateLimit(per_minute=40, burst=1)`): at
+  exactly 1.0 s, 9 of 18 calls drew HTTP 429 "Rate limit is exceeded" (2026-10-23).
+- `reporter_code` is checked against the packaged `Reporters.json`, `partner_code` and
+  `partner2_code` against `partnerAreas.json`, each member of a comma-separated list. An
+  unknown code raises `InvalidRequestError` before any call, naming the same area's code
+  where `country_area_code_iso.json` knows it (`756` names `757`, Switzerland), or saying
+  that a code belongs to the other table (`0` World is a partner only). Upstream itself
+  answers a code that is no reporter with an empty result.
