@@ -21,12 +21,17 @@ All notable changes to this project are documented here. The format follows
   `aggregateBy`, `breakdownMode` in `reference/` with their origin, and the matching
   StrEnums in `enums.py`, written by `scripts/refresh_reference.py` from the public
   reference files (fetched without a key through `api.reference`) and the spec snapshot.
+  Where the spec documents more than a reference file, the script reconciles them and
+  records each exception with its evidence: `flowCode` adds the spec's `MIF` and `XIF`;
+  `clCode` adds the spec's `BE` and `TM`, which upstream accepted, and leaves out `BE5`,
+  which upstream refused.
 - `_client.classify`: an HTTP 400 `ErrorResponse` becomes `InvalidRequestError` with
   upstream's message; a 403 that mentions a quota becomes `RateLimitError` (API
   Management's text, not observed). The rate limit no longer bursts:
-  `RateLimit(per_minute=60, burst=1)`, one call per second as documented.
-- Twelve recorded fixtures under `tests/fixtures/get/` and live smoke tests for both
-  tasks.
+  `RateLimit(per_minute=60, burst=1)`, one call per second as documented. The read
+  timeout is 180 s, since a broad count can take over a minute.
+- Fifteen recorded fixtures under `tests/fixtures/get/` and live smoke tests for both
+  tasks. Replay tests always send a placeholder key, whatever the shell holds.
 - Scaffold from [sdk-template](https://github.com/xippios/sdk-template): configured
   client for UN Comtrade, empty task layer, MCP server and FastAPI router
   wired to it, test harness, CI and publishing.

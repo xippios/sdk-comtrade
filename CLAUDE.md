@@ -12,7 +12,7 @@ that works here; the family rules it points to apply as well.
 | API base URL | `https://comtradeapi.un.org` |
 | Documentation | https://comtradeplus.un.org/ApiDocs, snapshotted in `docs/upstream/` |
 | Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header |
-| Rate limit | 60 requests per minute, enforced client-side in `_client.py` |
+| Rate limit | 1 per second, no burst (60 per minute), enforced client-side in `_client.py` |
 | Write tools | no, this package is read-only |
 
 The snapshot in `docs/upstream/` is the reference for names, parameters and semantics.
@@ -39,6 +39,9 @@ and how `_client.py` treats them:
   `QueryTooLarge` before any data call.
 - **12 periods per call.** A 13th gets HTTP 400 "Maximum number of periods is 12";
   `params.validate_get` refuses it before the call.
+- **Slow counts.** A broad count can take over a minute, so the read timeout is 180 s
+  (`TIMEOUTS`), and a timed-out attempt that core retries counts against the quota each
+  time; so does each retry of a 5xx.
 - **Keys may be periodically regenerated** on Basic accounts. A sudden 401 ("Access
   denied due to invalid subscription key", `AuthError`) means re-copying the key from
   https://comtradeplus.un.org/MyComtrade/APIPortal into the environment.
@@ -49,10 +52,11 @@ quota. Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerlan
 in `Reporters.json`; 756 is no reporter and simply counts 0.
 
 When recording fixtures, budget the calls. The package client retries 5xx and transport
-errors up to four attempts, each a keyed call, and a count over all reporters can
-outlast the 60 s read timeout (one did; the repeat answered in 27 s). Record with a
-one-attempt copy of the client and a longer read timeout for broad queries, and never
-keep a body of many megabytes: narrow the query or use `maxRecords`.
+errors up to four attempts, each a keyed call (a count on `clCode=H6` answered HTTP 500
+once), and a count over all reporters outlasted the former 60 s read timeout (the repeat
+answered in 27 s). Record with a one-attempt copy of the client, and never keep a body of
+many megabytes: narrow the query or use `maxRecords`. Replay tests always send a
+placeholder key, whatever the shell holds (`tests/conftest.py`).
 
 ## Read first, in this order
 

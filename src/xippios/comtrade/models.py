@@ -35,12 +35,18 @@ class TradeDataRecord(UpstreamModel):
     (``757`` Switzerland, ``0`` World), ``flow_code`` the trade flow (``"X"``, ``"M"``),
     ``customs_code`` and ``mot_code`` the customs procedure and mode of transport, where
     ``"C00"`` and ``0`` are the totals. The ``*_desc`` and ``*_iso`` fields are ``None``
-    unless the request set ``includeDesc``. ``ref_period_id`` is upstream's integer
-    period key (``20230101``) and ``ref_month`` is ``52`` on annual rows, both as sent.
-    ``primary_value`` is the trade value in US dollars, ``cifvalue``/``fobvalue`` its
-    CIF and FOB valuations where reported; ``qty``/``alt_qty`` are in the units
-    ``qty_unit_code``/``alt_qty_unit_code`` name (``-1`` when there is none), and
-    ``net_wgt``/``gross_wgt`` in kilograms.
+    in every recorded answer; none of them set ``includeDesc``. ``ref_period_id`` is
+    upstream's integer period key (``20230101``) and ``ref_month`` is ``52`` on annual
+    rows, both as sent. Upstream's data items (``docs/upstream/reference/TradeDataItems.json``)
+    describe ``primary_value`` as "Primary trade values (taken from CIF or FOB values)",
+    ``cifvalue`` and ``fobvalue`` as the trade values in CIF and FOB, and ``net_wgt`` and
+    ``gross_wgt`` as net and gross weight; ``qty``/``alt_qty`` are counted in the units
+    ``qty_unit_code``/``alt_qty_unit_code`` name. The snapshot states no currency or
+    weight unit, so none is assumed here.
+
+    Every field is required. The schema has no ``required`` list; all 47 fields are present
+    in every recorded response, so a missing one is a ``ValidationError`` rather than a
+    silent ``None``.
     """
 
     type_code: str | None = Field(validation_alias="typeCode")

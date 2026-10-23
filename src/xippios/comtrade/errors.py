@@ -11,8 +11,10 @@ RECORD_LIMIT = 100_000
 
 ``docs/upstream/help/subscriptions.md``: "Data API ... max 100K records per call" (250K on
 premium). Above it upstream does not refuse: it answers HTTP 200 with the first 100,000
-rows and an empty ``error`` (observed 2026-10-23 for a query counted at 5,006,385, see
-``tests/fixtures/get/count_over_limit.json``), so ``get_data`` counts first.
+rows and an empty ``error``, so ``get_data`` counts first. The truncation was observed on
+2026-10-23 (HTTP 200, 100,000 rows, ``count`` 100000, empty ``error``, 89 MB) and not
+recorded; ``tests/fixtures/get/count_over_limit.json`` holds the count of the same query,
+5,006,385.
 """
 
 MAX_PERIODS = 12

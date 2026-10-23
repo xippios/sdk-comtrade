@@ -32,7 +32,7 @@ query = {
 get_counts("C", "A", "HS", **query).data  # 32: every customs procedure and mode of transport
 result = get_data("C", "A", "HS", **query)
 total = next(r for r in result.data if (r.customs_code, r.mot_code) == ("C00", 0))
-total.primary_value  # Decimal('419922543423.509'), US dollars; JSON: a number
+total.primary_value  # Decimal('419922543423.509'); JSON: a number
 result.meta.endpoint, result.meta.request  # 'data/v1/get', the arguments above
 ```
 
@@ -50,7 +50,7 @@ result without a second call, and a count above 100,000 raises `QueryTooLarge` w
 count before anything is fetched, because upstream would cut the answer at 100,000 rows
 without saying so. A free key allows 1 call per second and 500 calls per day, and
 `countOnly` calls count; the client spaces calls a second apart, the daily quota is
-yours to keep.
+yours to track.
 
 ## MCP
 
