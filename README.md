@@ -127,7 +127,7 @@ serves streamable HTTP instead of stdio.
 | `data/v1/getMetadata/{typeCode}/{freqCode}/{clCode}` | `get_metadata(type_code, freq_code, cl_code, *, reporter_code=, period=)` | `comtrade_get_metadata` | alpha |
 | `data/v1/getLiveUpdate` | `get_live_update()` | `comtrade_get_live_update` | alpha |
 | `data/v1/get/C/{A,M}/{clCode}`, total row, one reporter and partner | `get_bilateral_flows(reporter, partner, commodities, periods, flow, *, cl_code="HS")` | `comtrade_get_bilateral_flows` | alpha |
-| `data/v1/get/C/{A,M}/{clCode}`, total row, partner World, 12 periods per call | `get_commodity_series(reporter, commodity, flow, periods, *, cl_code="HS")` | `comtrade_get_commodity_series` | alpha |
+| `data/v1/get/C/{A,M}/{clCode}`, total row, partner World, 12 periods per call, at most 120 | `get_commodity_series(reporter, commodity, flow, periods, *, cl_code="HS")` | `comtrade_get_commodity_series` | alpha |
 | `data/v1/get/C/{A,M}/{clCode}`, total row, every reporter, partner World | `get_world_trade(commodity, period, flow, *, cl_code="HS")` | `comtrade_get_world_trade` | alpha |
 | `data/v1/get/C/{A,M}/{clCode}`, total row, every partner, ranked | `get_top_partners(reporter, commodity, period, flow, n, *, cl_code="HS")` | `comtrade_get_top_partners` | alpha |
 | `files/v1/app/reference/Reporters.json`, packaged | `list_reporters(search=None)` | `comtrade_list_reporters` | alpha |
