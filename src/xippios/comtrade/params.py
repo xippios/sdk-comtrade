@@ -566,12 +566,8 @@ def _area_rows(kind: str) -> tuple[_Area, ...]:
     )
 
 
-def _named(area: _Area) -> str:
-    return f"{area.iso3!r} ({area.code}, {area.desc})"
-
-
-def _resolve_iso3(argument: str, value: str, kind: str, problems: list[str]) -> str | None:
-    """The one code of ``kind`` behind an ISO alpha-3 code, or a problem naming the closest.
+def _by_iso3(iso3: str, kind: str) -> list[_Area]:
+    """The codes of ``kind`` an ISO alpha-3 code resolves to: one, or several if ambiguous.
 
     Several codes can share an alpha-3 code: a code no longer used (``entry_expired_date``
     set, such as 280 Fed. Rep. of Germany until 1990 next to 276 Germany) gives way to the
@@ -579,16 +575,26 @@ def _resolve_iso3(argument: str, value: str, kind: str, problems: list[str]) -> 
     Switzerland, not 756; 842 USA, not 840): Switzerland's 2023 partner rows carry 842,
     251 France and 579 Norway, never 840, 250 or 578
     (``tests/fixtures/get/partners_ch_total_2023.json``). What is still ambiguous after
-    that (A79: 473 LAIA, nes and 636 Rest of America, nes) is refused.
+    that (A79: 473 LAIA, nes and 636 Rest of America, nes) stays several.
     """
-    rows = _area_rows(kind)
-    wanted = value.upper()
-    found = [area for area in rows if area.iso3 == wanted]
+    found = [area for area in _area_rows(kind) if area.iso3 == iso3]
     if len(found) > 1:
         found = [area for area in found if area.in_use] or found
     if len(found) > 1 and kind == "partner":
         reporters = {area.code for area in _area_rows("reporter")}
         found = [area for area in found if area.code in reporters] or found
+    return found
+
+
+def _resolve_iso3(argument: str, value: str, kind: str, problems: list[str]) -> str | None:
+    """The one code of ``kind`` behind an ISO alpha-3 code, or a problem naming the closest.
+
+    ``_by_iso3`` picks the code; an ambiguous alpha-3 code is refused, naming every
+    candidate. The closest-value hint for an unknown one names the code that alpha-3 code
+    resolves to (``'USA' (842, USA)`` among partners, not 840).
+    """
+    wanted = value.upper()
+    found = _by_iso3(wanted, kind)
     if len(found) == 1:
         return found[0].code
     _, upstream_file, task = _AREA_TABLES[kind]
@@ -600,16 +606,23 @@ def _resolve_iso3(argument: str, value: str, kind: str, problems: list[str]) -> 
         )
         return None
     other = "partner" if kind == "reporter" else "reporter"
-    elsewhere = [area for area in _area_rows(other) if area.iso3 == wanted]
+    elsewhere = _by_iso3(wanted, other)
     if elsewhere:
         problems.append(
             f"{argument} {value!r} ({elsewhere[0].code}, {elsewhere[0].desc}) is a {other} "
             f"area only, not a UN Comtrade {kind} ({upstream_file})"
         )
         return None
-    options = {area.iso3: area for area in rows} | {area.desc.upper(): area for area in rows}
+    rows = _area_rows(kind)
+    options = {area.iso3: area.iso3 for area in rows} | {
+        area.desc.upper(): area.iso3 for area in rows
+    }
     closest = _closest(value, list(options))
-    hint = f"; closest: {_named(options[closest.upper()])}" if closest else ""
+    hint = ""
+    if closest:
+        iso3 = options[closest]
+        named = " or ".join(f"{area.code}, {area.desc}" for area in _by_iso3(iso3, kind))
+        hint = f"; closest: {iso3!r} ({named})"
     problems.append(
         f"{argument} {value!r} is neither a UN Comtrade {kind} code nor the ISO alpha-3 code "
         f"of one ({upstream_file}){hint}; {task} lists every code"

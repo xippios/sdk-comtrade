@@ -1594,6 +1594,11 @@ def _slice_refused(respx_mock: respx.MockRouter, call: Callable[[], object]) -> 
             "closest: 'CHE' (757, Switzerland)",
         ),
         (
+            lambda: tasks.get_bilateral_flows("CHE", "US", "TOTAL", "2023", "X"),
+            "partner 'US' is neither a UN Comtrade partner code nor the ISO alpha-3 code of one "
+            "(partnerAreas.json); closest: 'USA' (842, USA)",
+        ),
+        (
             lambda: tasks.get_bilateral_flows("756", "USA", "TOTAL", "2023", "X"),
             "reporter '756' is not a UN Comtrade reporter code (Reporters.json); closest: '757'",
         ),
