@@ -1770,3 +1770,28 @@ def test_list_search_route_end_to_end() -> None:
         answer = http.get("/comtrade/list_partners", params={"search": "world"}).json()
         assert [row["partner_code"] for row in answer["data"]] == [0]
         assert answer["meta"]["request"] == {"search": "world"}
+
+
+def test_slice_route_end_to_end(replay_query: ReplayQuery) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    route = replay_query("bilateral_ch_us_2022_2023")
+    app = FastAPI()
+    app.include_router(router)
+    query = {"reporter": "CHE", "partner": "USA", "commodities": "TOTAL,27",
+             "periods": "2022,2023", "flow": "X"}  # fmt: skip
+    with TestClient(app) as http:
+        answer = http.get("/comtrade/get_bilateral_flows", params=query)
+        assert answer.status_code == 200
+        body = answer.json()
+        assert [row["cmd_code"] for row in body["data"]] == ["27", "TOTAL", "27", "TOTAL"]
+        assert body["data"][3]["primary_value"] == 62852531481.607
+        assert body["meta"]["request"] == BILATERAL_REQUEST
+        assert route.call_count == 1
+        refused = http.get("/comtrade/get_bilateral_flows", params={**query, "partner": "US"})
+        assert refused.status_code == 422
+        assert "closest: 'USA' (842, USA)" in refused.json()["detail"]
+        assert route.call_count == 1, "refused before any call"
