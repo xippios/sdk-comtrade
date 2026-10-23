@@ -3,19 +3,21 @@
 import inspect
 from collections.abc import Callable
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 import respx
-from xippios.core import AuthError, InvalidRequestError, RateLimitError
+from xippios.core import AuthError, InvalidRequestError, RateLimitError, UpstreamError
 from xippios.core.http import status_for
-from xippios.core.testing import mcp_call
+from xippios.core.testing import load_fixture, mcp_call
 
 from xippios.comtrade import __version__, api, enums, tasks
-from xippios.comtrade._client import classify
+from xippios.comtrade._client import API_KEY_ENV, TIMEOUTS, _quota_reset, classify, config
 from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.mcp import server
+from xippios.comtrade.models import ReferenceCode
 from xippios.comtrade.params import PACKAGED_LISTS, packaged_values, validate_get
 
 TASKS = [getattr(tasks, name) for name in tasks.__all__]
@@ -75,12 +77,16 @@ def test_get_counts_sends_the_recorded_count_request(
     assert sent.headers["Ocp-Apim-Subscription-Key"] == "placeholder-for-fixture-replay"
 
 
-def test_get_data_counts_first_then_fetches(replay_get: Replay, recorded_params: Recorded) -> None:
+def test_get_data_counts_first_then_fetches(
+    replay_get: Replay, recorded_params: Recorded, respx_mock: respx.MockRouter
+) -> None:
     counted = replay_get("count_ch_exports_2023")
     fetched = replay_get("ch_exports_2023")
     result = tasks.get_data(**CH_EXPORTS_2023)
     assert counted.call_count == 1
     assert fetched.call_count == 1
+    order = [call.request.url.params.get("countOnly") for call in respx_mock.calls]
+    assert order == ["true", None]
     assert dict(fetched.calls.last.request.url.params) == recorded_params("ch_exports_2023")
     assert result.meta.endpoint == "data/v1/get"
     assert result.meta.request == CH_EXPORTS_2023
@@ -230,7 +236,7 @@ async def test_upstream_parameter_refusal_names_the_parameter(replay_get: Replay
 
 @pytest.mark.anyio
 async def test_mif_is_accepted_upstream(replay_get: Replay) -> None:
-    """Characterisation: the spec lists MIF, tradeRegimes.json does not, upstream answers 200."""
+    """The spec lists MIF, tradeRegimes.json does not; upstream answers 200, so it is packaged."""
     replay_get("count_flow_code_mif")
     response = await api.get_count_only(
         "C", "A", "HS", reporter_code="757", period="2023", partner_code="0", cmd_code="TOTAL",
@@ -255,16 +261,18 @@ def test_thirteen_periods_are_refused_before_any_call(respx_mock: respx.MockRout
 def test_unknown_flow_code_names_the_closest_value(respx_mock: respx.MockRouter) -> None:
     message = _refused(respx_mock, flow_code="X,XX")
     assert "flow_code 'XX' is not a UN Comtrade flowCode value; closest: 'X'" in message
-    assert "Valid values: M, X, DX, FM, MIP, MOP, RM, RX, XIP, XOP" in message
+    assert "Valid values: M, X, DX, FM, MIP, MOP, RM, RX, XIP, XOP, MIF, XIF" in message
 
 
-def test_flow_codes_not_in_trade_regimes_are_refused(respx_mock: respx.MockRouter) -> None:
-    assert "'MIF' is not a UN Comtrade flowCode value" in _refused(respx_mock, flow_code="MIF")
+def test_flow_codes_the_spec_adds_pass_validation(replay_get: Replay) -> None:
+    replay_get("count_flow_code_mif")
+    assert tasks.get_counts(**{**CH_EXPORTS_2023, "flow_code": "MIF"}).data == 0
+    assert validate_get("C", "A", "HS", flow_code="XIF,mif")["flow_code"] == "XIF,mif"
 
 
 def test_unknown_cl_code_names_the_closest_value(respx_mock: respx.MockRouter) -> None:
     message = _refused(respx_mock, cl_code="BE5")
-    assert "cl_code 'BE5' is not a UN Comtrade clCode value; closest: 'B5'" in message
+    assert "cl_code 'BE5' is not a UN Comtrade clCode value; closest: 'BE'" in message
 
 
 def test_malformed_product_codes_are_refused(respx_mock: respx.MockRouter) -> None:
@@ -338,6 +346,49 @@ def test_enums_match_the_packaged_lists() -> None:
     assert enums.FlowCode.X.value == "X"
     assert enums.MotCode._0.value == "0"
     assert enums.ClCode.EB10S.value == "EB10S"
+    assert enums.FlowCode.XIF.value == "XIF"
+
+
+def test_list_exceptions_rest_on_recorded_answers(fixtures_dir: Path) -> None:
+    """clCode is ListofReferences plus what upstream accepted, minus what it refused."""
+    cl_code = packaged_values("clCode")
+    assert cl_code is not None
+    decisions = {item.value: item.decision for item in cl_code.exceptions}
+    assert decisions == {"BE": "added", "BE5": "left out", "TM": "added", "H6": "kept"}
+    assert {"BE", "TM", "H6"} <= set(cl_code.values)
+    assert "BE5" not in cl_code.values
+    flow_code = packaged_values("flowCode")
+    assert flow_code is not None
+    assert {item.value: item.decision for item in flow_code.exceptions} == {
+        "MIF": "added",
+        "XIF": "added",
+    }
+    statuses = {"added": 200, "left out": 400, "kept": 500}
+    for item in [*cl_code.exceptions, *flow_code.exceptions]:
+        if "tests/fixtures/get/" not in item.evidence:
+            assert item.value == "XIF"
+            continue
+        name = item.evidence.split("tests/fixtures/get/")[1].split(",")[0]
+        fixture = load_fixture(fixtures_dir / "get" / name)
+        assert fixture.response.status == statuses[item.decision], item.value
+
+
+@pytest.mark.anyio
+async def test_spec_cl_codes_upstream_accepts(replay_get: Replay) -> None:
+    replay_get("count_cl_code_tm")
+    assert (await api.get_count_only("C", "A", "TM", reporter_code="757")).count == 1
+    assert validate_get("C", "A", "BE", cmd_code="TOTAL")["cl_code"] == "BE"
+
+
+@pytest.mark.anyio
+async def test_a_server_error_is_retried_and_each_retry_is_a_call(replay_get: Replay) -> None:
+    """Upstream answered a count on H6 with HTTP 500; core retries it, every attempt a call."""
+    route = replay_get("count_cl_code_h6")
+    with pytest.raises(UpstreamError) as info:
+        await api.get_count_only("C", "A", "H6", reporter_code="757", period="2023")
+    assert info.value.status == 500
+    assert "Something went wrong" in str(info.value)
+    assert route.call_count == config.retry.max_attempts == 4
 
 
 def test_enum_members_are_accepted_as_arguments(replay_get: Replay) -> None:
@@ -354,6 +405,34 @@ def test_enum_members_are_accepted_as_arguments(replay_get: Replay) -> None:
     )
     assert result.data == 32
     assert route.calls.last.request.url.params["flowCode"] == "X"
+
+
+def test_replay_never_sends_the_key_from_the_shell(
+    replay_get: Replay, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(API_KEY_ENV, "dummy-value-from-the-shell")
+    route = replay_get("count_ch_exports_2023")
+    tasks.get_counts(**CH_EXPORTS_2023)
+    sent = route.calls.last.request.headers["Ocp-Apim-Subscription-Key"]
+    assert sent == "placeholder-for-fixture-replay"
+
+
+@pytest.mark.anyio
+async def test_reference_files_are_fetched_without_the_key(respx_mock: respx.MockRouter) -> None:
+    """Constructed route, not a fixture: what matters is the request, not upstream's answer."""
+    route = respx_mock.get(
+        "https://comtradeapi.un.org/files/v1/app/reference/tradeRegimes.json"
+    ).mock(return_value=httpx.Response(200, json={"results": [{"id": "X", "text": "Export"}]}))
+    rows = await api.reference("tradeRegimes.json", ReferenceCode)
+    assert [row.id for row in rows] == ["X"]
+    assert "Ocp-Apim-Subscription-Key" not in route.calls.last.request.headers
+    assert "subscription-key" not in route.calls.last.request.url.params
+
+
+def test_read_timeout_is_three_minutes_the_rest_family_defaults() -> None:
+    assert config.timeouts is TIMEOUTS
+    assert (TIMEOUTS.connect, TIMEOUTS.read, TIMEOUTS.write, TIMEOUTS.pool) == (10, 180, 10, 10)
+    assert config.retry.max_attempts == 4
 
 
 def _response(status: int, body: object) -> httpx.Response:
@@ -375,6 +454,14 @@ def test_classify_maps_the_quota_answer_to_a_rate_limit() -> None:
     assert isinstance(error, RateLimitError)
     assert error.retry_after == 5 * 3600 + 12 * 60 + 34
     assert "500 calls per day" in str(error)
+
+
+def test_quota_reset_is_none_without_a_replenish_time() -> None:
+    assert _quota_reset("Out of call volume quota.") is None
+    assert _quota_reset("Quota will be replenished in 00:00:07.") == 7.0
+    error = classify(_response(403, {"statusCode": 403, "message": "Out of call volume quota."}))
+    assert isinstance(error, RateLimitError)
+    assert error.retry_after is None
 
 
 def test_classify_leaves_other_answers_to_the_core_mapping() -> None:
