@@ -112,7 +112,14 @@ class FreqCode(StrEnum):
 
 
 class MosCode(StrEnum):
-    """Values of ``mosCode`` (fetched 2026-10-23)."""
+    """Values of ``mosCode`` (fetched 2026-10-23).
+
+    The ids of ModeOfSupply.json, not proven parameter values: data/v1/get, which takes mosCode
+    though the spec does not list it, refused 'Mode 1' (HTTP 400,
+    tests/fixtures/get/count_services_eb10_mos_code_mode_1.json) and accepted '0' and '1'
+    (count_services_eb10_mos_code_0.json, count_services_eb10_mos_code_1.json). mosCode is not a
+    parameter of the tasks; trade rows carry it as mos_code.
+    """
 
     _0 = "0"
     MODE_1 = "Mode 1"

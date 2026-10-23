@@ -90,6 +90,7 @@ class PackagedValues(UpstreamModel):
         fetched: Day the list was fetched (for lists read from the spec, the day the
             snapshot was fetched).
         origin: The reference file or snapshot entry the values come from.
+        note: What the values are and are not, where the list needs saying so.
         exceptions: Values the refresh script reconciled with the spec, with evidence.
         values: The values, as upstream lists them, reconciled values last.
     """
@@ -97,6 +98,7 @@ class PackagedValues(UpstreamModel):
     param: str
     fetched: date
     origin: str | None = None
+    note: str | None = None
     exceptions: list[ListException] = Field(default_factory=list)
     values: list[str]
 

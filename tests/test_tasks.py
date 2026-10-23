@@ -578,6 +578,11 @@ def test_mos_code_is_accepted_upstream_but_not_a_parameter_here(fixtures_dir: Pa
         "eb10_mos_code_mode_1": (400, None), "eb_mos_code_0": (200, 0),
     }  # fmt: skip
     assert "mos_code" not in inspect.signature(tasks.get_data).parameters
+    mos_code = packaged_values("mosCode")
+    assert mos_code is not None
+    assert mos_code.note is not None
+    assert mos_code.note.startswith("The ids of ModeOfSupply.json, not proven parameter values")
+    assert "not proven parameter values" in (enums.MosCode.__doc__ or "")
 
 
 def _refused(respx_mock: respx.MockRouter, **overrides: str) -> str:

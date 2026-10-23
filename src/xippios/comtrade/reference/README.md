@@ -43,7 +43,7 @@ Rules:
 | `freqCode.json` | `docs/upstream/apidocs/comtrade.json`, operation `get`, the `freqCode` enum (same snapshot) | 2026-10-23 |
 | `breakdownMode.json` | `docs/upstream/apidocs/comtrade.json`, operation `get`, the `breakdownMode` enum (same snapshot) | 2026-10-23 |
 | `aggregateBy.json` | `docs/upstream/apidocs/comtrade.json`, operation `get`, the names `aggregateBy`'s description lists (same snapshot) | 2026-10-23 |
-| `mosCode.json` | `id` of https://comtradeapi.un.org/files/v1/app/reference/ModeOfSupply.json | 2026-10-23 |
+| `mosCode.json` | `id` of https://comtradeapi.un.org/files/v1/app/reference/ModeOfSupply.json. The file's ids (`0`, `Mode 1` to `Mode 4`), not proven parameter values: `data/v1/get` accepts `mosCode` though the spec does not list it, refused `Mode 1` and accepted `0` and `1` (`tests/fixtures/get/count_services_eb10_mos_code_*.json`). `mosCode` is not a task parameter; the file's `note` and the `MosCode` docstring say the same | 2026-10-23 |
 | `qtyUnitCode.json` | `qtyCode` of https://comtradeapi.un.org/files/v1/app/reference/QuantityUnits.json, the codes `qtyUnitCode` and `altQtyUnitCode` carry on trade rows | 2026-10-23 |
 | `Reporters.csv` | https://comtradeapi.un.org/files/v1/app/reference/Reporters.json, every column (255 rows) | 2026-10-23 |
 | `partnerAreas.csv` | https://comtradeapi.un.org/files/v1/app/reference/partnerAreas.json, every column (310 rows) | 2026-10-23 |

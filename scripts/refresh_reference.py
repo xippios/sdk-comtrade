@@ -42,6 +42,7 @@ import csv
 import io
 import json
 import re
+import textwrap
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -95,6 +96,17 @@ LISTS: dict[str, tuple[str, Callable[[], Awaitable[list[str]]]]] = {
     "qtyUnitCode": (f"{FILES}QuantityUnits.json, the qtyCode values", _qty_codes),
 }
 """Lists from reference files: name to (origin, fetcher through ``api/``)."""
+
+NOTES: dict[str, str] = {
+    "mosCode": (
+        "The ids of ModeOfSupply.json, not proven parameter values: data/v1/get, which "
+        "takes mosCode though the spec does not list it, refused 'Mode 1' (HTTP 400, "
+        "tests/fixtures/get/count_services_eb10_mos_code_mode_1.json) and accepted '0' and "
+        "'1' (count_services_eb10_mos_code_0.json, count_services_eb10_mos_code_1.json). "
+        "mosCode is not a parameter of the tasks; trade rows carry it as mos_code."
+    ),
+}
+"""What a list is and is not, written into its file and its enum's docstring."""
 
 TABLES: dict[str, str] = {
     "Reporters": "Reporters.json",
@@ -276,6 +288,8 @@ def _write(
     exceptions: list[dict[str, str]] | None = None,
 ) -> None:
     payload: dict[str, Any] = {"param": name, "fetched": fetched, "origin": origin}
+    if name in NOTES:
+        payload["note"] = NOTES[name]
     if exceptions:
         payload["exceptions"] = exceptions
     payload["values"] = values
@@ -355,7 +369,13 @@ def main() -> None:
         plain = f'"""Values of ``{name}``."""'
         if source.count(plain) != 1:
             raise SystemExit(f"render_str_enums changed its docstrings; cannot date {name}")
-        source = source.replace(plain, f'"""Values of ``{name}`` (fetched {dates[name]})."""')
+        dated = f"Values of ``{name}`` (fetched {dates[name]})."
+        if name in NOTES:
+            body = textwrap.fill(
+                NOTES[name], width=96, initial_indent="    ", subsequent_indent="    "
+            )
+            dated += f"\n\n{body}\n    "
+        source = source.replace(plain, f'"""{dated}"""')
     ENUMS.write_text(source, encoding="utf-8")
     print(f"{ENUMS.name}: {len(ordered)} enums")  # noqa: T201
     index = {name: _write_table(name, file, today) for name, file in TABLES.items()}
