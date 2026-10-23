@@ -12,18 +12,24 @@ All notable changes to this project are documented here. The format follows
   `comtrade_get_commodity_series`, `comtrade_get_world_trade` and
   `comtrade_get_top_partners`: `get_bilateral_flows(reporter, partner, commodities,
   periods, flow)`, `get_commodity_series(reporter, commodity, flow, periods)` (partner
-  World, 12 periods per call, rows by period), `get_world_trade(commodity, period, flow)`
-  (every reporter, partner World, largest first) and `get_top_partners(reporter,
-  commodity, period, flow, n)` (every partner ranked by `primary_value`, World dropped as
-  the total), each with `cl_code="HS"`. Every call pins `typeCode` C, `breakdownMode`
-  classic, `partner2Code` 0, `motCode` 0, `customsCode` C00 and `includeDesc` true
-  (`params.SLICE_PINS`); rows are `TradeFlowRecord`, a projection of `TradeDataRecord`
-  under upstream names. The slices are bounded by their arguments and make no count
-  call; a bound over 100,000 raises `QueryTooLarge` before the call (`bound=True`).
+  World, 12 periods per call, at most 120 periods, rows by period),
+  `get_world_trade(commodity, period, flow)` (every reporter, partner World, largest
+  first) and `get_top_partners(reporter, commodity, period, flow, n)` (every partner
+  ranked by `primary_value`, World dropped as the total, `n` in `meta.request`), each
+  with `cl_code="HS"` (EB*, BE and TM accepted but untested with `typeCode` C). Every
+  call pins `typeCode` C, `breakdownMode` classic, `partner2Code` 0, `motCode` 0,
+  `customsCode` C00 and `includeDesc` true (`params.SLICE_PINS`); rows are
+  `TradeFlowRecord`, a projection of `TradeDataRecord` under upstream names with the
+  `is_qty_estimated` and `is_net_wgt_estimated` flags. At TOTAL and chapter level the
+  recorded rows are mostly UNSD aggregates (`is_aggregate` true, `is_reported` false)
+  without a quantity. The slices are bounded by their arguments and make no count call;
+  a bound over 100,000 raises `QueryTooLarge` before the call (`bound=True`, kept on the
+  exception).
 - `params.validate_slice`: a reporter or partner as UN Comtrade's code or ISO alpha-3
   (`"CHE"` is 757, `"USA"` as partner 842, `"W00"` World), resolved before the call;
   periods of one format set `freqCode` (`YYYY` annual, `YYYYMM` monthly); a mix, an
-  unknown code, a level such as `AG2` or a wildcard is refused with the closest value.
+  unknown code, a level such as `AG2`, a wildcard or a period or product code named twice
+  is refused with the closest value.
 - `search` on `list_reporters`, `list_partners` and `list_commodities`: a case-insensitive
   substring of the code, the ISO alpha-3 code (reporters, partners) or the text; it goes
   into `meta.request`. The MCP result cap (200 rows or 64 KB) hides most of each list, so

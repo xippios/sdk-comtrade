@@ -152,7 +152,9 @@ src/xippios/comtrade/
   params.py        packaged lists and tables: PACKAGED_LISTS, packaged_values(),
                    PACKAGED_TABLES, packaged_table(), packaged_table_info(),
                    classification_files(); checks run before a call: validate_get(),
-                   validate_datasets(), validate_classification_file()
+                   validate_datasets(), validate_classification_file(); for the
+                   slices validate_slice() (areas by code or ISO alpha-3, periods of
+                   one format), SLICE_PINS and MAX_SERIES_PERIODS
   enums.py         StrEnums generated from the packaged lists; never edited by hand
   reference/       packaged value lists (JSON), tables (CSV, provenance in tables.json)
                    plus README with provenance
