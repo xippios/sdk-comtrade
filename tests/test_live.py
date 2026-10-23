@@ -1,12 +1,14 @@
 """Live smoke tests: skipped unless XIPPIOS_LIVE_TESTS=1 (conventions §10).
 
 Every task function gets one live smoke test here, next to the reachability check. The
-whole module costs four keyed calls: the reachability check, one count, and the count
-plus the data call of ``get_data``. A Basic Individual key allows 500 calls per day. The
-list tasks spend none: ``list_commodities`` and the checks of the packaged tables fetch
-the public reference files without the key (three keyless fetches).
+whole module costs seven keyed calls: the reachability check, one count, the count plus
+the data call of ``get_data``, and one call each for ``get_data_availability``,
+``get_metadata`` and ``get_live_update``. A Basic Individual key allows 500 calls per day.
+The list tasks spend none: ``list_commodities`` and the checks of the packaged tables
+fetch the public reference files without the key (three keyless fetches).
 """
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -78,3 +80,26 @@ async def test_list_commodities_live() -> None:
     assert (total.id, total.aggr_level, total.parent) == ("TOTAL", 0, "#")
     coffee = next(row for row in result.data if row.id == "090111")
     assert (coffee.parent, coffee.aggr_level, coffee.is_leaf) == ("0901", 6, True)
+
+
+async def test_get_data_availability_live() -> None:
+    result = await tasks.get_data_availability_async(
+        "C", "A", "HS", reporter_code="757", period="2023"
+    )
+    [dataset] = result.data
+    assert (dataset.reporter_code, dataset.period) == (757, 2023)
+    assert isinstance(dataset.last_released, datetime)
+    assert dataset.total_records > 0
+
+
+async def test_get_metadata_live() -> None:
+    result = await tasks.get_metadata_async("C", "A", "HS", reporter_code="757", period="2023")
+    [dataset] = result.data
+    assert dataset.notes
+    assert all(isinstance(note.publication_date, datetime) for note in dataset.notes)
+
+
+async def test_get_live_update_live() -> None:
+    result = await tasks.get_live_update_async()
+    assert result.data
+    assert all(row.started_at is None or row.started_at.tzinfo for row in result.data)

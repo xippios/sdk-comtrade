@@ -6,7 +6,7 @@ import json
 import os
 import re
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -42,6 +42,7 @@ from xippios.comtrade.mcp import server
 from xippios.comtrade.models import (
     Commodity,
     CountryAreaCodeIso,
+    MetadataDataset,
     PartnerArea,
     ReferenceCode,
     Reporter,
@@ -1101,4 +1102,242 @@ def test_list_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
         assert len(reporters["data"]) == 255, "HTTP results are not capped"
         assert http.get("/comtrade/list_partners").json()["meta"]["vintage"] == "2026-10-23"
         refused = http.get("/comtrade/list_commodities", params={"cl_code": "BE"})
+        assert refused.status_code == 422
+
+
+# Datasets: getDa, getMetadata, getLiveUpdate. One call each, no count first.
+
+
+def _sent(route: respx.Route) -> dict[str, str]:
+    return dict(route.calls.last.request.url.params)
+
+
+def _recorded(fixtures_dir: Path, endpoint: str, case: str) -> dict[str, str]:
+    return dict(
+        httpx.URL(load_fixture(fixtures_dir / endpoint / f"{case}.json").request.url).params
+    )
+
+
+def test_get_data_availability_for_one_reporter_and_period(
+    replay_fixture: ReplayFixture, fixtures_dir: Path
+) -> None:
+    route = replay_fixture("get_da", "ch_2023")
+    result = tasks.get_data_availability("C", "A", "HS", reporter_code="757", period="2023")
+    assert route.calls.last.request.url.path == "/data/v1/getDa/C/A/HS"
+    assert _sent(route) == _recorded(fixtures_dir, "get_da", "ch_2023")
+    assert result.meta.endpoint == "data/v1/getDa"
+    assert result.meta.request == {
+        "type_code": "C", "freq_code": "A", "cl_code": "HS", "reporter_code": "757",
+        "period": "2023",
+    }  # fmt: skip
+    assert result.meta.published_at is None
+    [dataset] = result.data
+    assert dataset.dataset_code == 20757202301202100
+    assert (dataset.reporter_code, dataset.period, dataset.reporter_iso) == (757, 2023, "CHE")
+    assert (dataset.classification_code, dataset.classification_search_code) == ("H6", "HS")
+    assert dataset.first_released == datetime(2024, 2, 2, 4, 52, 35, 216666)
+    assert dataset.last_released == datetime(2024, 6, 7, 17, 13, 50, 536666)
+    assert dataset.first_released.tzinfo is None
+    assert dataset.total_records == 2_530_737
+    assert dataset.is_extended_partner_code is True
+    assert dataset.is_extended_flow_code is False
+
+
+def test_get_data_availability_for_every_reporter(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get_da", "all_reporters_2023")
+    result = tasks.get_data_availability("C", "A", "HS", period="2023")
+    assert len(result.data) == 169
+    assert len({row.reporter_code for row in result.data}) == 169
+    assert {row.period for row in result.data} == {2023}
+    assert 757 in {row.reporter_code for row in result.data}
+    assert all(isinstance(row.last_released, datetime) for row in result.data)
+
+
+def test_a_period_nobody_reported_has_no_datasets(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get_da", "nobody_1900")
+    assert tasks.get_data_availability("C", "A", "HS", period="1900").data == []
+
+
+def test_get_data_availability_by_publication_date(
+    replay_fixture: ReplayFixture, fixtures_dir: Path
+) -> None:
+    route = replay_fixture("get_da", "ch_published_2024")
+    result = tasks.get_data_availability(
+        "C", "A", "HS", reporter_code="757", published_date_from="2024-01-01",
+        published_date_to="2024-12-31",
+    )  # fmt: skip
+    assert _sent(route) == _recorded(fixtures_dir, "get_da", "ch_published_2024")
+    released = [
+        (row.period, row.first_released.year, row.last_released.year) for row in result.data
+    ]
+    assert released == [(2022, 2023, 2024), (2023, 2024, 2024)]
+
+
+def test_get_data_availability_takes_more_than_12_periods(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    replay_fixture("get_da", "ch_13_periods")
+    periods = ",".join(str(year) for year in range(2010, 2023))
+    result = tasks.get_data_availability("C", "A", "HS", reporter_code="757", period=periods)
+    assert sorted(row.period for row in result.data) == list(range(2010, 2023))
+    assert len(respx_mock.calls) == 1
+
+
+def test_dataset_arguments_are_checked_before_the_call(respx_mock: respx.MockRouter) -> None:
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.get_data_availability(
+            "C", "A", "EBSDMX", reporter_code="756", period="2023-01",
+            published_date_from="2024/01/01", published_date_to="2024-02-30",
+        )  # fmt: skip
+    assert not respx_mock.calls
+    message = str(info.value)
+    for fragment in [
+        "cl_code 'EBSDMX' is not a UN Comtrade clCode value",
+        "reporter_code '756' is not a UN Comtrade reporter code (Reporters.json); "
+        "closest: '757' (Switzerland)",
+        "period '2023-01' is neither a year",
+        "published_date_from '2024/01/01' is not a day as YYYY-MM-DD",
+        "published_date_to '2024-02-30' is not a day as YYYY-MM-DD",
+    ]:
+        assert fragment in message
+    with pytest.raises(InvalidRequestError, match="reporter_code '0' is not"):
+        tasks.get_metadata("C", "A", "HS", reporter_code="0")
+
+
+@pytest.mark.anyio
+async def test_get_da_refuses_the_specs_ebsdmx(replay_fixture: ReplayFixture) -> None:
+    """Layer 1: EBSDMX is in the spec's clCode enum for getDa; upstream answers HTTP 400."""
+    replay_fixture("get_da", "services_ebsdmx")
+    with pytest.raises(InvalidRequestError, match="The field clCode is invalid"):
+        await api.get_da("S", "A", "EBSDMX", reporter_code="757", period="2023")
+
+
+def test_get_metadata_for_one_reporter_and_period(
+    replay_fixture: ReplayFixture, fixtures_dir: Path
+) -> None:
+    route = replay_fixture("get_metadata", "ch_2023")
+    result = tasks.get_metadata("C", "A", "HS", reporter_code="757", period="2023")
+    assert route.calls.last.request.url.path == "/data/v1/getMetadata/C/A/HS"
+    assert _sent(route) == {"reporterCode": "757", "period": "2023"}
+    assert _sent(route) == _recorded(fixtures_dir, "get_metadata", "ch_2023")
+    assert result.meta.endpoint == "data/v1/getMetadata"
+    assert result.meta.request["reporter_code"] == "757"
+    assert result.meta.published_at is None
+    [dataset] = result.data
+    assert (dataset.reporter_code, dataset.period, dataset.dataset_code) == (
+        757,
+        2023,
+        20757202301202100,
+    )
+    first, revised = dataset.notes
+    assert first.publication_note is not None
+    assert first.publication_note.startswith("New Data")
+    assert revised.publication_note is not None
+    assert revised.publication_note.startswith("Revised Data")
+    assert first.publication_date == datetime(2024, 2, 2, 5, 18, 25, 780000)
+    assert revised.publication_date == datetime(2024, 6, 7, 18, 14, 53, 432741)
+    assert revised.publication_date_short == date(2024, 6, 7)
+    assert first.import_conv_factor == first.export_conv_factor == Decimal("1.11256298")
+    assert (first.currency, first.trade_system, first.classification_code) == (
+        "CHF",
+        "Special",
+        "H6",
+    )
+    assert (first.import_valuation, first.export_valuation) == ("CIF", "FOB")
+
+
+def test_get_metadata_without_a_period_answers_every_period(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """reporterCode is honoured: only Switzerland's datasets come back."""
+    route = replay_fixture("get_metadata", "ch_all_periods")
+    result = tasks.get_metadata("C", "A", "HS", reporter_code="757")
+    assert _sent(route) == {"reporterCode": "757"}
+    assert len(result.data) == 38
+    assert {dataset.reporter_code for dataset in result.data} == {757}
+    assert min(dataset.period for dataset in result.data) == 1988
+    assert sum(len(dataset.notes) for dataset in result.data) == 42
+    factors = [note.import_conv_factor for dataset in result.data for note in dataset.notes]
+    assert all(isinstance(factor, Decimal) for factor in factors)
+
+
+def test_get_metadata_answers_h6_as_hs(replay_fixture: ReplayFixture, fixtures_dir: Path) -> None:
+    """H6 is not in the spec's clCode enum for getMetadata; upstream answers it like HS."""
+    route = replay_fixture("get_metadata", "ch_2023_h6")
+    h6 = tasks.get_metadata("C", "A", "H6", reporter_code="757", period="2023").data
+    assert route.calls.last.request.url.path == "/data/v1/getMetadata/C/A/H6"
+    fixture = load_fixture(fixtures_dir / "get_metadata" / "ch_2023.json")
+    hs = json.loads(fixture.response.body)["data"]
+    assert [MetadataDataset.model_validate(row) for row in hs] == h6
+
+
+def test_get_live_update(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get_live_update", "latest")
+    result = tasks.get_live_update()
+    assert route.calls.last.request.url.path == "/data/v1/getLiveUpdate"
+    assert not route.calls.last.request.url.params
+    assert result.meta.endpoint == "data/v1/getLiveUpdate"
+    assert result.meta.request == {}
+    assert result.meta.published_at is None
+    assert len(result.data) == 50
+    newest = result.data[0]
+    assert newest.started_at == datetime(2026, 10, 22, 21, 27, 39, tzinfo=UTC)
+    assert newest.completed_at == datetime(2026, 10, 22, 21, 24, 18, tzinfo=UTC)
+    assert newest.last_updated == date(2026, 10, 22)
+    assert newest.queued_at == datetime(2026, 10, 22, 23, 18, 33)
+    assert (newest.reporter_code, newest.period, newest.size) == ("234", 202604, 21_285_480)
+    assert (newest.status, newest.release_status) == ("Success", "Released")
+    started = [row.started_at for row in result.data]
+    assert started == sorted(started, reverse=True)  # type: ignore[type-var]
+    assert "published_date" not in type(newest).model_fields
+
+
+@pytest.mark.anyio
+async def test_live_updates_count_is_not_the_number_of_rows(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get_live_update", "latest")
+    response = await api.get_live_update()
+    assert (response.count, len(response.data)) == (174, 50)
+
+
+@pytest.mark.anyio
+async def test_dataset_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get_da", "ch_2023")
+    replay_fixture("get_metadata", "ch_2023")
+    replay_fixture("get_live_update", "latest")
+    query = {"type_code": "C", "freq_code": "A", "cl_code": "HS", "reporter_code": "757",
+             "period": "2023"}  # fmt: skip
+    availability = await mcp_call(server, "comtrade_get_data_availability", query)
+    [dataset] = availability["data"]
+    assert dataset["dataset_code"] == 20757202301202100
+    assert dataset["first_released"] == "2024-02-02T04:52:35.216666"
+    assert availability["meta"]["endpoint"] == "data/v1/getDa"
+    metadata = await mcp_call(server, "comtrade_get_metadata", query)
+    assert metadata["data"][0]["notes"][0]["import_conv_factor"] == 1.11256298
+    assert metadata["data"][0]["notes"][1]["publication_date_short"] == "2024-06-07"
+    live = await mcp_call(server, "comtrade_get_live_update", {})
+    assert len(live["data"]) == 50
+    assert live["data"][0]["started_at"] == "2026-10-22T21:27:39Z"
+    assert live["data"][0]["last_updated"] == "2026-10-22"
+    with pytest.raises(AssertionError, match=r"InvalidRequestError.*closest: '757'"):
+        await mcp_call(server, "comtrade_get_data_availability", {**query, "reporter_code": "756"})
+
+
+def test_dataset_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    replay_fixture("get_da", "ch_2023")
+    replay_fixture("get_live_update", "latest")
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as http:
+        query = {"type_code": "C", "freq_code": "A", "cl_code": "HS", "reporter_code": "757",
+                 "period": "2023"}  # fmt: skip
+        answer = http.get("/comtrade/get_data_availability", params=query)
+        assert answer.status_code == 200
+        assert answer.json()["data"][0]["total_records"] == 2530737
+        assert len(http.get("/comtrade/get_live_update").json()["data"]) == 50
+        refused = http.get("/comtrade/get_metadata", params={**query, "period": "2023-01"})
         assert refused.status_code == 422

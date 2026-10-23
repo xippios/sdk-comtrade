@@ -14,16 +14,23 @@ public files under ``files/v1/app/reference/``. Trade values and quantities are
 ``Decimal`` (ADR-0008) and travel as JSON numbers through the adapters.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import AliasChoices, BeforeValidator, Field, model_validator
 from xippios.core import UpstreamModel
 
 __all__ = [
     "Commodity",
     "CountryAreaCodeIso",
+    "DataAvailability",
+    "DataAvailabilityResponse",
+    "LiveUpdateRecord",
+    "LiveUpdateResponse",
+    "MetadataDataset",
+    "MetadataNote",
+    "MetadataResponse",
     "PartnerArea",
     "QuantityUnit",
     "Reference",
@@ -321,3 +328,213 @@ class Commodity(UpstreamModel):
     standard_unit_abbr: str | None = Field(default=None, validation_alias="standardUnitAbbr")
     cmd_code: str | None = Field(default=None, validation_alias="cmdCode")
     description_original: str | None = Field(default=None, validation_alias="descriptionOriginal")
+
+
+class DataAvailability(UpstreamModel):
+    """One final-data dataset of ``data/v1/getDa``, ``components.schemas.DataAvailability``.
+
+    A dataset is one reporter's data for one period in the classification it reported.
+    Every field of the schema under its upstream name in snake_case, all present in every
+    recorded row. ``first_released`` and ``last_released`` are the dataset's first and
+    latest publication; upstream sends them without a UTC offset and with seven
+    fractional digits (``2024-02-02T04:52:35.2166667``), so they are naive and keep
+    microseconds. The ``is_extended_*`` flags say whether the dataset breaks the data down
+    by that parameter (Switzerland 2023: partner, product, customs procedure and mode of
+    transport, not flow or second partner).
+
+    Attributes:
+        dataset_code: Upstream's dataset identifier, e.g. ``20757202301202100``; beyond
+            JavaScript's safe-integer range, exact in Python.
+        total_records: Records the dataset holds in ``data/v1/get``.
+        dataset_checksum: Upstream's checksum of the dataset.
+    """
+
+    dataset_code: int = Field(validation_alias="datasetCode")
+    type_code: str | None = Field(validation_alias="typeCode")
+    freq_code: str | None = Field(validation_alias="freqCode")
+    period: int
+    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_iso: str | None = Field(validation_alias="reporterISO")
+    reporter_desc: str | None = Field(validation_alias="reporterDesc")
+    classification_code: str | None = Field(validation_alias="classificationCode")
+    classification_search_code: str | None = Field(validation_alias="classificationSearchCode")
+    is_original_classification: bool = Field(validation_alias="isOriginalClassification")
+    is_extended_flow_code: bool = Field(validation_alias="isExtendedFlowCode")
+    is_extended_partner_code: bool = Field(validation_alias="isExtendedPartnerCode")
+    is_extended_partner2_code: bool = Field(validation_alias="isExtendedPartner2Code")
+    is_extended_cmd_code: bool = Field(validation_alias="isExtendedCmdCode")
+    is_extended_customs_code: bool = Field(validation_alias="isExtendedCustomsCode")
+    is_extended_mot_code: bool = Field(validation_alias="isExtendedMotCode")
+    total_records: int = Field(validation_alias="totalRecords")
+    dataset_checksum: int = Field(validation_alias="datasetChecksum")
+    first_released: datetime = Field(validation_alias="firstReleased")
+    last_released: datetime = Field(validation_alias="lastReleased")
+
+
+class DataAvailabilityResponse(UpstreamModel):
+    """The envelope of ``data/v1/getDa``, ``components.schemas.DataAvailabilityResponse``.
+
+    Attributes:
+        elapsed_time: Server processing time as upstream words it, e.g. ``"0.18 secs"``.
+        count: Number of rows in ``data``.
+        data: The datasets.
+        error: Empty string on success.
+    """
+
+    elapsed_time: str = Field(validation_alias="elapsedTime")
+    count: int
+    data: list[DataAvailability]
+    error: str
+
+
+class MetadataNote(UpstreamModel):
+    """One publication note of a dataset, ``components.schemas.MetadataNote``.
+
+    A dataset gets one note per publication: "New Data" when first published, "Revised
+    Data" for each revision, each with its ``publication_date``. Every field of the schema
+    under its upstream name in snake_case. ``publication_date`` comes without a UTC offset
+    (naive; seven fractional digits are cut to microseconds); ``publication_date_short``
+    is its day. The conversion factors are sent as strings of digits and read as
+    ``Decimal``; ``currency`` is the currency of the reported values (``"CHF"`` or
+    ``"USD"`` among Switzerland's notes).
+
+    Attributes:
+        import_conv_factor: Upstream's conversion factor for imports, e.g. ``1.11256298``.
+        export_conv_factor: Upstream's conversion factor for exports.
+        trade_system: ``"General"`` or ``"Special"``.
+        import_valuation: Valuation of imports, e.g. ``"CIF"``.
+        export_valuation: Valuation of exports, e.g. ``"FOB"``.
+        import_partner_country: Partner attribution for imports, e.g. ``"Origin"``.
+        export_partner_country: Partner attribution for exports, e.g. ``"Last Known
+            Destination"``.
+        publication_note: Upstream's note, e.g. "New Data: Data for this period is
+            published for the first time; ...".
+    """
+
+    dataset_code: int = Field(validation_alias="datasetCode")
+    type_code: str | None = Field(validation_alias="typeCode")
+    freq_code: str | None = Field(validation_alias="freqCode")
+    period: int
+    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_description: str | None = Field(validation_alias="reporterDescription")
+    currency: str | None
+    import_conv_factor: Decimal | None = Field(validation_alias="importConvFactor")
+    export_conv_factor: Decimal | None = Field(validation_alias="exportConvFactor")
+    trade_system: str | None = Field(validation_alias="tradeSystem")
+    classification_code: str | None = Field(validation_alias="classificationCode")
+    import_valuation: str | None = Field(validation_alias="importValuation")
+    export_valuation: str | None = Field(validation_alias="exportValuation")
+    import_partner_country: str | None = Field(validation_alias="importPartnerCountry")
+    export_partner_country: str | None = Field(validation_alias="exportPartnerCountry")
+    import_partner2_country: str | None = Field(validation_alias="importPartner2Country")
+    export_partner2_country: str | None = Field(validation_alias="exportPartner2Country")
+    publication_note: str | None = Field(validation_alias="publicationNote")
+    publication_date: datetime = Field(validation_alias="publicationDate")
+    publication_date_short: date | None = Field(validation_alias="publicationDateShort")
+
+
+class MetadataDataset(UpstreamModel):
+    """A dataset's publication notes, ``components.schemas.MetadataDataset``.
+
+    Attributes:
+        reporter_code: The reporter, e.g. ``757``.
+        period: The period, e.g. ``2023``.
+        dataset_code: The dataset, as ``DataAvailability.dataset_code`` names it.
+        notes: One note per publication, first publication first.
+    """
+
+    reporter_code: int = Field(validation_alias="reporterCode")
+    period: int
+    type_code: str | None = Field(validation_alias="typeCode")
+    freq_code: str | None = Field(validation_alias="freqCode")
+    dataset_code: int = Field(validation_alias="datasetCode")
+    notes: list[MetadataNote]
+
+
+class MetadataResponse(UpstreamModel):
+    """The envelope of ``data/v1/getMetadata``, ``components.schemas.MetadataResponse``.
+
+    Attributes:
+        elapsed_time: Server processing time as upstream words it, e.g. ``"0.02 secs"``.
+        count: Number of datasets in ``data``.
+        data: The datasets with their notes.
+        error: Empty string on success.
+    """
+
+    elapsed_time: str = Field(validation_alias="elapsedTime")
+    count: int
+    data: list[MetadataDataset]
+    error: str
+
+
+def _long_date(value: Any) -> Any:
+    """``"Thursday, October 22, 2026"``, getLiveUpdate's ``lastUpdated``, as a date."""
+    if isinstance(value, str):
+        return datetime.strptime(value, "%A, %B %d, %Y").date()
+    return value
+
+
+def _us_datetime(value: Any) -> Any:
+    """``"10/22/2026 11:18:33 PM"``, getLiveUpdate's ``queuedAt``, as a naive datetime."""
+    if isinstance(value, str):
+        return datetime.strptime(value, "%m/%d/%Y %I:%M:%S %p")
+    return value
+
+
+class LiveUpdateRecord(UpstreamModel):
+    """One release in upstream's release pipeline, ``components.schemas.LiveUpdateRecord``.
+
+    Every field of the schema under its upstream name in snake_case, typed from the
+    recorded answer (``tests/fixtures/get_live_update/latest.json``); there is no
+    ``publishedDate``. The four times come in four formats:
+
+    - ``started_at``, ``completed_at``: ``"2026-10-22 21:27:39Z"``, UTC, timezone-aware.
+      Upstream's ``completed_at`` is often earlier than ``started_at`` (it equals the next
+      row's ``started_at``); both are kept as sent.
+    - ``last_updated``: ``"Thursday, October 22, 2026"``, a date.
+    - ``queued_at``: ``"10/22/2026 11:18:33 PM"``, no offset, kept naive. It reads about
+      two hours after ``started_at``, so it is probably a local time; which zone is not
+      documented.
+
+    Attributes:
+        size: File size in bytes.
+        status: Pipeline status, e.g. ``"Success"``.
+        release_status: ``"Released"``, ``"In progress"``, ``"Failed"`` or ``"Coming
+            soon"`` per the spec.
+        reporter_code: The reporter as upstream sends it here, a string: ``"842"``.
+        period: ``YYYY`` or ``YYYYMM``, e.g. ``202604``.
+    """
+
+    size: int
+    started_at: datetime | None = Field(validation_alias="startedAt")
+    completed_at: datetime | None = Field(validation_alias="completedAt")
+    status: str | None
+    last_updated: Annotated[date | None, BeforeValidator(_long_date)] = Field(
+        validation_alias="lastUpdated"
+    )
+    queued_at: Annotated[datetime | None, BeforeValidator(_us_datetime)] = Field(
+        validation_alias="queuedAt"
+    )
+    release_status: str | None = Field(validation_alias="releaseStatus")
+    reporter_code: str | None = Field(validation_alias="reporterCode")
+    freq_code: str | None = Field(validation_alias="freqCode")
+    type_code: str | None = Field(validation_alias="typeCode")
+    classification_code: str | None = Field(validation_alias="classificationCode")
+    period: int | None
+
+
+class LiveUpdateResponse(UpstreamModel):
+    """The envelope of ``data/v1/getLiveUpdate``, ``components.schemas.LiveUpdateResponse``.
+
+    Attributes:
+        elapsed_time: Server processing time as upstream words it, e.g. ``"0.5870672 secs"``.
+        count: Not the number of rows here, despite the spec: 174 with 50 rows in ``data``
+            when recorded (2026-10-23).
+        data: The 50 most recent releases.
+        error: Empty string on success.
+    """
+
+    elapsed_time: str = Field(validation_alias="elapsedTime")
+    count: int
+    data: list[LiveUpdateRecord]
+    error: str

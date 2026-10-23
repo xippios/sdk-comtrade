@@ -1,0 +1,66 @@
+{
+  "recorded_at": "2026-10-23T05:01:33.269764Z",
+  "request": {
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/data/v1/getDa/C/A/HS?reporterCode=757&period=2010%2C2011%2C2012%2C2013%2C2014%2C2015%2C2016%2C2017%2C2018%2C2019%2C2020%2C2021%2C2022"
+  },
+  "response": {
+    "body": "{\"elapsedTime\":\"0.57 secs\",\"count\":13,\"data\":[{\"datasetCode\":20757201001082100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2010,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H3\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":false,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":false,\"isExtendedMotCode\":false,\"totalRecords\":377644,\"datasetChecksum\":1850764577,\"firstReleased\":\"2011-05-20T16:36:42.96\",\"lastReleased\":\"2021-02-22T02:10:23.4766667\"},{\"datasetCode\":20757201101082100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2011,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H3\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":false,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":false,\"isExtendedMotCode\":false,\"totalRecords\":379842,\"datasetChecksum\":1578885033,\"firstReleased\":\"2012-05-16T17:55:30.5366667\",\"lastReleased\":\"2021-02-22T02:41:40.77\"},{\"datasetCode\":20757201201092100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2012,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H4\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":true,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":4712516,\"datasetChecksum\":-1245021318,\"firstReleased\":\"2013-05-02T23:49:20.77\",\"lastReleased\":\"2021-10-05T17:12:06.8566667\"},{\"datasetCode\":20757201301092100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2013,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H4\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":true,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":4529614,\"datasetChecksum\":1286338082,\"firstReleased\":\"2014-04-29T19:42:46.4233333\",\"lastReleased\":\"2021-10-03T16:19:20.98\"},{\"datasetCode\":20757201401092100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2014,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H4\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":true,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":4679326,\"datasetChecksum\":1570296153,\"firstReleased\":\"2015-02-12T21:18:24.7933333\",\"lastReleased\":\"2021-10-05T07:10:05.2266667\"},{\"datasetCode\":20757201501092100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2015,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H4\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":true,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":4772931,\"datasetChecksum\":-1971050016,\"firstReleased\":\"2016-01-28T16:44:37.6766667\",\"lastReleased\":\"2021-10-03T10:37:55.28\"},{\"datasetCode\":20757201601092100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2016,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H4\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":true,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":4899787,\"datasetChecksum\":-1618431689,\"firstReleased\":\"2017-01-27T17:18:37.0633333\",\"lastReleased\":\"2021-07-10T16:49:08.02\"},{\"datasetCode\":20757201701182100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2017,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H5\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":true,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":4980088,\"datasetChecksum\":-1054896262,\"firstReleased\":\"2018-04-06T16:19:00.6933333\",\"lastReleased\":\"2021-10-05T19:08:44.3433333\"},{\"datasetCode\":20757201801182100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2018,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H5\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":true,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":5046001,\"datasetChecksum\":-326970421,\"firstReleased\":\"2019-04-02T20:29:37.9133333\",\"lastReleased\":\"2021-10-04T22:11:38.8066667\"},{\"datasetCode\":20757201901182100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2019,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H5\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":true,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":5049942,\"datasetChecksum\":-90038341,\"firstReleased\":\"2020-02-07T17:42:26.28\",\"lastReleased\":\"2021-10-04T17:53:12.6433333\"},{\"datasetCode\":20757202001182100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2020,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H5\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":true,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":4963809,\"datasetChecksum\":201654009,\"firstReleased\":\"2021-02-04T09:20:42.14\",\"lastReleased\":\"2021-11-03T12:19:45.74\"},{\"datasetCode\":20757202101182100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2021,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H5\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":true,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":3879055,\"datasetChecksum\":-1632367615,\"firstReleased\":\"2022-03-30T02:34:21.8633333\",\"lastReleased\":\"2022-11-11T07:42:52.6633333\"},{\"datasetCode\":20757202201202100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2022,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H6\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":false,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":2497920,\"datasetChecksum\":1388063402,\"firstReleased\":\"2023-02-01T17:54:02.9366667\",\"lastReleased\":\"2024-04-29T21:37:21.04\"}],\"error\":\"\"}",
+    "body_base64": false,
+    "headers": [
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "x-frame-options",
+        "deny"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-xss-protection",
+        "1;mode=block"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000;includeSubDomains"
+      ],
+      [
+        "content-security-policy",
+        "frame-src 'self'"
+      ],
+      [
+        "x-permitted-cross-domain-policies",
+        "none"
+      ],
+      [
+        "referrer-policy",
+        "no-referrer-when-downgrade"
+      ],
+      [
+        "permissions-policy",
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "0"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Fri, 23 Oct 2026 05:01:30 GMT"
+      ]
+    ],
+    "status": 200
+  }
+}

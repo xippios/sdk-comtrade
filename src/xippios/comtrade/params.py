@@ -7,7 +7,8 @@ carries the provenance of every file. Value lists are ``<name>.json``
 (``packaged_values``); tables are ``<name>.csv`` with upstream's columns
 (``packaged_table``), their origin and fetch date in ``tables.json``. ``validate_get``
 checks the arguments of a ``data/v1/get`` call against them, and the free-form ones by
-shape, before anything is sent (ADR-0007).
+shape, before anything is sent (ADR-0007); ``validate_datasets`` does the same for
+``data/v1/getDa`` and ``data/v1/getMetadata``.
 """
 
 import difflib
@@ -35,6 +36,7 @@ __all__ = [
     "packaged_table_info",
     "packaged_values",
     "validate_classification_file",
+    "validate_datasets",
     "validate_get",
 ]
 
@@ -297,7 +299,9 @@ def _check_areas(argument: str, value: str | None, kind: str, problems: list[str
             )
 
 
-def _check_period(value: str | None, problems: list[str]) -> None:
+def _check_period(
+    value: str | None, problems: list[str], *, max_periods: int | None = MAX_PERIODS
+) -> None:
     if value is None:
         return
     members = _members("period", value, problems)
@@ -307,7 +311,7 @@ def _check_period(value: str | None, problems: list[str]) -> None:
                 f"period {member!r} is neither a year (YYYY, e.g. '2023') nor a month "
                 "(YYYYMM, e.g. '202305')"
             )
-    if len(members) > MAX_PERIODS:
+    if max_periods is not None and len(members) > max_periods:
         problems.append(
             f"period has {len(members)} values; UN Comtrade takes at most {MAX_PERIODS} per "
             "call, so split the query by period"
@@ -392,6 +396,66 @@ def validate_get(
         "aggregate_by": aggregate_by,
         "breakdown_mode": breakdown_mode,
         "include_desc": include_desc,
+    }
+    return {name: value for name, value in arguments.items() if value is not None}
+
+
+_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _check_day(argument: str, value: str | None, problems: list[str]) -> None:
+    if value is None:
+        return
+    try:
+        valid = bool(_DAY.fullmatch(value)) and bool(date.fromisoformat(value))
+    except ValueError:
+        valid = False
+    if not valid:
+        problems.append(f"{argument} {value!r} is not a day as YYYY-MM-DD, e.g. '2024-01-31'")
+
+
+def validate_datasets(
+    type_code: str,
+    freq_code: str,
+    cl_code: str,
+    *,
+    reporter_code: str | None = None,
+    period: str | None = None,
+    published_date_from: str | None = None,
+    published_date_to: str | None = None,
+) -> dict[str, Any]:
+    """Check the arguments of a ``data/v1/getDa`` or ``data/v1/getMetadata`` call.
+
+    The same checks as ``validate_get`` for the parameters the two share with it, except
+    that ``period`` takes more than 12 values (``getDa`` answered 13,
+    ``tests/fixtures/get_da/ch_13_periods.json``); the publication dates are checked as
+    ``YYYY-MM-DD`` days. Values are never rewritten.
+
+    Returns:
+        The arguments that are set, under the task's parameter names, in signature order.
+
+    Raises:
+        InvalidRequestError: Naming every problem, with the closest valid value where
+            there is one.
+    """
+    problems: list[str] = []
+    _check_list("type_code", type_code, "typeCode", problems)
+    _check_list("freq_code", freq_code, "freqCode", problems)
+    _check_list("cl_code", cl_code, "clCode", problems)
+    _check_areas("reporter_code", reporter_code, "reporter", problems)
+    _check_period(period, problems, max_periods=None)
+    _check_day("published_date_from", published_date_from, problems)
+    _check_day("published_date_to", published_date_to, problems)
+    if problems:
+        raise InvalidRequestError("; ".join(problems) + ".", source=SOURCE)
+    arguments: dict[str, Any] = {
+        "type_code": type_code,
+        "freq_code": freq_code,
+        "cl_code": cl_code,
+        "reporter_code": reporter_code,
+        "period": period,
+        "published_date_from": published_date_from,
+        "published_date_to": published_date_to,
     }
     return {name: value for name, value in arguments.items() if value is not None}
 

@@ -28,16 +28,37 @@ from xippios.core import Result, ResultMeta, sync
 from xippios.comtrade import api
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.api.get import ENDPOINT
+from xippios.comtrade.api.get_da import ENDPOINT as GET_DA
+from xippios.comtrade.api.get_live_update import ENDPOINT as GET_LIVE_UPDATE
+from xippios.comtrade.api.get_metadata import ENDPOINT as GET_METADATA
 from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
-from xippios.comtrade.models import Commodity, PartnerArea, Reporter, TradeDataRecord
+from xippios.comtrade.models import (
+    Commodity,
+    DataAvailability,
+    LiveUpdateRecord,
+    MetadataDataset,
+    PartnerArea,
+    Reporter,
+    TradeDataRecord,
+)
 from xippios.comtrade.params import (
     packaged_table,
     packaged_table_info,
     validate_classification_file,
+    validate_datasets,
     validate_get,
 )
 
-__all__ = ["get_counts", "get_data", "list_commodities", "list_partners", "list_reporters"]
+__all__ = [
+    "get_counts",
+    "get_data",
+    "get_data_availability",
+    "get_live_update",
+    "get_metadata",
+    "list_commodities",
+    "list_partners",
+    "list_reporters",
+]
 
 REFERENCE = "files/v1/app/reference"
 """Where upstream serves the reference files; ``meta.endpoint`` of the list tasks."""
@@ -266,6 +287,113 @@ async def get_data_async(
     return Result(data=response.data, meta=_meta(request))
 
 
+async def get_data_availability_async(
+    type_code: str,
+    freq_code: str,
+    cl_code: str,
+    *,
+    reporter_code: str | None = None,
+    period: str | None = None,
+    published_date_from: str | None = None,
+    published_date_to: str | None = None,
+) -> Result[list[DataAvailability]]:
+    """List the UN Comtrade datasets a query covers, per reporter and period, with release dates.
+
+    Upstream's ``getDa``: which reporters have published data for which periods, in which
+    classification, how many records each dataset holds and when it was first and last
+    released (``first_released``, ``last_released``, naive datetimes as upstream sends
+    them). One call. A period nobody reported returns an empty list. Arguments are checked
+    before the call; an unknown code raises ``InvalidRequestError`` naming the closest
+    valid one.
+
+    Args:
+        type_code: ``"C"`` goods or ``"S"`` services.
+        freq_code: ``"A"`` annual or ``"M"`` monthly.
+        cl_code: Classification: ``"HS"`` for the data as reported (Switzerland 2023 is
+            an ``"H6"`` dataset), an HS edition ``"H0"`` to ``"H6"``, SITC ``"S1"`` to
+            ``"S4"``, ``"BE"``, for services ``"EB"``, ``"EB02"``, ``"EB10"``.
+        reporter_code: Reporters, comma-separated, as ``list_reporters`` lists them:
+            ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
+            ``"757,842"``. Omit for every reporter (169 datasets for 2023, annual HS).
+        period: Years ``"2023"`` or months ``"202305"``, comma-separated, e.g.
+            ``"2021,2022,2023"``; unlike ``get_data``, more than 12 are accepted.
+        published_date_from: Upstream's ``publishedDateFrom``, a day ``"2024-01-01"``:
+            datasets published from then on. A dataset revised in the range counts
+            (Switzerland 2022, first released 2023-02-01, revised 2024-04-29, is in 2024).
+        published_date_to: Upstream's ``publishedDateTo``, a day ``"2024-12-31"``.
+    """
+    request = validate_datasets(
+        type_code,
+        freq_code,
+        cl_code,
+        reporter_code=reporter_code,
+        period=period,
+        published_date_from=published_date_from,
+        published_date_to=published_date_to,
+    )
+    response = await api.get_da(**request)
+    return Result(
+        data=response.data,
+        meta=ResultMeta(source=SOURCE, endpoint=GET_DA, request=request),
+    )
+
+
+async def get_metadata_async(
+    type_code: str,
+    freq_code: str,
+    cl_code: str,
+    *,
+    reporter_code: str | None = None,
+    period: str | None = None,
+) -> Result[list[MetadataDataset]]:
+    """List UN Comtrade's publication notes for a reporter's datasets, one per publication.
+
+    Upstream's ``getMetadata``: per dataset (reporter and period), a note for its first
+    publication ("New Data") and one for each revision ("Revised Data"), each with its
+    ``publication_date`` and what the reporter's data rests on: ``currency``, the import
+    and export conversion factors (``Decimal``), ``trade_system`` (``"General"`` or
+    ``"Special"``), the valuation (``"CIF"``, ``"FOB"``) and partner attribution. One call.
+    ``reporter_code`` and ``period`` are not in upstream's spec, but upstream honours them
+    as the official ``comtradeapicall`` package sends them; without ``reporter_code`` the
+    answer holds every reporter's notes, so name one.
+
+    Args:
+        type_code: ``"C"`` goods or ``"S"`` services.
+        freq_code: ``"A"`` annual or ``"M"`` monthly.
+        cl_code: Classification: ``"HS"`` (``"H6"`` is answered the same), SITC
+            ``"SS"`` or ``"S1"`` to ``"S4"``, ``"BE"``, ``"TM"``, for services ``"EB"``,
+            ``"EB02"``, ``"EB10"``.
+        reporter_code: Reporters, comma-separated, as ``list_reporters`` lists them:
+            ``"757"`` Switzerland (38 annual datasets, 1988 onwards), ``"842"`` USA,
+            ``"276"`` Germany, ``"156"`` China.
+        period: Years ``"2023"`` or months ``"202305"``, comma-separated. Omit for every
+            period.
+    """
+    request = validate_datasets(
+        type_code, freq_code, cl_code, reporter_code=reporter_code, period=period
+    )
+    response = await api.get_metadata(**request)
+    meta = ResultMeta(source=SOURCE, endpoint=GET_METADATA, request=request)
+    return Result(data=response.data, meta=meta)
+
+
+async def get_live_update_async() -> Result[list[LiveUpdateRecord]]:
+    """List the 50 most recent releases in UN Comtrade's release pipeline, newest first.
+
+    Upstream's ``getLiveUpdate``: for each release the reporter (``reporter_code``, a
+    string here, e.g. ``"842"``), ``type_code``, ``freq_code``, ``classification_code``,
+    ``period``, file ``size``, ``status`` and ``release_status`` (e.g. ``"Released"``),
+    and four times: ``started_at`` and ``completed_at`` (UTC), ``last_updated`` (a day)
+    and ``queued_at`` (no zone given, kept naive). There is no publication date field;
+    ``get_data_availability`` and ``get_metadata`` carry those per dataset. One call, no
+    arguments. Upstream's ``count`` (174 when recorded) is not the number of rows, so it
+    is not returned.
+    """
+    response = await api.get_live_update()
+    meta = ResultMeta(source=SOURCE, endpoint=GET_LIVE_UPDATE)
+    return Result(data=response.data, meta=meta)
+
+
 async def list_reporters_async() -> Result[list[Reporter]]:
     """List the reporters UN Comtrade has trade data from, with the codes reporter_code takes.
 
@@ -323,6 +451,9 @@ async def list_commodities_async(cl_code: str) -> Result[list[Commodity]]:
 
 get_counts = sync(get_counts_async)
 get_data = sync(get_data_async)
+get_data_availability = sync(get_data_availability_async)
+get_live_update = sync(get_live_update_async)
+get_metadata = sync(get_metadata_async)
 list_commodities = sync(list_commodities_async)
 list_partners = sync(list_partners_async)
 list_reporters = sync(list_reporters_async)
