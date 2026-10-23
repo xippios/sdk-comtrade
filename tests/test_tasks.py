@@ -1395,3 +1395,52 @@ def test_dataset_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
         assert len(http.get("/comtrade/get_live_update").json()["data"]) == 50
         refused = http.get("/comtrade/get_metadata", params={**query, "period": "2023-01"})
         assert refused.status_code == 422
+
+
+# Search filters on the list tasks.
+
+
+def test_the_list_tasks_search_code_iso3_and_text(respx_mock: respx.MockRouter) -> None:
+    assert [row.reporter_code for row in tasks.list_reporters(search="switz").data] == [757]
+    assert [row.reporter_code for row in tasks.list_reporters(search="757").data] == [757]
+    by_iso3 = tasks.list_reporters(search="che")
+    assert [row.reporter_code for row in by_iso3.data] == [690, 757], "Seychelles by its name"
+    assert by_iso3.meta.request == {"search": "che"}
+    assert by_iso3.meta.vintage == "2026-10-23"
+    germany = tasks.list_reporters(search="GERMANY").data
+    assert sorted(row.reporter_code for row in germany) == [276, 278, 280]
+    world = tasks.list_partners(search="W00")
+    assert [row.partner_code for row in world.data] == [0]
+    assert world.meta.request == {"search": "W00"}
+    usa = tasks.list_partners(search="usa").data
+    assert sorted(row.partner_code for row in usa) == [840, 841, 842]
+    assert tasks.list_partners(search="no such area").data == []
+    whole = tasks.list_reporters()
+    assert (len(whole.data), whole.meta.request) == (255, {})
+    assert len(tasks.list_partners().data) == 310
+    assert not respx_mock.calls, "packaged: no upstream call"
+
+
+def test_list_commodities_searches_the_fetched_file(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("reference", "b4")
+    food = tasks.list_commodities("B4", search="FOOD")
+    assert [row.id for row in food.data] == ["1", "11", "12", "111", "112", "121", "122"]
+    assert food.meta.request == {"cl_code": "B4", "search": "FOOD"}
+    by_code = tasks.list_commodities("B4", search="52")
+    assert [row.id for row in by_code.data] == ["52", "521", "522"]
+    assert len(tasks.list_commodities("B4").data) == 30
+    assert route.call_count == 1, "one fetch, kept for the process"
+
+
+def test_list_search_route_end_to_end() -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as http:
+        answer = http.get("/comtrade/list_partners", params={"search": "world"}).json()
+        assert [row["partner_code"] for row in answer["data"]] == [0]
+        assert answer["meta"]["request"] == {"search": "world"}
