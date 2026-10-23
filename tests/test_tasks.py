@@ -212,6 +212,7 @@ def test_get_data_refuses_over_the_limit_before_fetching(
         )
     assert info.value.count == 5_006_385
     assert info.value.limit == RECORD_LIMIT == 100_000
+    assert info.value.bound is False
     message = str(info.value)
     assert "5,006,385" in message
     assert "Split by period (max 12 per call), then by reporter" in message
@@ -1679,6 +1680,7 @@ def test_a_bound_over_the_limit_is_refused_without_a_call(respx_mock: respx.Mock
         tasks.get_bilateral_flows("757", "842", codes, periods, "X")
     assert not respx_mock.calls
     assert info.value.count == 8334 * 12 == 100_008
+    assert info.value.bound is True
     assert "query could return up to 100,008 records" in str(info.value)
     assert "Name fewer product codes or periods per call" in str(info.value)
 

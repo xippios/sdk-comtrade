@@ -37,6 +37,8 @@ class QueryTooLarge(InvalidRequestError):
     Attributes:
         count: Records the query would return, or with ``bound`` at most return.
         limit: The per-call limit.
+        bound: ``True`` when ``count`` is an upper bound from the arguments, ``False``
+            when it is upstream's count.
     """
 
     def __init__(self, count: int, *, limit: int = RECORD_LIMIT, bound: bool = False) -> None:
@@ -57,3 +59,4 @@ class QueryTooLarge(InvalidRequestError):
         )
         self.count = count
         self.limit = limit
+        self.bound = bound
