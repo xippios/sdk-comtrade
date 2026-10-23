@@ -13,7 +13,9 @@ __all__ = [
     "CustomsCode",
     "FlowCode",
     "FreqCode",
+    "MosCode",
     "MotCode",
+    "QtyUnitCode",
     "TypeCode",
 ]
 
@@ -109,6 +111,23 @@ class FreqCode(StrEnum):
     M = "M"
 
 
+class MosCode(StrEnum):
+    """Values of ``mosCode`` (fetched 2026-10-23).
+
+    The ids of ModeOfSupply.json, not proven parameter values: data/v1/get, which takes mosCode
+    though the spec does not list it, refused 'Mode 1' (HTTP 400,
+    tests/fixtures/get/count_services_eb10_mos_code_mode_1.json) and accepted '0' and '1'
+    (count_services_eb10_mos_code_0.json, count_services_eb10_mos_code_1.json). mosCode is not a
+    parameter of the tasks; trade rows carry it as mos_code.
+    """
+
+    _0 = "0"
+    MODE_1 = "Mode 1"
+    MODE_2 = "Mode 2"
+    MODE_3 = "Mode 3"
+    MODE_4 = "Mode 4"
+
+
 class MotCode(StrEnum):
     """Values of ``motCode`` (fetched 2026-10-23)."""
 
@@ -130,6 +149,52 @@ class MotCode(StrEnum):
     _9200 = "9200"
     _9300 = "9300"
     _9900 = "9900"
+
+
+class QtyUnitCode(StrEnum):
+    """Values of ``qtyUnitCode`` (fetched 2026-10-23)."""
+
+    _1 = "-1"
+    _2 = "2"
+    _3 = "3"
+    _4 = "4"
+    _5 = "5"
+    _6 = "6"
+    _7 = "7"
+    _8 = "8"
+    _9 = "9"
+    _10 = "10"
+    _11 = "11"
+    _12 = "12"
+    _13 = "13"
+    _14 = "14"
+    _15 = "15"
+    _16 = "16"
+    _17 = "17"
+    _18 = "18"
+    _19 = "19"
+    _20 = "20"
+    _21 = "21"
+    _22 = "22"
+    _23 = "23"
+    _24 = "24"
+    _25 = "25"
+    _26 = "26"
+    _27 = "27"
+    _28 = "28"
+    _29 = "29"
+    _30 = "30"
+    _31 = "31"
+    _32 = "32"
+    _33 = "33"
+    _34 = "34"
+    _35 = "35"
+    _36 = "36"
+    _37 = "37"
+    _38 = "38"
+    _39 = "39"
+    _40 = "40"
+    _41 = "41"
 
 
 class TypeCode(StrEnum):

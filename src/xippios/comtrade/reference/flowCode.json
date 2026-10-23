@@ -11,7 +11,7 @@
     {
       "value": "XIF",
       "decision": "added",
-      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; not tried upstream"
+      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_xif.json, HTTP 200)"
     }
   ],
   "values": [

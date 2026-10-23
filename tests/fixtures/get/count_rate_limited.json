@@ -1,0 +1,34 @@
+{
+  "recorded_at": "2026-10-23T04:58:10.004394Z",
+  "request": {
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/data/v1/get/C/A/H1?reporterCode=757&period=2023&partnerCode=0&cmdCode=TOTAL&flowCode=X&countOnly=true"
+  },
+  "response": {
+    "body": "{ \"statusCode\": 429, \"message\": \"Rate limit is exceeded. Try again in 1 seconds.\" }",
+    "body_base64": false,
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "retry-after",
+        "1"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Fri, 23 Oct 2026 04:58:07 GMT"
+      ]
+    ],
+    "status": 429
+  }
+}

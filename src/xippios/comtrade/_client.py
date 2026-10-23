@@ -1,17 +1,18 @@
 """The configured ``xippios.core`` client for UN Comtrade.
 
 One ``AsyncClient`` carries the subscription key for the data API: task functions share
-its rate limiter and cache, and the same instance serves the sync facades and the MCP
-server. The public reference files go through ``reference_client``, which never sends
-the key.
+its rate limiter, and the same instance serves the sync facades and the MCP server. The
+public reference files go through ``reference_client``, which never sends the key and
+keeps every file it fetched for the life of the process (``REFERENCE_CACHE``).
 
 Limits of a Basic Individual (free) key, ``docs/upstream/help/subscriptions.md``: 1 call
 per second, 500 calls per day, 100,000 records per call. Upstream's own headers agree
 (``x-ratelimit-limit: 1`` and ``x-ratelimit-operation-limit: 60`` on the recorded backend
-answers). The bucket below allows 60 calls a minute with no burst, so calls are spaced a
-second apart. The daily quota is not enforced here; ``countOnly`` calls count against it.
+answers). The bucket below spaces calls 1.5 s apart (``RATE_LIMIT``). The daily quota is
+not enforced here; ``countOnly`` calls count against it.
 """
 
+import dataclasses
 import re
 
 import httpx
@@ -20,6 +21,7 @@ from xippios.core import (
     ClientConfig,
     HeaderKeyAuth,
     InvalidRequestError,
+    MemoryCache,
     RateLimit,
     RateLimitError,
     Timeouts,
@@ -31,7 +33,14 @@ from xippios.comtrade._version import __version__
 SOURCE = "comtrade"
 BASE_URL = "https://comtradeapi.un.org"
 API_KEY_ENV = "COMTRADE_API_KEY"  # pragma: allowlist secret (a variable name, not a key)
-RATE_LIMIT = RateLimit(per_minute=60, burst=1)
+RATE_LIMIT = RateLimit(per_minute=40, burst=1)
+"""One call every 1.5 s, no burst: upstream's 1 call per second with a margin.
+
+Spaced exactly 1.0 s apart, 9 of 18 calls drew HTTP 429 "Rate limit is exceeded. Try
+again in 1 seconds." with ``Retry-After: 1`` (2026-10-23, ``count_rate_limited.json``):
+the gateway's one-second window is not exact. At 1.5 s 2 of 39 calls drew one, at 2.0 s
+none of 10. Core retries a 429 after ``Retry-After``; every retry is another call.
+"""
 TIMEOUTS = Timeouts(read=180.0)
 """Read timeout 180 s, the rest at the family defaults (conventions §6).
 
@@ -117,15 +126,25 @@ config = ClientConfig(
 auth = HeaderKeyAuth("Ocp-Apim-Subscription-Key", API_KEY_ENV, source=SOURCE)
 client = AsyncClient(config, auth=auth)
 
+REFERENCE_CACHE = MemoryCache(ttl=None, maxsize=64)
+"""Core's GET cache for ``reference_client``: a file is fetched once per process.
+
+The files change rarely (``ListofReferences.json`` was last modified 2025-11-12 when the
+snapshot was taken) and the classification files are large (``HS.json`` is about 2 MB,
+8,262 codes), so ``list_commodities`` keeps what it fetched. No TTL; 64 entries hold every
+file ``ListofReferences.json`` lists. Only HTTP 200 answers are kept.
+"""
+
 # The reference files under files/v1/app/reference/ are public: the Help Center links
 # them without a key and scripts/refresh_upstream.py fetches them without one. They are
 # fetched keyless so a reference refresh never sends the key or spends quota.
-reference_client = AsyncClient(config)
+reference_client = AsyncClient(dataclasses.replace(config, cache=REFERENCE_CACHE))
 
 __all__ = [
     "API_KEY_ENV",
     "BASE_URL",
     "RATE_LIMIT",
+    "REFERENCE_CACHE",
     "SOURCE",
     "TIMEOUTS",
     "classify",

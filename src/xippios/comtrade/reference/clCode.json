@@ -19,9 +19,99 @@
       "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum; upstream accepted it (tests/fixtures/get/count_cl_code_tm.json, HTTP 200)"
     },
     {
+      "value": "B4",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_b4.json, HTTP 200)"
+    },
+    {
+      "value": "B5",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_b5.json, HTTP 200)"
+    },
+    {
+      "value": "EB02",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb02.json, HTTP 200)"
+    },
+    {
+      "value": "EB10",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb10.json, HTTP 200)"
+    },
+    {
+      "value": "EB10S",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb10s.json, HTTP 200)"
+    },
+    {
+      "value": "EB",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb.json, HTTP 200)"
+    },
+    {
+      "value": "H0",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h0.json, HTTP 200)"
+    },
+    {
+      "value": "H1",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h1.json, HTTP 200)"
+    },
+    {
+      "value": "H2",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h2.json, HTTP 200)"
+    },
+    {
+      "value": "H3",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h3.json, HTTP 200)"
+    },
+    {
+      "value": "H4",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h4.json, HTTP 200)"
+    },
+    {
+      "value": "H5",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h5.json, HTTP 200)"
+    },
+    {
       "value": "H6",
       "decision": "kept",
-      "evidence": "in the reference file; upstream answered without settling it (tests/fixtures/get/count_cl_code_h6.json, HTTP 500)"
+      "evidence": "in the reference file; upstream answered without settling it (tests/fixtures/get/count_cl_code_h6.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_retried.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_retried_later.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_cmd_code_01.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_usa.json, HTTP 500)"
+    },
+    {
+      "value": "HS",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_ch_exports_2023.json, HTTP 200)"
+    },
+    {
+      "value": "S1",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s1.json, HTTP 200)"
+    },
+    {
+      "value": "S2",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s2.json, HTTP 200)"
+    },
+    {
+      "value": "S3",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s3.json, HTTP 200)"
+    },
+    {
+      "value": "S4",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s4.json, HTTP 200)"
+    },
+    {
+      "value": "SS",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_ss.json, HTTP 200)"
     }
   ],
   "values": [

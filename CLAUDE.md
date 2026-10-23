@@ -12,7 +12,7 @@ that works here; the family rules it points to apply as well.
 | API base URL | `https://comtradeapi.un.org` |
 | Documentation | https://comtradeplus.un.org/ApiDocs, snapshotted in `docs/upstream/` |
 | Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header |
-| Rate limit | 1 per second, no burst (60 per minute), enforced client-side in `_client.py` |
+| Rate limit | 1 per second documented; the client spaces calls 1.5 s apart, no burst (`_client.py`) |
 | Write tools | no, this package is read-only |
 
 The snapshot in `docs/upstream/` is the reference for names, parameters and semantics.
@@ -24,10 +24,13 @@ wrapper from memory of the API.
 The limits of a Basic Individual (free) key, from `docs/upstream/help/subscriptions.md`,
 and how `_client.py` treats them:
 
-- **1 call per second.** `RATE_LIMIT = RateLimit(per_minute=60, burst=1)`: the bucket
-  never bursts, so calls are spaced a second apart. Upstream's headers agree
-  (`x-ratelimit-limit: 1`, `x-ratelimit-operation-limit: 60`). Replay tests pay that
-  second too.
+- **1 call per second.** Documented, and upstream's headers agree (`x-ratelimit-limit: 1`,
+  `x-ratelimit-operation-limit: 60`), but the gateway's window is not exact: with calls
+  spaced exactly 1.0 s apart, 9 of 18 drew HTTP 429 "Rate limit is exceeded. Try again in
+  1 seconds." (`Retry-After: 1`, `count_rate_limited.json`); at 1.5 s 2 of 39, at 2.0 s
+  none of 10 (2026-10-23). So `RATE_LIMIT = RateLimit(per_minute=40, burst=1)`: one call
+  every 1.5 s, never a burst. Core retries a 429 after `Retry-After`, each retry a call.
+  Replay tests pay the 1.5 s too.
 - **500 calls per day.** Not enforced client-side. `countOnly` calls count against it,
   so `get_data` costs two calls (count, then data) and `get_counts` one. Over the quota
   API Management answers 403 "Out of call volume quota. Quota will be replenished in
@@ -47,16 +50,49 @@ and how `_client.py` treats them:
   https://comtradeplus.un.org/MyComtrade/APIPortal into the environment.
 
 The reference files under `files/v1/app/reference/` are public: `reference_client`
-fetches them without the key, so `scripts/refresh_reference.py` needs none and costs no
-quota. Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757
-in `Reporters.json`; 756 is no reporter and simply counts 0.
+fetches them without the key and keeps each for the life of the process (core's GET
+cache, `REFERENCE_CACHE`; tests empty it before each test), so
+`scripts/refresh_reference.py` and `list_commodities` need no key and cost no quota.
+Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757 in
+`Reporters.json`. Upstream answers 756, which is no reporter, with count 0; the tasks
+refuse it before the call, naming 757, because they check `reporter_code` against
+`reference/Reporters.csv` and partner codes against `reference/partnerAreas.csv`, the
+package's copies of upstream's `Reporters.json` and `partnerAreas.json`. Both tables
+share one code space (a code in both is the same area) but differ: 0 World and 56 other
+areas are partners only, 97 European Union and 975 ASEAN reporters only.
 
-When recording fixtures, budget the calls. The package client retries 5xx and transport
-errors up to four attempts, each a keyed call (a count on `clCode=H6` answered HTTP 500
-once), and a count over all reporters outlasted the former 60 s read timeout (the repeat
-answered in 27 s). Record with a one-attempt copy of the client, and never keep a body of
-many megabytes: narrow the query or use `maxRecords`. Replay tests always send a
-placeholder key, whatever the shell holds (`tests/conftest.py`).
+The MCP result cap (200 rows or 64 KB) cuts `list_reporters` (255 rows) and
+`list_partners` (310) in upstream's alphabetical order, past Switzerland and the USA;
+the tasks take no filter yet.
+
+When recording fixtures, budget the calls. The package client retries 429, 5xx and
+transport errors up to four attempts, each a keyed call (`clCode=H6` on `data/v1/get`
+answered HTTP 500 to all five tries on 2026-10-23, two reporters, two product codes), and a
+count over all reporters outlasted the former 60 s read timeout (the repeat answered in
+27 s). Record with a one-attempt copy of the client, spaced at least 1.5 s apart, and
+never keep a body of many megabytes: narrow the query or use `maxRecords`. Replay tests
+always send a placeholder key, whatever the shell holds (`tests/conftest.py`).
+
+What the recorded answers established (2026-10-23). The fixtures are named in
+`reference/clCode.json` and `flowCode.json`, in the docstrings of the `getDa`,
+`getMetadata` and `getLiveUpdate` wrappers, and, for the `data/v1/get` behaviours, in
+`tests/test_tasks.py` and the PR description of wave 1:
+
+- `data/v1/get`: `breakdownMode` `plus` is the default (omitting it gives the same 32 rows
+  for Switzerland's 2023 exports); `classic` returns only the total row, as pinning
+  `partner2Code` 0, `customsCode` C00 and `motCode` 0 does. `aggregateBy` returns the
+  aggregated parameters as `-2` with `classificationCode` `GG`; counts match rows.
+  `includeDesc` fills the `*ISO`/`*Desc` fields. For services the classification files
+  name `200` (EB, EB02, EB10) or `S` (EB10S) as the total; counts confirm `200` on EB10
+  and EB02 (one row each) and `TOTAL` counting 0 on EB10. On EB and EB10S both forms
+  counted 0, which cannot be told from an unknown code. `mosCode`, not in the spec, is
+  accepted and filters (`0`, `1`), but `Mode 1` from `ModeOfSupply.json` is refused; it
+  is not a parameter of the tasks. Malformed values get HTTP 400 naming the field; a code
+  upstream does not have counts 0.
+- `data/v1/getDa`: takes more than 12 periods; refuses the spec's `EBSDMX`.
+- `data/v1/getMetadata`: honours `reporterCode` and `period`, which the spec omits and
+  `comtradeapicall` sends; answers `H6` like `HS`.
+- `data/v1/getLiveUpdate`: 50 rows but `count` 174; no `publishedDate` field.
 
 ## Read first, in this order
 
@@ -92,9 +128,13 @@ src/xippios/comtrade/
   tasks.py         task functions; __all__ is what the adapters register
   mcp.py           xippios-comtrade-mcp entry point
   http.py          FastAPI router
-  params.py        packaged value lists: PACKAGED_LISTS, packaged_values(), validate_get()
+  params.py        packaged lists and tables: PACKAGED_LISTS, packaged_values(),
+                   PACKAGED_TABLES, packaged_table(), packaged_table_info(),
+                   classification_files(); checks run before a call: validate_get(),
+                   validate_datasets(), validate_classification_file()
   enums.py         StrEnums generated from the packaged lists; never edited by hand
-  reference/       packaged code lists (CSV/JSON) plus README with provenance
+  reference/       packaged value lists (JSON), tables (CSV, provenance in tables.json)
+                   plus README with provenance
 scripts/
   refresh_reference.py   fetches the packaged lists through api/ and regenerates enums.py
   refresh_upstream.py    regenerates docs/upstream/ and its FETCHED.md from upstream
@@ -153,7 +193,7 @@ key patterns before committing. Fixtures are never typed in by hand.
 ```bash
 uv sync --all-extras
 uv run pytest                      # offline, replays fixtures
-uv run pytest -m live              # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY; 4 keyed calls
+uv run pytest -m live              # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY; 7 keyed calls, 3 keyless
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pre-commit run --all-files

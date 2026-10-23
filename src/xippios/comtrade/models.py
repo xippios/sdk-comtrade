@@ -8,20 +8,45 @@ Within-source hygiene only: numbers become numbers, upstream enumerations become
 ``StrEnum``. No cross-source normalisation (ADR-0003): an upstream concept stays an
 upstream concept.
 
-Shapes come from ``components.schemas`` in ``docs/upstream/apidocs/comtrade.json`` and from
-the recorded fixtures under ``tests/fixtures/get/``. Trade values and quantities are
+Shapes come from ``components.schemas`` in ``docs/upstream/apidocs/comtrade.json``, from
+the recorded fixtures under ``tests/fixtures/`` and, for the reference tables, from the
+public files under ``files/v1/app/reference/``. Trade values and quantities are
 ``Decimal`` (ADR-0008) and travel as JSON numbers through the adapters.
 """
 
+import re
+from datetime import date, datetime
 from decimal import Decimal
+from typing import Annotated, Any
 
-from pydantic import Field
+from pydantic import (
+    AliasChoices,
+    BeforeValidator,
+    Field,
+    ValidatorFunctionWrapHandler,
+    WrapValidator,
+    model_validator,
+)
+from pydantic import ValidationError as PydanticValidationError
 from xippios.core import UpstreamModel
 
 __all__ = [
+    "Commodity",
+    "CountryAreaCodeIso",
+    "DataAvailability",
+    "DataAvailabilityResponse",
+    "LiveUpdateRecord",
+    "LiveUpdateResponse",
+    "MetadataDataset",
+    "MetadataNote",
+    "MetadataResponse",
+    "PartnerArea",
+    "QuantityUnit",
     "Reference",
     "ReferenceCode",
+    "Reporter",
     "TradeDataCountResponse",
+    "TradeDataItem",
     "TradeDataRecord",
     "TradeDataResponse",
 ]
@@ -34,8 +59,10 @@ class TradeDataRecord(UpstreamModel):
     codes: ``reporter_code`` and ``partner_code`` are Comtrade's numeric area codes
     (``757`` Switzerland, ``0`` World), ``flow_code`` the trade flow (``"X"``, ``"M"``),
     ``customs_code`` and ``mot_code`` the customs procedure and mode of transport, where
-    ``"C00"`` and ``0`` are the totals. The ``*_desc`` and ``*_iso`` fields are ``None``
-    in every recorded answer; none of them set ``includeDesc``. ``ref_period_id`` is
+    ``"C00"`` and ``0`` are the totals. The ``*_desc`` and ``*_iso`` fields, and
+    ``aggr_level`` and ``is_leaf``, are ``None`` unless the query sets ``includeDesc``
+    (``tests/fixtures/get/ch_exports_2023_include_desc.json``). Parameters named in
+    ``aggregateBy`` come back as ``-2`` with ``classification_code`` ``"GG"``. ``ref_period_id`` is
     upstream's integer period key (``20230101``) and ``ref_month`` is ``52`` on annual
     rows, both as sent. Upstream's data items (``docs/upstream/reference/TradeDataItems.json``)
     describe ``primary_value`` as "Primary trade values (taken from CIF or FOB values)",
@@ -161,3 +188,417 @@ class Reference(UpstreamModel):
     variable: str
     description: str
     fileuri: str
+
+
+class QuantityUnit(UpstreamModel):
+    """One entry of ``QuantityUnits.json``, the units of ``qty`` and ``altQty``.
+
+    Attributes:
+        qty_code: The unit's code, as ``qtyUnitCode``/``altQtyUnitCode`` carry it on trade
+            rows; ``-1`` is "Not available or not specified or no quantity."
+        qty_abbr: Upstream's abbreviation, e.g. ``"kg"``.
+        qty_description: Upstream's description, e.g. ``"Weight in kilograms"``.
+    """
+
+    qty_code: int = Field(validation_alias="qtyCode")
+    qty_abbr: str = Field(validation_alias="qtyAbbr")
+    qty_description: str = Field(validation_alias="qtyDescription")
+
+
+class _TableRow(UpstreamModel):
+    """A row of a reference table packaged as CSV, where an empty cell is an absent key.
+
+    Upstream leaves keys out of some rows (``entryExpiredDate`` on areas still in use);
+    the packaged CSV writes those as empty cells. No upstream value is an empty string
+    (checked by ``scripts/refresh_reference.py``), so reading an empty cell as absent
+    loses nothing.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _empty_cell_is_absent(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            return {key: value for key, value in data.items() if value != ""}
+        return data
+
+
+class Reporter(_TableRow):
+    """One reporter area of ``Reporters.json``: a country or area that reports trade.
+
+    Codes are UN Comtrade's own, close to but not always ISO 3166 numeric: Switzerland is
+    757 here, 756 in ISO. Every column of the file, in its order, under its upstream name
+    in snake_case. ``entry_effective_date`` and ``entry_expired_date`` bound the period
+    the code is used for (``entry_expired_date`` is ``None`` for codes still in use);
+    ``is_group`` marks groups such as 97 European Union. Dates carry no UTC offset
+    upstream and are kept naive.
+    """
+
+    id: int
+    text: str
+    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_desc: str = Field(validation_alias="reporterDesc")
+    reporter_note: str | None = Field(default=None, validation_alias="reporterNote")
+    reporter_code_iso_alpha2: str | None = Field(
+        default=None, validation_alias="reporterCodeIsoAlpha2"
+    )
+    reporter_code_iso_alpha3: str = Field(validation_alias="reporterCodeIsoAlpha3")
+    entry_effective_date: datetime = Field(validation_alias="entryEffectiveDate")
+    entry_expired_date: datetime | None = Field(default=None, validation_alias="entryExpiredDate")
+    is_group: bool = Field(validation_alias="isGroup")
+
+
+class PartnerArea(_TableRow):
+    """One partner area of ``partnerAreas.json``: a country, area or group traded with.
+
+    Every column of the file, in its order, under its upstream name in snake_case;
+    upstream spells three of them with a capital first letter (``PartnerCode``,
+    ``PartnerDesc``, ``PartnerCodeIsoAlpha2``/``3``). Partner 0 is World, a group. The
+    codes are the reporters' code space: a code in both files names the same area with
+    the same ISO alpha-3, but the sets differ (World 0, and areas such as 756, are
+    partners only; 97 European Union and 975 ASEAN are reporters only).
+    """
+
+    id: int
+    text: str
+    partner_code: int = Field(validation_alias="PartnerCode")
+    partner_desc: str = Field(validation_alias="PartnerDesc")
+    partner_note: str | None = Field(default=None, validation_alias="partnerNote")
+    partner_code_iso_alpha2: str | None = Field(
+        default=None, validation_alias="PartnerCodeIsoAlpha2"
+    )
+    partner_code_iso_alpha3: str = Field(validation_alias="PartnerCodeIsoAlpha3")
+    entry_effective_date: datetime = Field(validation_alias="entryEffectiveDate")
+    entry_expired_date: datetime | None = Field(default=None, validation_alias="entryExpiredDate")
+    is_group: bool = Field(validation_alias="isGroup")
+
+
+class CountryAreaCodeIso(_TableRow):
+    """One row of ``country_area_code_iso.json``, UN Comtrade's area code to ISO alpha-3.
+
+    Covers every reporter and partner code (312 rows when packaged). Some ``iso3`` values
+    are UN Comtrade's own, e.g. ``"W00"`` for 0 World, ``"_AC"`` for 472.
+    """
+
+    country_area_code: int
+    iso3: str
+
+
+class TradeDataItem(_TableRow):
+    """One data item of ``TradeDataItems.json``: a column of the trade data and where it occurs.
+
+    Attributes:
+        data_item: The column as upstream spells it, e.g. ``"primaryValue"``.
+        description: Upstream's description.
+        is_in_data_api_commodity: Present in the data API for goods.
+        is_in_data_api_services: Present in the data API for services.
+        is_in_bulk_file_final: Present in the final-data bulk files.
+        is_in_bulk_file_tariffline: Present in the tariff-line bulk files.
+    """
+
+    data_item: str = Field(validation_alias="dataItem")
+    description: str
+    is_in_data_api_commodity: bool = Field(validation_alias="isInDataAPICommodity")
+    is_in_data_api_services: bool = Field(validation_alias="isInDataAPIServices")
+    is_in_bulk_file_final: bool = Field(validation_alias="isInBulkFileFinal")
+    is_in_bulk_file_tariffline: bool = Field(validation_alias="isInBulkFileTariffline")
+
+
+class Commodity(UpstreamModel):
+    """One product code of a classification file such as ``HS.json`` (``cmdCode`` values).
+
+    The files differ in their columns, so only ``id``, ``text`` and ``parent`` are in every
+    one: ``isLeaf`` and the aggregation level are missing from the EBOPS files,
+    ``standardUnitAbbr`` is only in the HS files, ``cmdCode`` and ``descriptionOriginal``
+    only in ``SS.json``. The aggregation level is spelt ``aggrLevel`` in ``HS.json`` (as
+    ``TradeDataItems.json`` names the data item) and ``aggrlevel`` in the other files;
+    both are read into ``aggr_level``.
+
+    Attributes:
+        id: The code as ``cmd_code`` takes it, e.g. ``"TOTAL"``, ``"09"``, ``"0901"``,
+            ``"090111"``; the EBOPS files label ``"200"`` (EB, EB02, EB10) or ``"S"``
+            (EB10S) as the services total (``get_data`` counts confirm ``"200"`` on EB10
+            and EB02 only).
+        text: Upstream's label, e.g. ``"0901 - Coffee, whether or not roasted or ..."``.
+        parent: The ``id`` of the parent code; ``"#"`` for a top-level code.
+        is_leaf: ``True`` for the most detailed codes (upstream sends ``"1"``/``"0"``).
+        aggr_level: Aggregation level: 0 for ``TOTAL``, then 2, 4, 6 digits for HS.
+        standard_unit_abbr: Standard unit of quantity, e.g. ``"kg"``; ``"n/a"`` above
+            the 6-digit level and on some 6-digit codes.
+        cmd_code: ``SS.json`` only: the code in the original SITC revision.
+        description_original: ``SS.json`` only: the label in the original revision.
+    """
+
+    id: str
+    text: str
+    parent: str
+    is_leaf: bool | None = Field(default=None, validation_alias="isLeaf")
+    aggr_level: int | None = Field(
+        default=None, validation_alias=AliasChoices("aggrLevel", "aggrlevel")
+    )
+    standard_unit_abbr: str | None = Field(default=None, validation_alias="standardUnitAbbr")
+    cmd_code: str | None = Field(default=None, validation_alias="cmdCode")
+    description_original: str | None = Field(default=None, validation_alias="descriptionOriginal")
+
+
+class DataAvailability(UpstreamModel):
+    """One final-data dataset of ``data/v1/getDa``, ``components.schemas.DataAvailability``.
+
+    A dataset is one reporter's data for one period in the classification it reported.
+    Every field of the schema under its upstream name in snake_case, all present in every
+    recorded row. ``first_released`` and ``last_released`` are the dataset's first and
+    latest publication; upstream sends them without a UTC offset and with seven
+    fractional digits (``2024-02-02T04:52:35.2166667``), so they are naive and keep
+    microseconds. The ``is_extended_*`` flags say whether the dataset breaks the data down
+    by that parameter (Switzerland 2023: partner, product, customs procedure and mode of
+    transport, not flow or second partner).
+
+    Attributes:
+        dataset_code: Upstream's dataset identifier, e.g. ``20757202301202100``; beyond
+            JavaScript's safe-integer range, exact in Python.
+        total_records: Records the dataset holds in ``data/v1/get``.
+        dataset_checksum: Upstream's checksum of the dataset.
+    """
+
+    dataset_code: int = Field(validation_alias="datasetCode")
+    type_code: str | None = Field(validation_alias="typeCode")
+    freq_code: str | None = Field(validation_alias="freqCode")
+    period: int
+    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_iso: str | None = Field(validation_alias="reporterISO")
+    reporter_desc: str | None = Field(validation_alias="reporterDesc")
+    classification_code: str | None = Field(validation_alias="classificationCode")
+    classification_search_code: str | None = Field(validation_alias="classificationSearchCode")
+    is_original_classification: bool = Field(validation_alias="isOriginalClassification")
+    is_extended_flow_code: bool = Field(validation_alias="isExtendedFlowCode")
+    is_extended_partner_code: bool = Field(validation_alias="isExtendedPartnerCode")
+    is_extended_partner2_code: bool = Field(validation_alias="isExtendedPartner2Code")
+    is_extended_cmd_code: bool = Field(validation_alias="isExtendedCmdCode")
+    is_extended_customs_code: bool = Field(validation_alias="isExtendedCustomsCode")
+    is_extended_mot_code: bool = Field(validation_alias="isExtendedMotCode")
+    total_records: int = Field(validation_alias="totalRecords")
+    dataset_checksum: int = Field(validation_alias="datasetChecksum")
+    first_released: datetime = Field(validation_alias="firstReleased")
+    last_released: datetime = Field(validation_alias="lastReleased")
+
+
+class DataAvailabilityResponse(UpstreamModel):
+    """The envelope of ``data/v1/getDa``, ``components.schemas.DataAvailabilityResponse``.
+
+    Attributes:
+        elapsed_time: Server processing time as upstream words it, e.g. ``"0.18 secs"``.
+        count: Number of rows in ``data``.
+        data: The datasets.
+        error: Empty string on success.
+    """
+
+    elapsed_time: str = Field(validation_alias="elapsedTime")
+    count: int
+    data: list[DataAvailability]
+    error: str
+
+
+class MetadataNote(UpstreamModel):
+    """One publication note of a dataset, ``components.schemas.MetadataNote``.
+
+    A dataset gets one note per publication: "New Data" when first published, "Revised
+    Data" for each revision, each with its ``publication_date``. Every field of the schema
+    under its upstream name in snake_case. ``publication_date`` comes without a UTC offset
+    (naive; seven fractional digits are cut to microseconds); ``publication_date_short``
+    is its day. The conversion factors are sent as strings of digits and read as
+    ``Decimal``; ``currency`` is the currency of the reported values (``"CHF"`` or
+    ``"USD"`` among Switzerland's notes).
+
+    Attributes:
+        import_conv_factor: Upstream's conversion factor for imports, e.g. ``1.11256298``.
+        export_conv_factor: Upstream's conversion factor for exports.
+        trade_system: ``"General"`` or ``"Special"``.
+        import_valuation: Valuation of imports, e.g. ``"CIF"``.
+        export_valuation: Valuation of exports, e.g. ``"FOB"``.
+        import_partner_country: Partner attribution for imports, e.g. ``"Origin"``.
+        export_partner_country: Partner attribution for exports, e.g. ``"Last Known
+            Destination"``.
+        publication_note: Upstream's note, e.g. "New Data: Data for this period is
+            published for the first time; ...".
+    """
+
+    dataset_code: int = Field(validation_alias="datasetCode")
+    type_code: str | None = Field(validation_alias="typeCode")
+    freq_code: str | None = Field(validation_alias="freqCode")
+    period: int
+    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_description: str | None = Field(validation_alias="reporterDescription")
+    currency: str | None
+    import_conv_factor: Decimal | None = Field(validation_alias="importConvFactor")
+    export_conv_factor: Decimal | None = Field(validation_alias="exportConvFactor")
+    trade_system: str | None = Field(validation_alias="tradeSystem")
+    classification_code: str | None = Field(validation_alias="classificationCode")
+    import_valuation: str | None = Field(validation_alias="importValuation")
+    export_valuation: str | None = Field(validation_alias="exportValuation")
+    import_partner_country: str | None = Field(validation_alias="importPartnerCountry")
+    export_partner_country: str | None = Field(validation_alias="exportPartnerCountry")
+    import_partner2_country: str | None = Field(validation_alias="importPartner2Country")
+    export_partner2_country: str | None = Field(validation_alias="exportPartner2Country")
+    publication_note: str | None = Field(validation_alias="publicationNote")
+    publication_date: datetime = Field(validation_alias="publicationDate")
+    publication_date_short: date | None = Field(validation_alias="publicationDateShort")
+
+
+class MetadataDataset(UpstreamModel):
+    """A dataset's publication notes, ``components.schemas.MetadataDataset``.
+
+    Attributes:
+        reporter_code: The reporter, e.g. ``757``.
+        period: The period, e.g. ``2023``.
+        dataset_code: The dataset, as ``DataAvailability.dataset_code`` names it.
+        notes: One note per publication, first publication first.
+    """
+
+    reporter_code: int = Field(validation_alias="reporterCode")
+    period: int
+    type_code: str | None = Field(validation_alias="typeCode")
+    freq_code: str | None = Field(validation_alias="freqCode")
+    dataset_code: int = Field(validation_alias="datasetCode")
+    notes: list[MetadataNote]
+
+
+class MetadataResponse(UpstreamModel):
+    """The envelope of ``data/v1/getMetadata``, ``components.schemas.MetadataResponse``.
+
+    Attributes:
+        elapsed_time: Server processing time as upstream words it, e.g. ``"0.02 secs"``.
+        count: Number of datasets in ``data``.
+        data: The datasets with their notes.
+        error: Empty string on success.
+    """
+
+    elapsed_time: str = Field(validation_alias="elapsedTime")
+    count: int
+    data: list[MetadataDataset]
+    error: str
+
+
+_MONTHS = {
+    name: number
+    for number, name in enumerate(
+        (
+            "January", "February", "March", "April", "May", "June", "July", "August",
+            "September", "October", "November", "December",
+        ),
+        start=1,
+    )
+}  # fmt: skip
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_LONG_DATE = re.compile(r"([A-Za-z]+), ([A-Za-z]+) (\d{1,2}), (\d{4})")
+_US_DATETIME = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4}) (\d{1,2}):(\d{2}):(\d{2}) ([AP]M)")
+
+
+def _long_date(value: Any) -> Any:
+    """``"Thursday, October 22, 2026"``, getLiveUpdate's ``lastUpdated``, as a date.
+
+    English names from fixed tables, so the process locale plays no part; a string that
+    is not such a date, or whose weekday does not fit it, gives ``None``.
+    """
+    if not isinstance(value, str):
+        return value
+    match = _LONG_DATE.fullmatch(value.strip())
+    if match is None or match[2] not in _MONTHS:
+        return None
+    try:
+        day = date(int(match[4]), _MONTHS[match[2]], int(match[3]))
+    except ValueError:
+        return None
+    return day if _WEEKDAYS[day.weekday()] == match[1] else None
+
+
+def _us_datetime(value: Any) -> Any:
+    """``"10/22/2026 11:18:33 PM"``, getLiveUpdate's ``queuedAt``, as a naive datetime.
+
+    Month first, 12-hour clock with ``AM``/``PM`` read by hand, so the process locale
+    plays no part; a string that is not such a time gives ``None``.
+    """
+    if not isinstance(value, str):
+        return value
+    match = _US_DATETIME.fullmatch(value.strip())
+    if match is None:
+        return None
+    month, day, year, hour, minute, second = (int(part) for part in match.groups()[:6])
+    if not 1 <= hour <= 12:
+        return None
+    hour = hour % 12 + (12 if match[7] == "PM" else 0)
+    try:
+        return datetime(year, month, day, hour, minute, second)
+    except ValueError:
+        return None
+
+
+def _none_if_unparsed(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+    """The parsed value, or ``None`` when it does not parse: one odd time keeps its row."""
+    try:
+        return handler(value)
+    except PydanticValidationError:
+        return None
+
+
+_Tolerant = WrapValidator(_none_if_unparsed)
+
+
+class LiveUpdateRecord(UpstreamModel):
+    """One release in upstream's release pipeline, ``components.schemas.LiveUpdateRecord``.
+
+    Every field of the schema under its upstream name in snake_case, typed from the
+    recorded answer (``tests/fixtures/get_live_update/latest.json``); there is no
+    ``publishedDate``. That answer holds only ``"Released"``/``"Success"`` rows, so the
+    shapes of the other release states are unseen: a time that does not parse becomes
+    ``None`` for that field rather than failing the call. The four times come in four
+    formats, read without the process locale:
+
+    - ``started_at``, ``completed_at``: ``"2026-10-22 21:27:39Z"``, UTC, timezone-aware.
+      Upstream's ``completed_at`` is often earlier than ``started_at`` (it equals the next
+      row's ``started_at``); both are kept as sent.
+    - ``last_updated``: ``"Thursday, October 22, 2026"``, a date.
+    - ``queued_at``: ``"10/22/2026 11:18:33 PM"``, no offset, kept naive. It reads about
+      two hours after ``started_at``, so it is probably a local time; which zone is not
+      documented.
+
+    Attributes:
+        size: File size in bytes.
+        status: Pipeline status, e.g. ``"Success"``.
+        release_status: ``"Released"``, ``"In progress"``, ``"Failed"`` or ``"Coming
+            soon"`` per the spec.
+        reporter_code: The reporter as upstream sends it here, a string: ``"842"``.
+        period: ``YYYY`` or ``YYYYMM``, e.g. ``202604``.
+    """
+
+    size: int
+    started_at: Annotated[datetime | None, _Tolerant] = Field(validation_alias="startedAt")
+    completed_at: Annotated[datetime | None, _Tolerant] = Field(validation_alias="completedAt")
+    status: str | None
+    last_updated: Annotated[date | None, _Tolerant, BeforeValidator(_long_date)] = Field(
+        validation_alias="lastUpdated"
+    )
+    queued_at: Annotated[datetime | None, _Tolerant, BeforeValidator(_us_datetime)] = Field(
+        validation_alias="queuedAt"
+    )
+    release_status: str | None = Field(validation_alias="releaseStatus")
+    reporter_code: str | None = Field(validation_alias="reporterCode")
+    freq_code: str | None = Field(validation_alias="freqCode")
+    type_code: str | None = Field(validation_alias="typeCode")
+    classification_code: str | None = Field(validation_alias="classificationCode")
+    period: int | None
+
+
+class LiveUpdateResponse(UpstreamModel):
+    """The envelope of ``data/v1/getLiveUpdate``, ``components.schemas.LiveUpdateResponse``.
+
+    Attributes:
+        elapsed_time: Server processing time as upstream words it, e.g. ``"0.5870672 secs"``.
+        count: Not the number of rows here, despite the spec: 174 with 50 rows in ``data``
+            when recorded (2026-10-23).
+        data: The 50 most recent releases.
+        error: Empty string on success.
+    """
+
+    elapsed_time: str = Field(validation_alias="elapsedTime")
+    count: int
+    data: list[LiveUpdateRecord]
+    error: str

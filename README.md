@@ -42,15 +42,37 @@ Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 75
 Every argument is checked before the call: coded ones (`type_code`, `cl_code`,
 `flow_code`, `customs_code`, `mot_code`, `aggregate_by`, `breakdown_mode`) against
 the lists packaged from upstream's reference files and spec (`xippios.comtrade.enums`),
-the others by shape; a mistake raises `InvalidRequestError` naming the closest valid
-value.
+`reporter_code` against the packaged copy of upstream's `Reporters.json`
+(`reference/Reporters.csv`) and `partner_code` and `partner2_code` against that of
+`partnerAreas.json`, the others by shape; a mistake raises
+`InvalidRequestError` naming the closest valid value (`756` names `757`, Switzerland).
+
+```python
+from xippios.comtrade import list_commodities, list_partners, list_reporters
+
+list_reporters().data  # 255 reporters, packaged with this version: no call
+list_partners().data  # 310 partner areas, 0 World among them
+list_commodities("HS").data  # 8,262 HS codes, fetched keyless once per process
+```
+
+Release dates are per dataset, so they sit on the rows, not in `meta.published_at`:
+
+```python
+from xippios.comtrade import get_data_availability, get_live_update, get_metadata
+
+[dataset] = get_data_availability("C", "A", "HS", reporter_code="757", period="2023").data
+dataset.first_released, dataset.last_released  # first publication and latest revision
+notes = get_metadata("C", "A", "HS", reporter_code="757", period="2023").data[0].notes
+[note.publication_date for note in notes]  # "New Data", then each "Revised Data"
+get_live_update().data  # the 50 most recent releases, newest first
+```
 
 `get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
 result without a second call, and a count above 100,000 raises `QueryTooLarge` with the
 count before anything is fetched, because upstream would cut the answer at 100,000 rows
 without saying so. A free key allows 1 call per second and 500 calls per day, and
-`countOnly` calls count; the client spaces calls a second apart, the daily quota is
-yours to track.
+`countOnly` calls count; the client spaces calls 1.5 s apart (upstream's gateway refuses
+some calls spaced exactly 1 s apart), the daily quota is yours to track.
 
 ## MCP
 
@@ -67,8 +89,10 @@ yours to track.
 ```
 
 Tools are read-only and named `comtrade_<verb>_<noun>`. Results are capped at
-200 rows or 64 KB with a note on how to narrow the query. `--http` serves streamable
-HTTP instead of stdio.
+200 rows or 64 KB with a note on how to narrow the query. The list tools take no filter
+yet, so `comtrade_list_reporters`, `comtrade_list_partners` and `comtrade_list_commodities`
+show the first rows of their table only (200 of 255 reporters, in upstream's alphabetical
+order). `--http` serves streamable HTTP instead of stdio.
 
 ## Status
 
@@ -76,6 +100,12 @@ HTTP instead of stdio.
 | --- | --- | --- | --- |
 | `data/v1/get/{typeCode}/{freqCode}/{clCode}` with `countOnly=true` | `get_counts(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, ...)` | `comtrade_get_counts` | alpha |
 | `data/v1/get/{typeCode}/{freqCode}/{clCode}` | `get_data(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, ...)` | `comtrade_get_data` | alpha |
+| `data/v1/getDa/{typeCode}/{freqCode}/{clCode}` | `get_data_availability(type_code, freq_code, cl_code, *, reporter_code=, period=, published_date_from=, published_date_to=)` | `comtrade_get_data_availability` | alpha |
+| `data/v1/getMetadata/{typeCode}/{freqCode}/{clCode}` | `get_metadata(type_code, freq_code, cl_code, *, reporter_code=, period=)` | `comtrade_get_metadata` | alpha |
+| `data/v1/getLiveUpdate` | `get_live_update()` | `comtrade_get_live_update` | alpha |
+| `files/v1/app/reference/Reporters.json`, packaged | `list_reporters()` | `comtrade_list_reporters` | alpha |
+| `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners()` | `comtrade_list_partners` | alpha |
+| `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code)` | `comtrade_list_commodities` | alpha |
 
 ## Upstream terms and attribution
 

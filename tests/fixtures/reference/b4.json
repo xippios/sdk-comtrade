@@ -1,0 +1,94 @@
+{
+  "recorded_at": "2026-10-23T04:43:26.921043Z",
+  "request": {
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/files/v1/app/reference/B4.json"
+  },
+  "response": {
+    "body": "{\r\n\"more\": false,\r\n\"classCode\": \"B4\",\r\n\"className\": \"BEC Rev.4\",\r\n\"minimumInputLength\": 0,\r\n\"results\": [\r\n\t  {\r\n\t\t\"id\": \"TOTAL\",\r\n\t\t\"text\": \"Total of all BEC4 categories\",\r\n\t\t\"parent\": \"#\",\r\n\t\t\"isLeaf\": \"0\",\r\n\t\t\"aggrlevel\": 0\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"1\",\r\n\t\t\"text\": \"1 - Food and beverages\",\r\n\t\t\"parent\": \"TOTAL\",\r\n\t\t\"isLeaf\": \"0\",\r\n\t\t\"aggrlevel\": 1\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"2\",\r\n\t\t\"text\": \"2 - Industrial supplies nes\",\r\n\t\t\"parent\": \"TOTAL\",\r\n\t\t\"isLeaf\": \"0\",\r\n\t\t\"aggrlevel\": 1\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"3\",\r\n\t\t\"text\": \"3 - Fuels and lubricants\",\r\n\t\t\"parent\": \"TOTAL\",\r\n\t\t\"isLeaf\": \"0\",\r\n\t\t\"aggrlevel\": 1\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"4\",\r\n\t\t\"text\": \"4 - Capital goods (except transport equipment), and parts and accessories thereof\",\r\n\t\t\"parent\": \"TOTAL\",\r\n\t\t\"isLeaf\": \"0\",\r\n\t\t\"aggrlevel\": 1\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"5\",\r\n\t\t\"text\": \"5 - Transport equipment, and parts and accessories thereof\",\r\n\t\t\"parent\": \"TOTAL\",\r\n\t\t\"isLeaf\": \"0\",\r\n\t\t\"aggrlevel\": 1\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"6\",\r\n\t\t\"text\": \"6 - Consumption goods nes\",\r\n\t\t\"parent\": \"TOTAL\",\r\n\t\t\"isLeaf\": \"0\",\r\n\t\t\"aggrlevel\": 1\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"7\",\r\n\t\t\"text\": \"7 - Goods nes\",\r\n\t\t\"parent\": \"TOTAL\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 1\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"11\",\r\n\t\t\"text\": \"11 - Food and beverages, primary\",\r\n\t\t\"parent\": \"1\",\r\n\t\t\"isLeaf\": \"0\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"12\",\r\n\t\t\"text\": \"12 - Food and beverages, processed\",\r\n\t\t\"parent\": \"1\",\r\n\t\t\"isLeaf\": \"0\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"21\",\r\n\t\t\"text\": \"21 - Industrial supplies nes, primary\",\r\n\t\t\"parent\": \"2\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"22\",\r\n\t\t\"text\": \"22 - Industrial supplies nes, processed\",\r\n\t\t\"parent\": \"2\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"31\",\r\n\t\t\"text\": \"31 - Fuels and lubricants, primary\",\r\n\t\t\"parent\": \"3\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"32\",\r\n\t\t\"text\": \"32 - Fuels and lubricants, processed\",\r\n\t\t\"parent\": \"3\",\r\n\t\t\"isLeaf\": \"0\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"41\",\r\n\t\t\"text\": \"41 - Capital goods (except transport equipment)\",\r\n\t\t\"parent\": \"4\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"42\",\r\n\t\t\"text\": \"42 - Parts and accessories of capital goods (except transport equipment)\",\r\n\t\t\"parent\": \"4\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"51\",\r\n\t\t\"text\": \"51 - Transport equipment, passenger motor cars\",\r\n\t\t\"parent\": \"5\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"52\",\r\n\t\t\"text\": \"52 - Transport equipment, other\",\r\n\t\t\"parent\": \"5\",\r\n\t\t\"isLeaf\": \"0\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"53\",\r\n\t\t\"text\": \"53 - Parts and accessories of transport equipment\",\r\n\t\t\"parent\": \"5\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"61\",\r\n\t\t\"text\": \"61 - Consumption goods nes, durable\",\r\n\t\t\"parent\": \"6\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"62\",\r\n\t\t\"text\": \"62 - Consumption goods nes, semi-durable\",\r\n\t\t\"parent\": \"6\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"63\",\r\n\t\t\"text\": \"63 - Consumption goods nes, non-durable\",\r\n\t\t\"parent\": \"6\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 2\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"111\",\r\n\t\t\"text\": \"111 - Food and beverages, primary, mainly for industry\",\r\n\t\t\"parent\": \"11\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 3\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"112\",\r\n\t\t\"text\": \"112 - Food and beverages, primary, mainly for household consumption\",\r\n\t\t\"parent\": \"11\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 3\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"121\",\r\n\t\t\"text\": \"121 - Food and beverages, processed, mainly for industry\",\r\n\t\t\"parent\": \"12\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 3\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"122\",\r\n\t\t\"text\": \"122 - Food and beverages, processed, mainly for household consumption\",\r\n\t\t\"parent\": \"12\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 3\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"321\",\r\n\t\t\"text\": \"321 - Fuels and lubricants, processed, motor spirit\",\r\n\t\t\"parent\": \"32\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 3\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"322\",\r\n\t\t\"text\": \"322 - Fuels and lubricants, processed (other than motor spirit)\",\r\n\t\t\"parent\": \"32\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 3\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"521\",\r\n\t\t\"text\": \"521 - Transport equipment, other, industrial\",\r\n\t\t\"parent\": \"52\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 3\r\n\t  },\r\n\t  {\r\n\t\t\"id\": \"522\",\r\n\t\t\"text\": \"522 - Transport equipment, other, non-industrial\",\r\n\t\t\"parent\": \"52\",\r\n\t\t\"isLeaf\": \"1\",\r\n\t\t\"aggrlevel\": 3\r\n\t  }\r\n\t]\r\n}",
+    "body_base64": false,
+    "headers": [
+      [
+        "cache-control",
+        "public, max-age=604800"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "content-md5",
+        "3Xpy1z8Jj+Eb9KfKq+P/TQ=="
+      ],
+      [
+        "expires",
+        "Fri, 30 Oct 2026 04:43:25 GMT"
+      ],
+      [
+        "last-modified",
+        "Wed, 20 Nov 2024 17:15:24 GMT"
+      ],
+      [
+        "etag",
+        "0x8DD0986EBEAF974"
+      ],
+      [
+        "x-ms-request-id",
+        "f2850eb9-801e-0059-31a9-621a59000000"
+      ],
+      [
+        "x-ms-version",
+        "2009-09-19"
+      ],
+      [
+        "x-ms-lease-status",
+        "unlocked"
+      ],
+      [
+        "x-ms-blob-type",
+        "BlockBlob"
+      ],
+      [
+        "x-frame-options",
+        "deny"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-xss-protection",
+        "1;mode=block"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000;includeSubDomains"
+      ],
+      [
+        "content-security-policy",
+        "frame-src 'self'"
+      ],
+      [
+        "x-permitted-cross-domain-policies",
+        "none"
+      ],
+      [
+        "referrer-policy",
+        "no-referrer-when-downgrade"
+      ],
+      [
+        "permissions-policy",
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Fri, 23 Oct 2026 04:43:25 GMT"
+      ]
+    ],
+    "status": 200
+  }
+}

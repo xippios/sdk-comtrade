@@ -1,0 +1,66 @@
+{
+  "recorded_at": "2026-10-23T05:01:32.516294Z",
+  "request": {
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/data/v1/getDa/C/A/HS?reporterCode=757&publishedDateFrom=2024-01-01&publishedDateTo=2024-12-31"
+  },
+  "response": {
+    "body": "{\"elapsedTime\":\"0.51 secs\",\"count\":2,\"data\":[{\"datasetCode\":20757202201202100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2022,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H6\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":false,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":2497920,\"datasetChecksum\":1388063402,\"firstReleased\":\"2023-02-01T17:54:02.9366667\",\"lastReleased\":\"2024-04-29T21:37:21.04\"},{\"datasetCode\":20757202301202100,\"typeCode\":\"C\",\"freqCode\":\"A\",\"period\":2023,\"reporterCode\":757,\"reporterISO\":\"CHE\",\"reporterDesc\":\"Switzerland\",\"classificationCode\":\"H6\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"isExtendedFlowCode\":false,\"isExtendedPartnerCode\":true,\"isExtendedPartner2Code\":false,\"isExtendedCmdCode\":true,\"isExtendedCustomsCode\":true,\"isExtendedMotCode\":true,\"totalRecords\":2530737,\"datasetChecksum\":1463323953,\"firstReleased\":\"2024-02-02T04:52:35.2166667\",\"lastReleased\":\"2024-06-07T17:13:50.5366667\"}],\"error\":\"\"}",
+    "body_base64": false,
+    "headers": [
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "x-frame-options",
+        "deny"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-xss-protection",
+        "1;mode=block"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000;includeSubDomains"
+      ],
+      [
+        "content-security-policy",
+        "frame-src 'self'"
+      ],
+      [
+        "x-permitted-cross-domain-policies",
+        "none"
+      ],
+      [
+        "referrer-policy",
+        "no-referrer-when-downgrade"
+      ],
+      [
+        "permissions-policy",
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "0"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Fri, 23 Oct 2026 05:01:30 GMT"
+      ]
+    ],
+    "status": 200
+  }
+}
