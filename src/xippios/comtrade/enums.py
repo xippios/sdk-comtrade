@@ -59,6 +59,8 @@ class ClCode(StrEnum):
     S3 = "S3"
     S4 = "S4"
     SS = "SS"
+    BE = "BE"
+    TM = "TM"
 
 
 class CustomsCode(StrEnum):
@@ -96,6 +98,8 @@ class FlowCode(StrEnum):
     RX = "RX"
     XIP = "XIP"
     XOP = "XOP"
+    MIF = "MIF"
+    XIF = "XIF"
 
 
 class FreqCode(StrEnum):

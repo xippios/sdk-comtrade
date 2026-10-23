@@ -15,15 +15,17 @@ Rules:
   (`/refresh-reference-data`), never typed in by hand; the script also regenerates
   `enums.py`, one `StrEnum` per list, with `xippios.core.reference.render_str_enums`.
 - Every file has a row below naming the endpoint or URL it came from and the date; the
-  same origin is in the file's `origin` field.
+  same origin is in the file's `origin` field. Where a list departs from its reference
+  file because the spec documents more, the file's `exceptions` name each value, the
+  decision and the recorded answer it rests on.
 - Each file is named after the upstream parameter it lists. `get_data` and `get_counts`
   check their arguments against these lists before calling upstream.
 - Reference lookups are tools too (`comtrade_list_<thing>`), so agents can form valid calls.
 
 | File | Origin | Fetched |
 | --- | --- | --- |
-| `clCode.json` | the `cmd:<clCode>` categories of https://comtradeapi.un.org/files/v1/app/reference/ListofReferences.json | 2026-10-23 |
-| `flowCode.json` | `id` of https://comtradeapi.un.org/files/v1/app/reference/tradeRegimes.json | 2026-10-23 |
+| `clCode.json` | the `cmd:<clCode>` categories of https://comtradeapi.un.org/files/v1/app/reference/ListofReferences.json, plus `BE` and `TM` from the `clCode` enum of `docs/upstream/apidocs/comtrade.json` (operation `get`), which upstream accepted (`tests/fixtures/get/count_cl_code_be.json`, `count_cl_code_tm.json`); the enum's `BE5` left out, refused (`count_cl_code_be5.json`). Exceptions and evidence are in the file | 2026-10-23 |
+| `flowCode.json` | `id` of https://comtradeapi.un.org/files/v1/app/reference/tradeRegimes.json, plus `MIF` and `XIF` from the `flowCode` description of `docs/upstream/apidocs/comtrade.json` (operation `get`); upstream accepted `MIF` (`tests/fixtures/get/count_flow_code_mif.json`), `XIF` was not tried. Exceptions and evidence are in the file | 2026-10-23 |
 | `customsCode.json` | `id` of https://comtradeapi.un.org/files/v1/app/reference/CustomsCodes.json | 2026-10-23 |
 | `motCode.json` | `id` of https://comtradeapi.un.org/files/v1/app/reference/ModeOfTransportCodes.json | 2026-10-23 |
 | `typeCode.json` | `docs/upstream/apidocs/comtrade.json`, operation `get`, the `typeCode` enum (snapshot of https://comtradeapi.un.org/files/v1/app/apim/comtrade.json) | 2026-10-23 |

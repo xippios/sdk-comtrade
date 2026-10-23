@@ -14,12 +14,13 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
+from pydantic import Field
 from xippios.core import InvalidRequestError, UpstreamModel, load_json
 
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.errors import MAX_PERIODS
 
-__all__ = ["PACKAGED_LISTS", "PackagedValues", "packaged_values", "validate_get"]
+__all__ = ["PACKAGED_LISTS", "ListException", "PackagedValues", "packaged_values", "validate_get"]
 
 PACKAGE = "xippios.comtrade"
 
@@ -36,6 +37,20 @@ PACKAGED_LISTS: tuple[str, ...] = (
 """Names of the lists that ship inside the package; keep in step with the refresh script."""
 
 
+class ListException(UpstreamModel):
+    """A value where a packaged list departs from its reference file, with the evidence.
+
+    Attributes:
+        value: The value.
+        decision: ``"added"``, ``"left out"``, ``"removed"`` or ``"kept"``.
+        evidence: Where the value is documented and what upstream answered to it.
+    """
+
+    value: str
+    decision: str
+    evidence: str
+
+
 class PackagedValues(UpstreamModel):
     """One packaged value list: ``reference/<name>.json``.
 
@@ -44,12 +59,14 @@ class PackagedValues(UpstreamModel):
         fetched: Day the list was fetched (for lists read from the spec, the day the
             snapshot was fetched).
         origin: The reference file or snapshot entry the values come from.
-        values: The values, as upstream lists them.
+        exceptions: Values the refresh script reconciled with the spec, with evidence.
+        values: The values, as upstream lists them, reconciled values last.
     """
 
     param: str
     fetched: date
     origin: str | None = None
+    exceptions: list[ListException] = Field(default_factory=list)
     values: list[str]
 
 

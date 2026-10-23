@@ -64,9 +64,11 @@ async def get_counts_async(
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
         freq_code: ``"A"`` annual or ``"M"`` monthly.
-        cl_code: Product classification: ``"HS"`` (all HS editions), an edition ``"H0"``
-            to ``"H6"``, SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC ``"B4"``, ``"B5"``, or
-            for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``, ``"EB10S"``.
+        cl_code: Product classification: ``"HS"`` (all HS editions; prefer it, a count on
+            the edition ``"H6"`` failed upstream with HTTP 500 on 2026-10-23), an edition
+            ``"H0"`` to ``"H6"``, SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC ``"B4"``,
+            ``"B5"``, for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``, ``"EB10S"``;
+            also ``"BE"`` and ``"TM"``, which the spec lists and upstream accepts.
         reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
             e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
             ``"757,842"``. Some differ from ISO numeric codes: Switzerland is 757, not 756.
@@ -83,7 +85,7 @@ async def get_counts_async(
             four-digit code under 27) or ``"27*"``.
         flow_code: Trade flows, comma-separated: ``"X"`` exports, ``"M"`` imports,
             ``"RX"`` re-exports, ``"RM"`` re-imports, also ``"DX"``, ``"FM"``, ``"MIP"``,
-            ``"MOP"``, ``"XIP"``, ``"XOP"``; e.g. ``"M,X"``.
+            ``"MOP"``, ``"XIP"``, ``"XOP"``, ``"MIF"``, ``"XIF"``; e.g. ``"M,X"``.
         mot_code: Modes of transport, comma-separated: ``"0"`` the total, ``"1000"`` air,
             ``"2100"`` sea, ``"3100"`` railway, ``"3200"`` road, ``"9100"`` pipelines and
             cables. Omit for every mode, one row each.
@@ -94,8 +96,8 @@ async def get_counts_async(
             from ``cmdCode``, ``period``, ``partnerCode``, ``partner2Code``,
             ``reporterCode``, ``customsCode``, ``motCode``; e.g. ``"period"``.
         breakdown_mode: Upstream's breakdown mode, ``"classic"`` or ``"plus"``.
-        include_desc: ``True`` asks for the descriptions (``reporter_desc``,
-            ``cmd_desc``, ...) that ``get_data`` rows carry; sent on as given.
+        include_desc: Upstream's ``includeDesc``, "Include descriptions of data
+            variables" (the ``*_desc`` fields of ``get_data`` rows); sent on as given.
     """
     request = validate_get(
         type_code,
@@ -141,7 +143,8 @@ async def get_data_async(
     100,000 raises ``QueryTooLarge`` with the count before anything is fetched, because
     upstream would cut the answer at 100,000 rows without saying so. Each row carries
     every field of upstream's ``TradeDataRecord`` under its snake_case name;
-    ``primary_value`` is the trade value in US dollars. Leaving out ``partner2_code``,
+    ``primary_value`` is upstream's primary trade value (taken from the CIF or FOB value,
+    in ``cifvalue``/``fobvalue``). Leaving out ``partner2_code``,
     ``customs_code`` and ``mot_code`` returns every breakdown upstream holds (32 rows for
     Switzerland's 2023 exports to the World); the row with ``partner2_code`` 0,
     ``customs_code`` ``"C00"`` and ``mot_code`` 0 is the total. Arguments are checked
@@ -151,9 +154,11 @@ async def get_data_async(
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
         freq_code: ``"A"`` annual or ``"M"`` monthly.
-        cl_code: Product classification: ``"HS"`` (all HS editions), an edition ``"H0"``
-            to ``"H6"``, SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC ``"B4"``, ``"B5"``, or
-            for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``, ``"EB10S"``.
+        cl_code: Product classification: ``"HS"`` (all HS editions; prefer it, a count on
+            the edition ``"H6"`` failed upstream with HTTP 500 on 2026-10-23), an edition
+            ``"H0"`` to ``"H6"``, SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC ``"B4"``,
+            ``"B5"``, for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``, ``"EB10S"``;
+            also ``"BE"`` and ``"TM"``, which the spec lists and upstream accepts.
         reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
             e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
             ``"757,842"``. Some differ from ISO numeric codes: Switzerland is 757, not 756.
@@ -170,7 +175,7 @@ async def get_data_async(
             four-digit code under 27) or ``"27*"``.
         flow_code: Trade flows, comma-separated: ``"X"`` exports, ``"M"`` imports,
             ``"RX"`` re-exports, ``"RM"`` re-imports, also ``"DX"``, ``"FM"``, ``"MIP"``,
-            ``"MOP"``, ``"XIP"``, ``"XOP"``; e.g. ``"M,X"``.
+            ``"MOP"``, ``"XIP"``, ``"XOP"``, ``"MIF"``, ``"XIF"``; e.g. ``"M,X"``.
         mot_code: Modes of transport, comma-separated: ``"0"`` the total, ``"1000"`` air,
             ``"2100"`` sea, ``"3100"`` railway, ``"3200"`` road, ``"9100"`` pipelines and
             cables. Omit for every mode, one row each.
@@ -181,8 +186,9 @@ async def get_data_async(
             from ``cmdCode``, ``period``, ``partnerCode``, ``partner2Code``,
             ``reporterCode``, ``customsCode``, ``motCode``; e.g. ``"period"``.
         breakdown_mode: Upstream's breakdown mode, ``"classic"`` or ``"plus"``.
-        include_desc: ``True`` fills the descriptions in the rows, e.g. ``reporter_desc``
-            ``"Switzerland"``; by default they are empty.
+        include_desc: Upstream's ``includeDesc``, "Include descriptions of data
+            variables" (the ``*_desc`` fields such as ``reporter_desc``); without it they
+            are ``None``.
     """
     request = validate_get(
         type_code,
