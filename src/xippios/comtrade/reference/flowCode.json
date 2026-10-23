@@ -1,0 +1,17 @@
+{
+  "param": "flowCode",
+  "fetched": "2026-10-23",
+  "origin": "https://comtradeapi.un.org/files/v1/app/reference/tradeRegimes.json",
+  "values": [
+    "M",
+    "X",
+    "DX",
+    "FM",
+    "MIP",
+    "MOP",
+    "RM",
+    "RX",
+    "XIP",
+    "XOP"
+  ]
+}

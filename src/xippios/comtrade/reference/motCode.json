@@ -1,0 +1,25 @@
+{
+  "param": "motCode",
+  "fetched": "2026-10-23",
+  "origin": "https://comtradeapi.un.org/files/v1/app/reference/ModeOfTransportCodes.json",
+  "values": [
+    "0",
+    "1000",
+    "2000",
+    "2100",
+    "2200",
+    "2900",
+    "3000",
+    "3100",
+    "3200",
+    "3900",
+    "9000",
+    "9100",
+    "9110",
+    "9120",
+    "9190",
+    "9200",
+    "9300",
+    "9900"
+  ]
+}
