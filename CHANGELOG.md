@@ -14,7 +14,9 @@ All notable changes to this project are documented here. The format follows
   under upstream names and carry their own dates (`first_released`/`last_released`,
   `publication_date`, `started_at`/`completed_at`/`last_updated`/`queued_at`), typed;
   `meta.published_at` stays `None`. `get_metadata` takes `reporter_code` and `period`,
-  which the spec omits and upstream honours. getLiveUpdate has no `publishedDate`.
+  which the spec omits and upstream honours. getLiveUpdate has no `publishedDate`; its
+  times are read without the process locale, and one that does not parse becomes `None`
+  for that field (only Released/Success rows were recorded).
 - Every `clCode` value and `flowCode`'s `XIF` rest on a recorded count
   (`reference/clCode.json`, `flowCode.json`); `H6` answered HTTP 500 to all five tries.
   The docstrings of `get_counts` and `get_data` say what the recorded answers established
@@ -33,6 +35,9 @@ All notable changes to this project are documented here. The format follows
   `reference/tables.json`; packaged lists `mosCode` (`ModeOfSupply.json`) and
   `qtyUnitCode` (`QuantityUnits.json`) with the StrEnums `MosCode` and `QtyUnitCode`.
 - `api.reference_rows`: a reference file's rows as upstream sent them.
+- `scripts/refresh_reference.py --help` prints usage and fetches nothing. A list can carry
+  a `note`: `mosCode.json` and `MosCode` say they hold `ModeOfSupply.json`'s ids, not
+  proven parameter values (`data/v1/get` refused `Mode 1`).
 - Replay tests check the request that goes out carries the placeholder key, never the
   shell's (ported from sdk-template).
 - `get_counts` and `get_data` on `data/v1/get/{typeCode}/{freqCode}/{clCode}`, MCP tools
