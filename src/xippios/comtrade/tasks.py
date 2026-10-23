@@ -445,14 +445,17 @@ async def get_bilateral_flows_async(
 
     One ``data/v1/get`` call for goods (``typeCode`` C), pinned to the total of every
     breakdown (``partner2Code`` 0, ``customsCode`` C00, ``motCode`` 0, ``breakdownMode``
-    classic) and with descriptions (``includeDesc``), so each row is the reporter's
-    figure for one product code and period, as the reporter reported it. Rows are
-    ``TradeFlowRecord``, sorted by period, then product code; a code or period the
-    reporter did not report has no row. Bounded by construction at product codes times
-    periods rows (at most 12 periods), so there is no count call; a bound above 100,000
-    raises ``QueryTooLarge`` before the call. Arguments are resolved and checked before
-    the call; a mistake raises ``InvalidRequestError`` naming the closest valid value.
-    ``meta.request`` holds the ``get_data`` arguments that were sent, codes resolved.
+    classic) and with descriptions (``includeDesc``), so each row is UN Comtrade's figure
+    for the reporter's side of the trade in one product code and period. At ``TOTAL``
+    and chapter level these are mostly UNSD aggregates (``is_aggregate`` true,
+    ``is_reported`` false) with no quantity (``qty`` 0, ``qty_unit_abbr`` ``"N/A"``,
+    ``net_wgt`` 0 or ``None``): read the trade values. Rows are ``TradeFlowRecord``,
+    sorted by period, then product code; a code or period upstream holds nothing for has
+    no row. Bounded by construction at product codes times periods rows (at most 12
+    periods), so there is no count call; a bound above 100,000 raises ``QueryTooLarge``
+    before the call. Arguments are resolved and checked before the call; a mistake raises
+    ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds the
+    ``get_data`` arguments that were sent, codes resolved.
 
     Args:
         reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:

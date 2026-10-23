@@ -111,7 +111,7 @@ period format (`YYYY` A, `YYYYMM` M, a mix refused). `get_commodity_series` send
 periods 12 per call, in the order given, and sorts the joined rows by period.
 `get_top_partners` drops partner 0, World, because it is the total over all partners, not a
 partner, and ranks the rest by `primary_value` here; `get_world_trade` sorts the same way,
-so a capped MCP result (114 of 167 rows for HS 27 imports 2023) keeps the largest.
+so a capped MCP result (104 of 167 rows for HS 27 imports 2023) keeps the largest.
 
 ## Read first, in this order
 

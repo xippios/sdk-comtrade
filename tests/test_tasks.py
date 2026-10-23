@@ -1458,9 +1458,11 @@ def test_bilateral_flows_project_the_total_rows(
     assert (total.flow_code, total.flow_desc, total.cmd_desc) == ("X", "Export", "All Commodities")
     assert (total.freq_code, total.ref_year, total.ref_month) == ("A", 2023, 52)
     assert total.classification_code == "H6"
-    assert (total.qty_unit_code, total.qty_unit_abbr) == (-1, "N/A")
-    assert (total.qty, total.net_wgt) == (Decimal("0.0"), Decimal("0.0"))
+    # A UNSD aggregate, not a reported figure: no quantity, the weight flagged as estimated.
     assert (total.is_reported, total.is_aggregate) == (False, True)
+    assert (total.qty_unit_code, total.qty_unit_abbr) == (-1, "N/A")
+    assert (total.qty, total.is_qty_estimated) == (Decimal("0.0"), False)
+    assert (total.net_wgt, total.is_net_wgt_estimated) == (Decimal("0.0"), True)
     pinned = {"type_code", "partner2_code", "customs_code", "mot_code"}
     assert not pinned & set(TradeFlowRecord.model_fields), "pinned totals are not carried"
 
@@ -1488,6 +1490,11 @@ def test_commodity_series_sends_14_periods_in_two_calls_in_order(
     assert [row.period for row in result.data] == SERIES.split(",")
     assert {(row.reporter_code, row.partner_code, row.cmd_code) for row in result.data} == {
         (757, 0, "27")
+    }
+    reported = [row.period for row in result.data if row.is_reported]
+    assert reported == ["2010", "2011"], "the other years are UNSD aggregates"
+    assert {(row.is_aggregate, row.qty, row.net_wgt) for row in result.data[:2]} == {
+        (False, None, None)
     }
     editions = {row.period: row.classification_code for row in result.data}
     assert [editions[year] for year in ("2010", "2012", "2017", "2022")] == ["H3", "H4", "H5", "H6"]
@@ -1697,7 +1704,7 @@ async def test_slice_tools_end_to_end(replay_query: ReplayQuery) -> None:
     world = await mcp_call(
         server, "comtrade_get_world_trade", {"commodity": "27", "period": "2023", "flow": "M"}
     )
-    assert world["note"].startswith("showing 114 of 167 rows"), "64 KB: the largest come first"
+    assert world["note"].startswith("showing 104 of 167 rows"), "64 KB: the largest come first"
     assert world["data"][0]["reporter_code"] == 156
     replay_query("partners_ch_total_2023")
     top = await mcp_call(

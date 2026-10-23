@@ -134,12 +134,19 @@ class TradeFlowRecord(UpstreamModel):
     ``motCode`` 0, ``breakdownMode`` ``classic``). Fields keep their upstream names in
     snake_case (ADR-0003), with the values of ``TradeDataRecord``: nothing is renamed or
     computed. ``primary_value`` is upstream's primary trade value (taken from the CIF or
-    FOB value, in ``cifvalue``/``fobvalue``); ``net_wgt`` and ``qty`` are as reported,
-    ``qty`` in the unit ``qty_unit_code``/``qty_unit_abbr`` names (``-1``/``"N/A"`` where
-    there is none). ``ref_month`` is 52 on annual rows, as upstream sends it.
-    ``classification_code`` is the edition the reporter used (``"H6"`` for Switzerland
-    2023 under ``clCode`` ``HS``). The ``*_iso`` and ``*_desc`` fields are filled because
-    the slices send ``includeDesc``.
+    FOB value, in ``cifvalue``/``fobvalue``). ``ref_month`` is 52 on annual rows, as
+    upstream sends it. ``classification_code`` is the edition the reporter used (``"H6"``
+    for Switzerland 2023 under ``clCode`` ``HS``). The ``*_iso`` and ``*_desc`` fields are
+    filled because the slices send ``includeDesc``.
+
+    At ``TOTAL`` and chapter level the rows are mostly UN Comtrade's aggregates, not
+    figures a country reported: ``is_aggregate`` ("aggregated by UNSD") true and
+    ``is_reported`` ("reported by country") false on every row of the slice fixtures
+    except Switzerland's chapter 27 exports in 2010 and 2011. Such rows carry no
+    quantity: ``qty`` 0 with ``qty_unit_code`` -1 (``qty_unit_abbr`` ``"N/A"``) and
+    ``net_wgt`` 0 or ``None``, ``is_net_wgt_estimated`` often true. Read the trade values
+    there, not ``qty``/``net_wgt``; ``is_qty_estimated`` and ``is_net_wgt_estimated``
+    stand next to the numbers they flag.
     """
 
     freq_code: str | None
@@ -160,7 +167,9 @@ class TradeFlowRecord(UpstreamModel):
     qty_unit_code: int | None
     qty_unit_abbr: str | None
     qty: Decimal | None
+    is_qty_estimated: bool
     net_wgt: Decimal | None
+    is_net_wgt_estimated: bool
     cifvalue: Decimal | None
     fobvalue: Decimal | None
     primary_value: Decimal
