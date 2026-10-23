@@ -47,6 +47,7 @@ from xippios.comtrade.models import (
     TradeFlowRecord,
 )
 from xippios.comtrade.params import (
+    MAX_SERIES_PERIODS,
     packaged_table,
     packaged_table_info,
     validate_classification_file,
@@ -511,12 +512,13 @@ async def get_commodity_series_async(
     C00, ``motCode`` 0, ``breakdownMode`` classic), with descriptions (``includeDesc``).
     Upstream takes at most 12 periods per call, so the periods are sent in chunks of 12,
     one call after the other in the order given (14 periods: two calls, 1.5 s apart), and
-    the rows are joined and sorted by period; a period the reporter did not report has no
-    row. Bounded by construction at one row per period, so there is no count call; a
-    bound above 100,000 raises ``QueryTooLarge`` before any call. Arguments are resolved
-    and checked before any call; a mistake raises ``InvalidRequestError`` naming the
-    closest valid value. ``meta.request`` holds the ``get_data`` arguments with every
-    period; they were sent 12 at a time.
+    the rows are joined and sorted by period; a period upstream holds nothing for has no
+    row. One row per period at most, so there is no count call. Every chunk is a keyed
+    call and a free key allows 500 calls a day, so one series takes at most 120 periods
+    (ten calls); more raise ``InvalidRequestError`` before any call: split the series.
+    Arguments are resolved and checked before any call; a mistake raises
+    ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds the
+    ``get_data`` arguments with every period; they were sent 12 at a time.
 
     Args:
         reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:
@@ -531,7 +533,7 @@ async def get_commodity_series_async(
         flow: One trade flow: ``"X"`` exports, ``"M"`` imports, ``"RX"`` re-exports,
             ``"RM"`` re-imports.
         periods: Years (annual data) or months (monthly data), comma-separated, one
-            format, each once, as many as needed: ``"2018,2019,2020,2021,2022,2023"``,
+            format, each once, at most 120: ``"2018,2019,2020,2021,2022,2023"``,
             ``"202201,202202,202203"``; every year from 2010 to 2023 is 14 periods, two
             calls.
         cl_code: Product classification, ``"HS"`` by default: all HS editions as each
@@ -544,10 +546,9 @@ async def get_commodity_series_async(
     """
     request = validate_slice(
         cl_code, flow, reporter=reporter, partner="0", commodity=commodity, periods=periods,
-        max_periods=None,
+        max_periods=MAX_SERIES_PERIODS,
     )  # fmt: skip
     members = request["period"].split(",")
-    _bounded(len(members))
     rows: list[TradeFlowRecord] = []
     for start in range(0, len(members), MAX_PERIODS):
         chunk = ",".join(members[start : start + MAX_PERIODS])

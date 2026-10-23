@@ -103,7 +103,9 @@ The task-shaped slices (wave 2: `get_bilateral_flows`, `get_commodity_series`,
 period, projected into `TradeFlowRecord` with `UpstreamModel.project`. Each is bounded by
 its arguments (product codes × periods; periods; 255 reporters; 310 partners), so none
 counts first; `QueryTooLarge(bound, bound=True)` refuses a bound over 100,000 before the
-call, which is why the slices take single product codes, not `AG2` or `27??`.
+call, which is why the slices take single product codes, not `AG2` or `27??`. A
+commodity series is capped by calls instead: at most 120 periods
+(`params.MAX_SERIES_PERIODS`, ten calls of 12 against 500 a day).
 `params.validate_slice` resolves an area given as code or ISO alpha-3 (an expired code
 gives way to the one in use; among partners the code that is also a reporter code wins,
 842 not 840, as `partners_ch_total_2023.json` shows) and derives `freqCode` from the

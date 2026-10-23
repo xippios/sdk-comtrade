@@ -519,6 +519,14 @@ one row is one reporter, partner, product code, flow and period. ``includeDesc``
 the ``*_iso`` and ``*_desc`` fields (``ch_exports_2023_include_desc.json``).
 """
 
+MAX_SERIES_PERIODS = 10 * MAX_PERIODS
+"""Most periods one ``get_commodity_series`` call takes: 120, ten calls of 12.
+
+Each chunk of 12 periods is a keyed call, and a Basic Individual key allows 500 calls a
+day (``docs/upstream/help/subscriptions.md``), so the series is capped by calls rather
+than records: ten years of months or a century of years per call.
+"""
+
 _SLICE_ORDER = (
     "type_code", "freq_code", "cl_code", "reporter_code", "partner_code", "partner2_code",
     "period", "cmd_code", "flow_code", "mot_code", "customs_code", "breakdown_mode",
@@ -624,7 +632,7 @@ def _resolve_area(argument: str, value: str | None, kind: str, problems: list[st
 
 
 def _slice_periods(
-    argument: str, value: str, problems: list[str], *, at_most: int | None
+    argument: str, value: str, problems: list[str], *, at_most: int
 ) -> tuple[str | None, list[str]]:
     """Periods of one format: the ``freqCode`` they imply (``A`` or ``M``) and the members."""
     members = _members(argument, value, problems)
@@ -656,7 +664,13 @@ def _slice_periods(
         problems.append(f"{argument} names {', '.join(map(repr, twice))} more than once")
     if at_most == 1 and len(members) > 1:
         problems.append(f"{argument} {value!r} must be one year or month, e.g. '2023' or '202305'")
-    elif at_most is not None and len(members) > at_most:
+    elif len(members) > at_most > MAX_PERIODS:
+        problems.append(
+            f"{argument} has {len(members)} values; get_commodity_series takes at most "
+            f"{at_most}, {at_most // MAX_PERIODS} calls of {MAX_PERIODS}, against a daily "
+            "quota of 500 calls on a free key; split the series"
+        )
+    elif len(members) > at_most:
         problems.append(
             f"{argument} has {len(members)} values; UN Comtrade takes at most {at_most} per "
             "call (get_commodity_series splits longer series)"
@@ -705,7 +719,7 @@ def validate_slice(
     commodities: str | None = None,
     period: str | None = None,
     periods: str | None = None,
-    max_periods: int | None = MAX_PERIODS,
+    max_periods: int = MAX_PERIODS,
     n: int | None = None,
 ) -> dict[str, Any]:
     """Resolve and check the arguments of a task-shaped slice into a ``data/v1/get`` request.
@@ -715,11 +729,12 @@ def validate_slice(
     ``Reporters.json`` and ``partnerAreas.json``; ``None`` leaves the parameter out (every
     reporter or partner). ``commodity`` takes one product code, ``commodities`` several,
     comma-separated, each naming one code (``TOTAL``, ``27``, ``2709``). ``period`` takes
-    one year or month, ``periods`` several of one format, at most ``max_periods`` (no
-    limit when ``None``); the format sets ``freqCode``, ``A`` for ``YYYY`` and ``M`` for
-    ``YYYYMM``. ``flow`` is one flow code. ``n``, how many rows a ranking keeps, is at
-    least 1; it is not an upstream parameter, so it is not returned (the task records it
-    in ``meta.request`` itself). Nothing is sent.
+    one year or month, ``periods`` several of one format, at most ``max_periods`` (12, one
+    call; ``MAX_SERIES_PERIODS`` for a series sent 12 at a time); the format sets
+    ``freqCode``, ``A`` for ``YYYY`` and ``M`` for ``YYYYMM``. ``flow`` is one flow code.
+    ``n``, how many rows a ranking keeps, is at least 1; it is not an upstream parameter,
+    so it is not returned (the task records it in ``meta.request`` itself). Nothing is
+    sent.
 
     Returns:
         The ``get_data`` arguments, ``SLICE_PINS`` included, in ``validate_get``'s order:

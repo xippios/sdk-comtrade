@@ -52,6 +52,7 @@ from xippios.comtrade.models import (
     TradeFlowRecord,
 )
 from xippios.comtrade.params import (
+    MAX_SERIES_PERIODS,
     PACKAGED_LISTS,
     PACKAGED_TABLES,
     classification_files,
@@ -1414,6 +1415,9 @@ BILATERAL_REQUEST: dict[str, Any] = {
 SERIES = ",".join(str(year) for year in range(2010, 2024))
 """Fourteen years: more than upstream's 12 periods per call."""
 
+MONTHS = [f"{year}{month:02d}" for year in range(2010, 2021) for month in range(1, 13)]
+"""132 months, January 2010 to December 2020."""
+
 
 def _records(fixtures_dir: Path, case: str) -> list[TradeDataRecord]:
     return [TradeDataRecord.model_validate(row) for row in _rows(fixtures_dir, case)]
@@ -1640,6 +1644,22 @@ def test_slice_arguments_are_refused_before_any_call(
     respx_mock: respx.MockRouter, call: Callable[[], object], expected: str
 ) -> None:
     assert expected in _slice_refused(respx_mock, call)
+
+
+def test_a_series_takes_at_most_120_periods(respx_mock: respx.MockRouter) -> None:
+    """Ten calls of 12 against 500 a day: 121 periods are refused before the first call."""
+    message = _slice_refused(
+        respx_mock, lambda: tasks.get_commodity_series("CHE", "27", "X", ",".join(MONTHS[:121]))
+    )
+    assert "periods has 121 values; get_commodity_series takes at most 120, 10 calls of 12" in (
+        message
+    )
+    request = validate_slice(
+        "HS", "X", reporter="757", partner="0", commodity="27", periods=",".join(MONTHS[:120]),
+        max_periods=MAX_SERIES_PERIODS,
+    )  # fmt: skip
+    assert (request["freq_code"], len(request["period"].split(","))) == ("M", 120)
+    assert MAX_SERIES_PERIODS == 120
 
 
 def test_a_bound_over_the_limit_is_refused_without_a_call(respx_mock: respx.MockRouter) -> None:
