@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-23
+
 ### Added
 
 - Four task-shaped slices on `data/v1/get`, MCP tools `comtrade_get_bilateral_flows`,
