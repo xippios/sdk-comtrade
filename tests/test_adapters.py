@@ -53,9 +53,11 @@ async def test_every_task_is_exposed_without_touching_the_adapters() -> None:
     import xippios.comtrade as package
 
     assert set(TASKS) == {
-        "get_counts", "get_data", "get_data_availability", "get_live_update", "get_metadata",
-        "list_commodities", "list_partners", "list_reporters",
+        "get_bilateral_flows", "get_commodity_series", "get_counts", "get_data",
+        "get_data_availability", "get_live_update", "get_metadata", "get_top_partners",
+        "get_world_trade", "list_commodities", "list_partners", "list_reporters",
     }  # fmt: skip
+    assert len(TASKS) == 12
     tools = {tool.name for tool in await server.list_tools()}
     routes = {route.path: route.methods for route in router.routes if isinstance(route, APIRoute)}
     package_dir = Path(package.__file__ or "").parent

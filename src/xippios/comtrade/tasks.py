@@ -12,7 +12,10 @@ valid values for every parameter. ``/add-endpoint`` walks through the whole reci
 ``meta.endpoint`` is the operation as the Help Center names it (``data/v1/get``), or the
 reference file a list comes from (``files/v1/app/reference/Reporters.json``), and
 ``meta.request`` the task's own arguments that were set, so ``get_data(**meta.request)``
-repeats the call.
+repeats the call. The task-shaped slices (``get_bilateral_flows``,
+``get_commodity_series``, ``get_world_trade``, ``get_top_partners``) put the resolved
+``get_data`` arguments there instead, pins included (``params.SLICE_PINS``); a commodity
+series lists every period, though it sent them 12 per call.
 
 ``meta.published_at`` stays ``None`` on every task. Data rows carry no publication date,
 and where upstream does publish release dates it publishes one per reporter and period
@@ -31,7 +34,7 @@ from xippios.comtrade.api.get import ENDPOINT
 from xippios.comtrade.api.get_da import ENDPOINT as GET_DA
 from xippios.comtrade.api.get_live_update import ENDPOINT as GET_LIVE_UPDATE
 from xippios.comtrade.api.get_metadata import ENDPOINT as GET_METADATA
-from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
+from xippios.comtrade.errors import MAX_PERIODS, RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.models import (
     Commodity,
     DataAvailability,
@@ -40,6 +43,7 @@ from xippios.comtrade.models import (
     PartnerArea,
     Reporter,
     TradeDataRecord,
+    TradeFlowRecord,
 )
 from xippios.comtrade.params import (
     packaged_table,
@@ -47,14 +51,19 @@ from xippios.comtrade.params import (
     validate_classification_file,
     validate_datasets,
     validate_get,
+    validate_slice,
 )
 
 __all__ = [
+    "get_bilateral_flows",
+    "get_commodity_series",
     "get_counts",
     "get_data",
     "get_data_availability",
     "get_live_update",
     "get_metadata",
+    "get_top_partners",
+    "get_world_trade",
     "list_commodities",
     "list_partners",
     "list_reporters",
@@ -91,6 +100,18 @@ def _matches(search: str | None, *fields: str | int | None) -> bool:
         return True
     needle = search.casefold()
     return any(needle in str(field).casefold() for field in fields if field is not None)
+
+
+def _bounded(bound: int) -> None:
+    """Refuse a slice whose rows could exceed the per-call limit, before any call."""
+    if bound > RECORD_LIMIT:
+        raise QueryTooLarge(bound, bound=True)
+
+
+async def _flows(request: dict[str, Any]) -> list[TradeFlowRecord]:
+    """One ``data/v1/get`` call of a slice, its rows projected; no count first."""
+    response = await api.get(**request)
+    return [TradeFlowRecord.project(record) for record in response.data]
 
 
 async def get_counts_async(
@@ -411,6 +432,217 @@ async def get_live_update_async() -> Result[list[LiveUpdateRecord]]:
     return Result(data=response.data, meta=meta)
 
 
+async def get_bilateral_flows_async(
+    reporter: str,
+    partner: str,
+    commodities: str,
+    periods: str,
+    flow: str,
+    *,
+    cl_code: str = "HS",
+) -> Result[list[TradeFlowRecord]]:
+    """Trade between one reporter and one partner, one row per product code and period.
+
+    One ``data/v1/get`` call for goods (``typeCode`` C), pinned to the total of every
+    breakdown (``partner2Code`` 0, ``customsCode`` C00, ``motCode`` 0, ``breakdownMode``
+    classic) and with descriptions (``includeDesc``), so each row is the reporter's
+    figure for one product code and period, as the reporter reported it. Rows are
+    ``TradeFlowRecord``, sorted by period, then product code; a code or period the
+    reporter did not report has no row. Bounded by construction at product codes times
+    periods rows (at most 12 periods), so there is no count call; a bound above 100,000
+    raises ``QueryTooLarge`` before the call. Arguments are resolved and checked before
+    the call; a mistake raises ``InvalidRequestError`` naming the closest valid value.
+    ``meta.request`` holds the ``get_data`` arguments that were sent, codes resolved.
+
+    Args:
+        reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:
+            ``"757"`` or ``"CHE"`` Switzerland, ``"842"`` or ``"USA"``, ``"276"`` or ``"DEU"``
+            Germany, ``"156"`` or ``"CHN"`` China; ``list_reporters(search=...)`` finds them.
+            Codes are UN Comtrade's, not ISO numeric (Switzerland is 757, not 756). An
+            alpha-3 code that several codes share resolves to the one still in use
+            (``"DEU"`` is 276, not 280 Fed. Rep. of Germany until 1990).
+        partner: The partner area, as code or ISO alpha-3 code: ``"842"`` or ``"USA"``
+            (842, the code the USA reports under, not 840), ``"276"`` or ``"DEU"``, ``"0"``
+            or ``"W00"`` World, the total over all partners; ``list_partners(search=...)``
+            finds them.
+        commodities: Product codes of ``cl_code``, comma-separated, each naming one code:
+            ``"TOTAL"`` all goods, an HS chapter ``"27"``, heading ``"2709"`` or subheading
+            ``"270900"``, e.g. ``"TOTAL,27"``. Levels such as ``"AG2"`` and wildcards such
+            as ``"27??"`` are for ``get_data``. ``list_commodities("HS", search="crude")``
+            finds codes.
+        periods: Years ``"2022,2023"`` (annual data) or months ``"202301,202302"`` (monthly
+            data), comma-separated, at most 12, one format: the format sets ``freqCode``.
+        flow: One trade flow: ``"X"`` exports, ``"M"`` imports, ``"RX"`` re-exports,
+            ``"RM"`` re-imports.
+        cl_code: Product classification, ``"HS"`` by default: all HS editions as each
+            reporter reported them (rows name the edition in ``classification_code``, e.g.
+            ``"H6"``); an edition ``"H0"`` to ``"H5"``, SITC ``"SS"`` or ``"S1"`` to ``"S4"``,
+            BEC ``"B4"``, ``"B5"`` also work. ``"H6"`` is valid but upstream answered HTTP 500
+            to every try on 2026-10-23, so ``"HS"`` stays the default.
+    """
+    request = validate_slice(
+        cl_code, flow, reporter=reporter, partner=partner, commodities=commodities,
+        periods=periods,
+    )  # fmt: skip
+    _bounded(len(request["cmd_code"].split(",")) * len(request["period"].split(",")))
+    rows = await _flows(request)
+    rows.sort(key=lambda row: (row.period or "", row.cmd_code or ""))
+    return Result(data=rows, meta=_meta(request))
+
+
+async def get_commodity_series_async(
+    reporter: str,
+    commodity: str,
+    flow: str,
+    periods: str,
+    *,
+    cl_code: str = "HS",
+) -> Result[list[TradeFlowRecord]]:
+    """A reporter's trade in one product with the World over many periods, oldest first.
+
+    ``data/v1/get`` for goods (``typeCode`` C) with partner 0, World (the total over all
+    partners), pinned to the total of every breakdown (``partner2Code`` 0, ``customsCode``
+    C00, ``motCode`` 0, ``breakdownMode`` classic), with descriptions (``includeDesc``).
+    Upstream takes at most 12 periods per call, so the periods are sent in chunks of 12,
+    one call after the other in the order given (14 periods: two calls, 1.5 s apart), and
+    the rows are joined and sorted by period; a period the reporter did not report has no
+    row. Bounded by construction at one row per period, so there is no count call; a
+    bound above 100,000 raises ``QueryTooLarge`` before any call. Arguments are resolved
+    and checked before any call; a mistake raises ``InvalidRequestError`` naming the
+    closest valid value. ``meta.request`` holds the ``get_data`` arguments with every
+    period; they were sent 12 at a time.
+
+    Args:
+        reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:
+            ``"757"`` or ``"CHE"`` Switzerland, ``"842"`` or ``"USA"``, ``"276"`` or ``"DEU"``
+            Germany, ``"156"`` or ``"CHN"`` China; ``list_reporters(search=...)`` finds them.
+            Codes are UN Comtrade's, not ISO numeric (Switzerland is 757, not 756). An
+            alpha-3 code that several codes share resolves to the one still in use
+            (``"DEU"`` is 276, not 280 Fed. Rep. of Germany until 1990).
+        commodity: One product code of ``cl_code``: ``"TOTAL"`` all goods, an HS chapter
+            ``"27"``, heading ``"0901"`` or subheading ``"090111"``.
+            ``list_commodities("HS", search="coffee")`` finds codes.
+        flow: One trade flow: ``"X"`` exports, ``"M"`` imports, ``"RX"`` re-exports,
+            ``"RM"`` re-imports.
+        periods: Years (annual data) or months (monthly data), comma-separated, one
+            format, each once, as many as needed: ``"2018,2019,2020,2021,2022,2023"``,
+            ``"202201,202202,202203"``; every year from 2010 to 2023 is 14 periods, two
+            calls.
+        cl_code: Product classification, ``"HS"`` by default: all HS editions as each
+            reporter reported them (rows name the edition in ``classification_code``, e.g.
+            ``"H6"``); an edition ``"H0"`` to ``"H5"``, SITC ``"SS"`` or ``"S1"`` to ``"S4"``,
+            BEC ``"B4"``, ``"B5"`` also work. ``"H6"`` is valid but upstream answered HTTP 500
+            to every try on 2026-10-23, so ``"HS"`` stays the default.
+    """
+    request = validate_slice(
+        cl_code, flow, reporter=reporter, partner="0", commodity=commodity, periods=periods,
+        max_periods=None,
+    )  # fmt: skip
+    members = request["period"].split(",")
+    _bounded(len(members))
+    rows: list[TradeFlowRecord] = []
+    for start in range(0, len(members), MAX_PERIODS):
+        chunk = ",".join(members[start : start + MAX_PERIODS])
+        rows += await _flows({**request, "period": chunk})
+    rows.sort(key=lambda row: row.period or "")
+    return Result(data=rows, meta=_meta(request))
+
+
+async def get_world_trade_async(
+    commodity: str,
+    period: str,
+    flow: str,
+    *,
+    cl_code: str = "HS",
+) -> Result[list[TradeFlowRecord]]:
+    """Every reporter's trade in one product with the World for one period, largest first.
+
+    One ``data/v1/get`` call for goods (``typeCode`` C) without ``reporterCode`` (every
+    reporter) and with partner 0, World, pinned to the total of every breakdown
+    (``partner2Code`` 0, ``customsCode`` C00, ``motCode`` 0, ``breakdownMode`` classic),
+    with descriptions (``includeDesc``): one row per reporter that reported the period
+    (167 for 2023 imports of HS chapter 27 when recorded), sorted by ``primary_value``,
+    largest first, so that a capped MCP result keeps the largest. Bounded by
+    construction at one row per reporter (255 in the packaged ``Reporters.json``), so
+    there is no count call. Arguments are checked before the call; a mistake raises
+    ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds the
+    ``get_data`` arguments that were sent.
+
+    Args:
+        commodity: One product code of ``cl_code``: ``"TOTAL"`` all goods, an HS chapter
+            ``"27"``, heading ``"2709"`` or subheading ``"270900"``.
+            ``list_commodities("HS", search="crude")`` finds codes.
+        period: One year ``"2023"`` (annual data) or month ``"202305"`` (monthly data).
+            Recent periods fill as reporters publish; ``get_data_availability`` tells who
+            has.
+        flow: One trade flow: ``"X"`` exports, ``"M"`` imports, ``"RX"`` re-exports,
+            ``"RM"`` re-imports.
+        cl_code: Product classification, ``"HS"`` by default: all HS editions as each
+            reporter reported them (rows name the edition in ``classification_code``, e.g.
+            ``"H6"``); an edition ``"H0"`` to ``"H5"``, SITC ``"SS"`` or ``"S1"`` to ``"S4"``,
+            BEC ``"B4"``, ``"B5"`` also work. ``"H6"`` is valid but upstream answered HTTP 500
+            to every try on 2026-10-23, so ``"HS"`` stays the default.
+    """
+    request = validate_slice(cl_code, flow, partner="0", commodity=commodity, period=period)
+    _bounded(len(packaged_table("Reporters", Reporter)))
+    rows = await _flows(request)
+    rows.sort(key=lambda row: (-row.primary_value, row.reporter_code))
+    return Result(data=rows, meta=_meta(request))
+
+
+async def get_top_partners_async(
+    reporter: str,
+    commodity: str,
+    period: str,
+    flow: str,
+    n: int,
+    *,
+    cl_code: str = "HS",
+) -> Result[list[TradeFlowRecord]]:
+    """A reporter's ``n`` largest partners in one product and period, by primary value.
+
+    One ``data/v1/get`` call for goods (``typeCode`` C) without ``partnerCode`` (every
+    partner), pinned to the total of every breakdown (``partner2Code`` 0, ``customsCode``
+    C00, ``motCode`` 0, ``breakdownMode`` classic), with descriptions (``includeDesc``).
+    The rows are sorted by ``primary_value``, largest first, here rather than upstream;
+    partner 0, World, is dropped because it is the total over all partners, not a
+    partner; the first ``n`` rows are returned and nothing else is changed. Areas that
+    are not countries, such as 490 "Other Asia, nes", stay in the ranking where the
+    reporter reported them. Bounded by construction at one row per partner (310 in the
+    packaged ``partnerAreas.json``), so there is no count call. Arguments are resolved and
+    checked before the call; a mistake raises ``InvalidRequestError`` naming the closest
+    valid value. ``meta.request`` holds the ``get_data`` arguments that were sent.
+
+    Args:
+        reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:
+            ``"757"`` or ``"CHE"`` Switzerland, ``"842"`` or ``"USA"``, ``"276"`` or ``"DEU"``
+            Germany, ``"156"`` or ``"CHN"`` China; ``list_reporters(search=...)`` finds them.
+            Codes are UN Comtrade's, not ISO numeric (Switzerland is 757, not 756). An
+            alpha-3 code that several codes share resolves to the one still in use
+            (``"DEU"`` is 276, not 280 Fed. Rep. of Germany until 1990).
+        commodity: One product code of ``cl_code``: ``"TOTAL"`` all goods, an HS chapter
+            ``"27"``, heading ``"3004"`` or subheading ``"300490"``.
+            ``list_commodities("HS", search="medicament")`` finds codes.
+        period: One year ``"2023"`` (annual data) or month ``"202305"`` (monthly data).
+        flow: One trade flow: ``"X"`` exports, ``"M"`` imports, ``"RX"`` re-exports,
+            ``"RM"`` re-imports.
+        n: How many partners, at least 1, e.g. ``10``; fewer come back when fewer
+            partners have a row.
+        cl_code: Product classification, ``"HS"`` by default: all HS editions as each
+            reporter reported them (rows name the edition in ``classification_code``, e.g.
+            ``"H6"``); an edition ``"H0"`` to ``"H5"``, SITC ``"SS"`` or ``"S1"`` to ``"S4"``,
+            BEC ``"B4"``, ``"B5"`` also work. ``"H6"`` is valid but upstream answered HTTP 500
+            to every try on 2026-10-23, so ``"HS"`` stays the default.
+    """
+    request = validate_slice(
+        cl_code, flow, reporter=reporter, commodity=commodity, period=period, n=n
+    )
+    _bounded(len(packaged_table("partnerAreas", PartnerArea)))
+    rows = [row for row in await _flows(request) if row.partner_code != 0]
+    rows.sort(key=lambda row: (-row.primary_value, row.partner_code))
+    return Result(data=rows[:n], meta=_meta(request))
+
+
 async def list_reporters_async(search: str | None = None) -> Result[list[Reporter]]:
     """List the reporters UN Comtrade has trade data from, with the codes reporter_code takes.
 
@@ -520,11 +752,15 @@ async def list_commodities_async(
     return Result(data=rows, meta=meta)
 
 
+get_bilateral_flows = sync(get_bilateral_flows_async)
+get_commodity_series = sync(get_commodity_series_async)
 get_counts = sync(get_counts_async)
 get_data = sync(get_data_async)
 get_data_availability = sync(get_data_availability_async)
 get_live_update = sync(get_live_update_async)
 get_metadata = sync(get_metadata_async)
+get_top_partners = sync(get_top_partners_async)
+get_world_trade = sync(get_world_trade_async)
 list_commodities = sync(list_commodities_async)
 list_partners = sync(list_partners_async)
 list_reporters = sync(list_reporters_async)

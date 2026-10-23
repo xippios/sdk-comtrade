@@ -1,11 +1,13 @@
 """Live smoke tests: skipped unless XIPPIOS_LIVE_TESTS=1 (conventions §10).
 
 Every task function gets one live smoke test here, next to the reachability check. The
-whole module costs seven keyed calls: the reachability check, one count, the count plus
-the data call of ``get_data``, and one call each for ``get_data_availability``,
-``get_metadata`` and ``get_live_update``. A Basic Individual key allows 500 calls per day.
-The list tasks spend none: ``list_commodities`` and the checks of the packaged tables
-fetch the public reference files without the key (three keyless fetches).
+whole module costs eleven keyed calls: the reachability check, one count, the count plus
+the data call of ``get_data``, one call each for ``get_data_availability``,
+``get_metadata`` and ``get_live_update``, and one for each of the four slices (the
+commodity series asks for two periods, one call). A Basic Individual key allows 500
+calls per day. The list tasks spend none: ``list_commodities`` and the checks of the
+packaged tables fetch the public reference files without the key (three keyless
+fetches).
 """
 
 from datetime import datetime
@@ -103,3 +105,34 @@ async def test_get_live_update_live() -> None:
     result = await tasks.get_live_update_async()
     assert result.data
     assert all(row.started_at is None or row.started_at.tzinfo for row in result.data)
+
+
+async def test_get_bilateral_flows_live() -> None:
+    result = await tasks.get_bilateral_flows_async("CHE", "USA", "TOTAL", "2023", "X")
+    [row] = result.data
+    assert (row.reporter_code, row.partner_code, row.cmd_code) == (757, 842, "TOTAL")
+    assert (row.reporter_iso, row.partner_iso) == ("CHE", "USA")
+    assert isinstance(row.primary_value, Decimal)
+    assert row.primary_value > 0
+
+
+async def test_get_commodity_series_live() -> None:
+    result = await tasks.get_commodity_series_async("757", "27", "X", "2022,2023")
+    assert [row.period for row in result.data] == ["2022", "2023"]
+    assert {row.partner_code for row in result.data} == {0}
+
+
+async def test_get_world_trade_live() -> None:
+    result = await tasks.get_world_trade_async("27", "2023", "M")
+    assert len(result.data) > 100
+    assert len({row.reporter_code for row in result.data}) == len(result.data)
+    values = [row.primary_value for row in result.data]
+    assert values == sorted(values, reverse=True)
+
+
+async def test_get_top_partners_live() -> None:
+    result = await tasks.get_top_partners_async("757", "TOTAL", "2023", "X", 5)
+    assert len(result.data) == 5
+    assert 0 not in {row.partner_code for row in result.data}
+    values = [row.primary_value for row in result.data]
+    assert values == sorted(values, reverse=True)

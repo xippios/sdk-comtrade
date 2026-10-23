@@ -24,7 +24,7 @@ from xippios.core import (
     UpstreamError,
 )
 from xippios.core.http import status_for
-from xippios.core.testing import load_fixture, mcp_call
+from xippios.core.testing import assert_projection, load_fixture, mcp_call
 
 from xippios.comtrade import __version__, api, enums, tasks
 from xippios.comtrade._client import (
@@ -48,6 +48,8 @@ from xippios.comtrade.models import (
     ReferenceCode,
     Reporter,
     TradeDataItem,
+    TradeDataRecord,
+    TradeFlowRecord,
 )
 from xippios.comtrade.params import (
     PACKAGED_LISTS,
@@ -57,6 +59,7 @@ from xippios.comtrade.params import (
     packaged_table_info,
     packaged_values,
     validate_get,
+    validate_slice,
 )
 
 SHELL_KEY = os.environ.get(API_KEY_ENV)
@@ -67,6 +70,7 @@ TASKS = [getattr(tasks, name) for name in tasks.__all__]
 Replay = Callable[[str], respx.Route]
 Recorded = Callable[[str], dict[str, str]]
 ReplayFixture = Callable[[str, str], respx.Route]
+ReplayQuery = Callable[[str], respx.Route]
 
 UPSTREAM = Path(__file__).resolve().parents[1] / "docs" / "upstream"
 
@@ -1397,7 +1401,247 @@ def test_dataset_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
         assert refused.status_code == 422
 
 
-# Search filters on the list tasks.
+# Task-shaped slices: data/v1/get pinned to the total row, bounded by construction, no count.
+
+BILATERAL_REQUEST: dict[str, Any] = {
+    "type_code": "C", "freq_code": "A", "cl_code": "HS", "reporter_code": "757",
+    "partner_code": "842", "partner2_code": "0", "period": "2022,2023",
+    "cmd_code": "TOTAL,27", "flow_code": "X", "mot_code": "0", "customs_code": "C00",
+    "breakdown_mode": "classic", "include_desc": True,
+}  # fmt: skip
+"""What get_bilateral_flows("CHE", "USA", "TOTAL,27", "2022,2023", "X") sends, resolved."""
+
+SERIES = ",".join(str(year) for year in range(2010, 2024))
+"""Fourteen years: more than upstream's 12 periods per call."""
+
+
+def _records(fixtures_dir: Path, case: str) -> list[TradeDataRecord]:
+    return [TradeDataRecord.model_validate(row) for row in _rows(fixtures_dir, case)]
+
+
+def test_bilateral_flows_resolve_iso3_codes_before_the_call(replay_query: ReplayQuery) -> None:
+    """The fixture answers 757 and 842 only; CHE and USA reach it resolved, without a count."""
+    route = replay_query("bilateral_ch_us_2022_2023")
+    by_iso3 = tasks.get_bilateral_flows("CHE", "USA", "TOTAL,27", "2022,2023", "X")
+    by_code = tasks.get_bilateral_flows("757", "842", "TOTAL,27", "2022,2023", "X")
+    assert route.call_count == 2
+    assert by_iso3.meta.request == by_code.meta.request == BILATERAL_REQUEST
+    assert by_iso3.data == by_code.data
+
+
+def test_bilateral_flows_project_the_total_rows(
+    replay_query: ReplayQuery, fixtures_dir: Path
+) -> None:
+    route = replay_query("bilateral_ch_us_2022_2023")
+    result = tasks.get_bilateral_flows("757", "842", "TOTAL,27", "2022,2023", "X")
+    assert route.calls.last.request.url.path == "/data/v1/get/C/A/HS"
+    assert result.meta.endpoint == "data/v1/get"
+    assert result.meta.published_at is None
+    assert [(row.period, row.cmd_code) for row in result.data] == [
+        ("2022", "27"), ("2022", "TOTAL"), ("2023", "27"), ("2023", "TOTAL"),
+    ]  # fmt: skip
+    raw = _records(fixtures_dir, "bilateral_ch_us_2022_2023")
+    records = {(row.period, row.cmd_code): row for row in raw}
+    for row in result.data:
+        assert isinstance(row, TradeFlowRecord)
+        assert_projection(row, records[(row.period, row.cmd_code)])
+    total = result.data[3]
+    assert total.primary_value == total.fobvalue == Decimal("62852531481.607")
+    assert isinstance(total.primary_value, Decimal)
+    assert total.cifvalue is None
+    assert (total.reporter_code, total.reporter_iso, total.reporter_desc) == (
+        757,
+        "CHE",
+        "Switzerland",
+    )
+    assert (total.partner_code, total.partner_iso, total.partner_desc) == (842, "USA", "USA")
+    assert (total.flow_code, total.flow_desc, total.cmd_desc) == ("X", "Export", "All Commodities")
+    assert (total.freq_code, total.ref_year, total.ref_month) == ("A", 2023, 52)
+    assert total.classification_code == "H6"
+    assert (total.qty_unit_code, total.qty_unit_abbr) == (-1, "N/A")
+    assert (total.qty, total.net_wgt) == (Decimal("0.0"), Decimal("0.0"))
+    assert (total.is_reported, total.is_aggregate) == (False, True)
+    pinned = {"type_code", "partner2_code", "customs_code", "mot_code"}
+    assert not pinned & set(TradeFlowRecord.model_fields), "pinned totals are not carried"
+
+
+def test_monthly_periods_ask_for_monthly_data(replay_query: ReplayQuery) -> None:
+    """YYYYMM periods go to freqCode M; the format, not an argument, sets the frequency."""
+    route = replay_query("bilateral_ch_us_202301_202302")
+    result = tasks.get_bilateral_flows("CHE", "USA", "TOTAL", "202301,202302", "X")
+    assert route.calls.last.request.url.path == "/data/v1/get/C/M/HS"
+    assert result.meta.request["freq_code"] == "M"
+    assert [(row.freq_code, row.period, row.ref_year, row.ref_month) for row in result.data] == [
+        ("M", "202301", 2023, 1), ("M", "202302", 2023, 2),
+    ]  # fmt: skip
+
+
+def test_commodity_series_sends_14_periods_in_two_calls_in_order(
+    replay_query: ReplayQuery, respx_mock: respx.MockRouter
+) -> None:
+    first = replay_query("series_ch_27_2010_2021")
+    second = replay_query("series_ch_27_2022_2023")
+    result = tasks.get_commodity_series("CHE", "27", "X", SERIES)
+    assert (first.call_count, second.call_count) == (1, 1)
+    sent = [call.request.url.params["period"] for call in respx_mock.calls]
+    assert sent == [",".join(str(year) for year in range(2010, 2022)), "2022,2023"]
+    assert [row.period for row in result.data] == SERIES.split(",")
+    assert {(row.reporter_code, row.partner_code, row.cmd_code) for row in result.data} == {
+        (757, 0, "27")
+    }
+    editions = {row.period: row.classification_code for row in result.data}
+    assert [editions[year] for year in ("2010", "2012", "2017", "2022")] == ["H3", "H4", "H5", "H6"]
+    assert result.data[-1].primary_value == Decimal("6140348352.207")
+    assert result.meta.request == {
+        **BILATERAL_REQUEST, "partner_code": "0", "period": SERIES, "cmd_code": "27",
+    }  # fmt: skip
+
+
+def test_world_trade_has_one_row_per_reporter_largest_first(
+    replay_query: ReplayQuery, fixtures_dir: Path
+) -> None:
+    route = replay_query("world_27_2023_imports")
+    result = tasks.get_world_trade("27", "2023", "M")
+    assert "reporterCode" not in route.calls.last.request.url.params
+    assert "reporter_code" not in result.meta.request
+    assert result.meta.request["partner_code"] == "0"
+    assert len(result.data) == len({row.reporter_code for row in result.data}) == 167
+    assert {(row.partner_code, row.cmd_code, row.flow_code, row.period) for row in result.data} == {
+        (0, "27", "M", "2023")
+    }
+    values = [row.primary_value for row in result.data]
+    assert values == sorted(values, reverse=True)
+    assert [row.reporter_desc for row in result.data[:3]] == ["China", "USA", "India"]
+    upstream = [row["reporterCode"] for row in _rows(fixtures_dir, "world_27_2023_imports")]
+    assert upstream[:3] == [8, 20, 24], "upstream sends them by code; the task sorts by value"
+
+
+def test_top_partners_drop_world_and_keep_n(replay_query: ReplayQuery, fixtures_dir: Path) -> None:
+    route = replay_query("partners_ch_total_2023")
+    result = tasks.get_top_partners("CHE", "TOTAL", "2023", "X", 5)
+    assert "partnerCode" not in route.calls.last.request.url.params
+    assert "partner_code" not in result.meta.request
+    assert [row.partner_code for row in result.data] == [842, 276, 156, 380, 251]
+    raw = {row.partner_code: row for row in _records(fixtures_dir, "partners_ch_total_2023")}
+    assert raw[0].primary_value == Decimal("419922543423.509"), "World is the total row"
+    for row in result.data:
+        assert_projection(row, raw[row.partner_code])
+    assert result.data[0].primary_value == Decimal("62852531481.607"), "as get_bilateral_flows"
+    everyone = tasks.get_top_partners("757", "TOTAL", "2023", "X", 500)
+    assert len(everyone.data) == len(raw) - 1 == 225
+    assert 0 not in {row.partner_code for row in everyone.data}
+    values = [row.primary_value for row in everyone.data]
+    assert values == sorted(values, reverse=True)
+
+
+def test_iso3_codes_resolve_to_the_codes_upstream_data_uses(fixtures_dir: Path) -> None:
+    def codes(reporter: str, partner: str) -> tuple[str, str]:
+        request = validate_slice(
+            "HS", "X", reporter=reporter, partner=partner, commodity="TOTAL", period="2023"
+        )
+        return request["reporter_code"], request["partner_code"]
+
+    assert codes(reporter="CHE", partner="USA") == ("757", "842")
+    assert codes(reporter="che", partner="W00") == ("757", "0")
+    assert codes(reporter="DEU", partner="FRA") == ("276", "251"), "280 expired; 250 no reporter"
+    assert codes(reporter="USA", partner="NOR") == ("842", "579"), "841 expired; 578 no reporter"
+    assert codes(reporter="757", partner="0") == ("757", "0")
+    partners = {row["partnerCode"] for row in _rows(fixtures_dir, "partners_ch_total_2023")}
+    assert {842, 251, 579} <= partners
+    assert not {840, 250, 578} & partners
+    with pytest.raises(InvalidRequestError) as info:
+        validate_slice("HS", "X", partner="A79", commodity="TOTAL", period="2023")
+    assert "'473' (LAIA, nes), '636' (Rest of America, nes); give the numeric code" in str(
+        info.value
+    )
+
+
+def _slice_refused(respx_mock: respx.MockRouter, call: Callable[[], object]) -> str:
+    with pytest.raises(InvalidRequestError) as info:
+        call()
+    assert not respx_mock.calls, "resolution and validation happen before any call"
+    return str(info.value)
+
+
+@pytest.mark.parametrize(
+    ("call", "expected"),
+    [
+        (
+            lambda: tasks.get_bilateral_flows("CHE", "USA", "TOTAL", "2023,202301", "X"),
+            "periods '2023,202301' mixes years (2023) and months (202301)",
+        ),
+        (
+            lambda: tasks.get_bilateral_flows("CHF", "USA", "TOTAL", "2023", "X"),
+            "reporter 'CHF' is neither a UN Comtrade reporter code nor the ISO alpha-3 code of "
+            "one (Reporters.json); closest: 'CHN' (156, China)",
+        ),
+        (
+            lambda: tasks.get_top_partners("Switzerland", "TOTAL", "2023", "X", 5),
+            "closest: 'CHE' (757, Switzerland)",
+        ),
+        (
+            lambda: tasks.get_bilateral_flows("756", "USA", "TOTAL", "2023", "X"),
+            "reporter '756' is not a UN Comtrade reporter code (Reporters.json); closest: '757'",
+        ),
+        (
+            lambda: tasks.get_bilateral_flows("W00", "USA", "TOTAL", "2023", "X"),
+            "reporter 'W00' (0, World) is a partner area only",
+        ),
+        (
+            lambda: tasks.get_bilateral_flows("CHE", "USA", "TOTAL", SERIES[:-5], "X"),
+            "periods has 13 values; UN Comtrade takes at most 12 per call",
+        ),
+        (
+            lambda: tasks.get_bilateral_flows("CHE", "USA", "TOTAL,AG2", "2023", "X"),
+            "commodities 'AG2' expands to many product codes",
+        ),
+        (
+            lambda: tasks.get_world_trade("27??", "2023", "M"),
+            "commodity '27??' expands to many product codes",
+        ),
+        (
+            lambda: tasks.get_world_trade("TOTAL,27", "2023", "M"),
+            "commodity 'TOTAL,27' must be one product code",
+        ),
+        (
+            lambda: tasks.get_world_trade("27", "2023-01", "M"),
+            "period '2023-01' is neither a year (YYYY, e.g. '2023') nor a month (YYYYMM, e.g. "
+            "'202305'); closest: '202301'",
+        ),
+        (
+            lambda: tasks.get_top_partners("CHE", "TOTAL", "2022,2023", "X", 5),
+            "period '2022,2023' must be one year or month",
+        ),
+        (
+            lambda: tasks.get_top_partners("CHE", "TOTAL", "2023", "X", 0),
+            "n 0 must be at least 1; closest: 1",
+        ),
+        (
+            lambda: tasks.get_commodity_series("CHE", "27", "X,M", "2022,2023"),
+            "flow 'X,M' must be one flow code",
+        ),
+        (
+            lambda: tasks.get_commodity_series("CHE", "27", "X", "2022,2023,2022"),
+            "periods names '2022' more than once",
+        ),
+    ],
+)
+def test_slice_arguments_are_refused_before_any_call(
+    respx_mock: respx.MockRouter, call: Callable[[], object], expected: str
+) -> None:
+    assert expected in _slice_refused(respx_mock, call)
+
+
+def test_a_bound_over_the_limit_is_refused_without_a_call(respx_mock: respx.MockRouter) -> None:
+    """8,334 product codes over 12 periods could return 100,008 rows: refused, not counted."""
+    codes = ",".join(f"{code:06d}" for code in range(8334))
+    periods = ",".join(str(year) for year in range(2012, 2024))
+    with pytest.raises(QueryTooLarge) as info:
+        tasks.get_bilateral_flows("757", "842", codes, periods, "X")
+    assert not respx_mock.calls
+    assert info.value.count == 8334 * 12 == 100_008
+    assert "query could return up to 100,008 records" in str(info.value)
+    assert "Name fewer product codes or periods per call" in str(info.value)
 
 
 def test_the_list_tasks_search_code_iso3_and_text(respx_mock: respx.MockRouter) -> None:
@@ -1430,6 +1674,46 @@ def test_list_commodities_searches_the_fetched_file(replay_fixture: ReplayFixtur
     assert [row.id for row in by_code.data] == ["52", "521", "522"]
     assert len(tasks.list_commodities("B4").data) == 30
     assert route.call_count == 1, "one fetch, kept for the process"
+
+
+@pytest.mark.anyio
+async def test_slice_tools_end_to_end(replay_query: ReplayQuery) -> None:
+    replay_query("bilateral_ch_us_2022_2023")
+    arguments = {"reporter": "CHE", "partner": "USA", "commodities": "TOTAL,27",
+                 "periods": "2022,2023", "flow": "X"}  # fmt: skip
+    bilateral = await mcp_call(server, "comtrade_get_bilateral_flows", arguments)
+    assert [row["cmd_code"] for row in bilateral["data"]] == ["27", "TOTAL", "27", "TOTAL"]
+    assert bilateral["data"][3]["primary_value"] == 62852531481.607
+    assert bilateral["meta"]["request"] == BILATERAL_REQUEST
+    replay_query("series_ch_27_2010_2021")
+    replay_query("series_ch_27_2022_2023")
+    series = await mcp_call(
+        server,
+        "comtrade_get_commodity_series",
+        {"reporter": "757", "commodity": "27", "flow": "X", "periods": SERIES},
+    )
+    assert [row["period"] for row in series["data"]] == SERIES.split(",")
+    replay_query("world_27_2023_imports")
+    world = await mcp_call(
+        server, "comtrade_get_world_trade", {"commodity": "27", "period": "2023", "flow": "M"}
+    )
+    assert world["note"].startswith("showing 114 of 167 rows"), "64 KB: the largest come first"
+    assert world["data"][0]["reporter_code"] == 156
+    replay_query("partners_ch_total_2023")
+    top = await mcp_call(
+        server,
+        "comtrade_get_top_partners",
+        {"reporter": "CHE", "commodity": "TOTAL", "period": "2023", "flow": "X", "n": 3},
+    )
+    assert [row["partner_code"] for row in top["data"]] == [842, 276, 156]
+    reporters = await mcp_call(server, "comtrade_list_reporters", {"search": "switz"})
+    assert [row["reporter_code"] for row in reporters["data"]] == [757]
+    assert reporters["meta"]["request"] == {"search": "switz"}
+    assert "note" not in reporters
+    with pytest.raises(AssertionError, match=r"InvalidRequestError.*mixes years"):
+        await mcp_call(
+            server, "comtrade_get_bilateral_flows", {**arguments, "periods": "2023,202301"}
+        )
 
 
 def test_list_search_route_end_to_end() -> None:
