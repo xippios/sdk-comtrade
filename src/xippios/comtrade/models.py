@@ -43,8 +43,10 @@ class TradeDataRecord(UpstreamModel):
     codes: ``reporter_code`` and ``partner_code`` are Comtrade's numeric area codes
     (``757`` Switzerland, ``0`` World), ``flow_code`` the trade flow (``"X"``, ``"M"``),
     ``customs_code`` and ``mot_code`` the customs procedure and mode of transport, where
-    ``"C00"`` and ``0`` are the totals. The ``*_desc`` and ``*_iso`` fields are ``None``
-    in every recorded answer; none of them set ``includeDesc``. ``ref_period_id`` is
+    ``"C00"`` and ``0`` are the totals. The ``*_desc`` and ``*_iso`` fields, and
+    ``aggr_level`` and ``is_leaf``, are ``None`` unless the query sets ``includeDesc``
+    (``tests/fixtures/get/ch_exports_2023_include_desc.json``). Parameters named in
+    ``aggregateBy`` come back as ``-2`` with ``classification_code`` ``"GG"``. ``ref_period_id`` is
     upstream's integer period key (``20230101``) and ``ref_month`` is ``52`` on annual
     rows, both as sent. Upstream's data items (``docs/upstream/reference/TradeDataItems.json``)
     describe ``primary_value`` as "Primary trade values (taken from CIF or FOB values)",

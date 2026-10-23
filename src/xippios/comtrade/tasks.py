@@ -87,11 +87,13 @@ async def get_counts_async(
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
         freq_code: ``"A"`` annual or ``"M"`` monthly.
-        cl_code: Product classification: ``"HS"`` (all HS editions; prefer it, a count on
-            the edition ``"H6"`` failed upstream with HTTP 500 on 2026-10-23), an edition
-            ``"H0"`` to ``"H6"``, SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC ``"B4"``,
-            ``"B5"``, for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``, ``"EB10S"``;
-            also ``"BE"`` and ``"TM"``, which the spec lists and upstream accepts.
+        cl_code: Product classification: ``"HS"`` (all HS editions as reported; prefer
+            it), an edition ``"H0"`` to ``"H5"``, SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC
+            ``"B4"``, ``"B5"``, for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``,
+            ``"EB10S"``; also ``"BE"`` and ``"TM"``, which the spec lists and upstream
+            accepts. ``"H6"`` is valid but upstream answered HTTP 500 to all five tries on
+            2026-10-23 (two reporters, two product codes); ``"HS"`` rows carry the edition
+            the reporter used, e.g. ``classification_code`` ``"H6"`` for Switzerland 2023.
         reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
             e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
             ``"757,842"``, as ``list_reporters`` lists them. Some differ from ISO numeric
@@ -103,10 +105,13 @@ async def get_counts_async(
             ``list_partners``; ``"0"`` is the total.
         period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), at most 12
             comma-separated, e.g. ``"2021,2022,2023"``.
-        cmd_code: Product codes of ``cl_code``, comma-separated: ``"TOTAL"`` for all
-            products, ``"AG2"``, ``"AG4"``, ``"AG6"`` for every code at that level, codes
-            such as ``"0901"`` or ``"090111"``, wildcards such as ``"27??"`` (every
-            four-digit code under 27) or ``"27*"``.
+        cmd_code: Product codes of ``cl_code``, comma-separated, as
+            ``list_commodities(cl_code)`` lists them: ``"TOTAL"`` for all goods,
+            ``"AG2"``, ``"AG4"``, ``"AG6"`` for every code at that level, codes such as
+            ``"0901"`` or ``"090111"``, wildcards such as ``"27??"`` (every four-digit code
+            under 27) or ``"27*"``. For services the total is ``"200"`` (EB, EB02, EB10)
+            or ``"S"`` (EB10S); ``"TOTAL"`` counts 0 there. A code upstream does not have
+            counts 0.
         flow_code: Trade flows, comma-separated: ``"X"`` exports, ``"M"`` imports,
             ``"RX"`` re-exports, ``"RM"`` re-imports, also ``"DX"``, ``"FM"``, ``"MIP"``,
             ``"MOP"``, ``"XIP"``, ``"XOP"``, ``"MIF"``, ``"XIF"``; e.g. ``"M,X"``.
@@ -118,10 +123,17 @@ async def get_counts_async(
             procedure, one row each.
         aggregate_by: Upstream parameters to aggregate the results over, comma-separated
             from ``cmdCode``, ``period``, ``partnerCode``, ``partner2Code``,
-            ``reporterCode``, ``customsCode``, ``motCode``; e.g. ``"period"``.
-        breakdown_mode: Upstream's breakdown mode, ``"classic"`` or ``"plus"``.
+            ``reporterCode``, ``customsCode``, ``motCode``; e.g. ``"cmdCode"`` sums the
+            products of ``"AG2"`` into one row per remaining breakdown. The aggregated
+            parameters come back as ``-2`` (``cmd_code`` ``"-2"``, ``partner_code`` -2)
+            with ``classification_code`` ``"GG"``; the count matches the rows.
+        breakdown_mode: ``"plus"``, upstream's default (omitting it gives the same rows):
+            every customs procedure, mode of transport and second partner;
+            ``"classic"``: only the total row (``partner2_code`` 0, ``customs_code``
+            ``"C00"``, ``mot_code`` 0).
         include_desc: Upstream's ``includeDesc``, "Include descriptions of data
-            variables" (the ``*_desc`` fields of ``get_data`` rows); sent on as given.
+            variables": fills the ``*_iso`` and ``*_desc`` fields of ``get_data`` rows;
+            sent on as given.
     """
     request = validate_get(
         type_code,
@@ -171,18 +183,21 @@ async def get_data_async(
     in ``cifvalue``/``fobvalue``). Leaving out ``partner2_code``,
     ``customs_code`` and ``mot_code`` returns every breakdown upstream holds (32 rows for
     Switzerland's 2023 exports to the World); the row with ``partner2_code`` 0,
-    ``customs_code`` ``"C00"`` and ``mot_code`` 0 is the total. Arguments are checked
+    ``customs_code`` ``"C00"`` and ``mot_code`` 0 is the total, and pinning those three
+    (or ``breakdown_mode="classic"``) returns that row alone. Arguments are checked
     before any call; an unknown code raises ``InvalidRequestError`` naming the closest
     valid one.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
         freq_code: ``"A"`` annual or ``"M"`` monthly.
-        cl_code: Product classification: ``"HS"`` (all HS editions; prefer it, a count on
-            the edition ``"H6"`` failed upstream with HTTP 500 on 2026-10-23), an edition
-            ``"H0"`` to ``"H6"``, SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC ``"B4"``,
-            ``"B5"``, for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``, ``"EB10S"``;
-            also ``"BE"`` and ``"TM"``, which the spec lists and upstream accepts.
+        cl_code: Product classification: ``"HS"`` (all HS editions as reported; prefer
+            it), an edition ``"H0"`` to ``"H5"``, SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC
+            ``"B4"``, ``"B5"``, for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``,
+            ``"EB10S"``; also ``"BE"`` and ``"TM"``, which the spec lists and upstream
+            accepts. ``"H6"`` is valid but upstream answered HTTP 500 to all five tries on
+            2026-10-23 (two reporters, two product codes); ``"HS"`` rows carry the edition
+            the reporter used, e.g. ``classification_code`` ``"H6"`` for Switzerland 2023.
         reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
             e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
             ``"757,842"``, as ``list_reporters`` lists them. Some differ from ISO numeric
@@ -194,10 +209,13 @@ async def get_data_async(
             ``list_partners``; ``"0"`` is the total.
         period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), at most 12
             comma-separated, e.g. ``"2021,2022,2023"``.
-        cmd_code: Product codes of ``cl_code``, comma-separated: ``"TOTAL"`` for all
-            products, ``"AG2"``, ``"AG4"``, ``"AG6"`` for every code at that level, codes
-            such as ``"0901"`` or ``"090111"``, wildcards such as ``"27??"`` (every
-            four-digit code under 27) or ``"27*"``.
+        cmd_code: Product codes of ``cl_code``, comma-separated, as
+            ``list_commodities(cl_code)`` lists them: ``"TOTAL"`` for all goods,
+            ``"AG2"``, ``"AG4"``, ``"AG6"`` for every code at that level, codes such as
+            ``"0901"`` or ``"090111"``, wildcards such as ``"27??"`` (every four-digit code
+            under 27) or ``"27*"``. For services the total is ``"200"`` (EB, EB02, EB10)
+            or ``"S"`` (EB10S); ``"TOTAL"`` counts 0 there. A code upstream does not have
+            counts 0.
         flow_code: Trade flows, comma-separated: ``"X"`` exports, ``"M"`` imports,
             ``"RX"`` re-exports, ``"RM"`` re-imports, also ``"DX"``, ``"FM"``, ``"MIP"``,
             ``"MOP"``, ``"XIP"``, ``"XOP"``, ``"MIF"``, ``"XIF"``; e.g. ``"M,X"``.
@@ -209,10 +227,18 @@ async def get_data_async(
             procedure, one row each.
         aggregate_by: Upstream parameters to aggregate the results over, comma-separated
             from ``cmdCode``, ``period``, ``partnerCode``, ``partner2Code``,
-            ``reporterCode``, ``customsCode``, ``motCode``; e.g. ``"period"``.
-        breakdown_mode: Upstream's breakdown mode, ``"classic"`` or ``"plus"``.
+            ``reporterCode``, ``customsCode``, ``motCode``; e.g. ``"cmdCode"`` sums the
+            products of ``"AG2"`` into one row per remaining breakdown. The aggregated
+            parameters come back as ``-2`` (``cmd_code`` ``"-2"``, ``partner_code`` -2)
+            with ``classification_code`` ``"GG"``; the count matches the rows.
+        breakdown_mode: ``"plus"``, upstream's default (omitting it gives the same rows):
+            every customs procedure, mode of transport and second partner;
+            ``"classic"``: only the total row (``partner2_code`` 0, ``customs_code``
+            ``"C00"``, ``mot_code`` 0).
         include_desc: Upstream's ``includeDesc``, "Include descriptions of data
-            variables" (the ``*_desc`` fields such as ``reporter_desc``); without it they
+            variables": fills ``reporter_iso``/``reporter_desc``, the partner and second
+            partner ones, ``flow_desc``, ``cmd_desc``, ``customs_desc``, ``mot_desc``, the
+            quantity unit abbreviations, ``aggr_level`` and ``is_leaf``; without it they
             are ``None``.
     """
     request = validate_get(

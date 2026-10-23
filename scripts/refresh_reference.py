@@ -158,29 +158,64 @@ SUPPLEMENTS: dict[str, tuple[str, Callable[[dict[str, Any]], list[str]], bool]] 
 }
 """Spec values reconciled with a reference-file list: (origin, reader, add unexercised ones)."""
 
-EVIDENCE: dict[str, dict[str, str]] = {
-    "flowCode": {"MIF": "count_flow_code_mif.json"},
+_H6 = (
+    "count_cl_code_h6.json",
+    "count_cl_code_h6_retried.json",
+    "count_cl_code_h6_retried_later.json",
+    "count_cl_code_h6_cmd_code_01.json",
+    "count_cl_code_h6_usa.json",
+)
+
+EVIDENCE: dict[str, dict[str, tuple[str, ...]]] = {
+    "flowCode": {
+        "MIF": ("count_flow_code_mif.json",),
+        "XIF": ("count_flow_code_xif.json",),
+    },
     "clCode": {
-        "BE": "count_cl_code_be.json",
-        "BE5": "count_cl_code_be5.json",
-        "TM": "count_cl_code_tm.json",
-        "H6": "count_cl_code_h6.json",
+        "BE": ("count_cl_code_be.json",),
+        "BE5": ("count_cl_code_be5.json",),
+        "TM": ("count_cl_code_tm.json",),
+        "HS": ("count_ch_exports_2023.json",),
+        "H6": _H6,
+        **{
+            value: (f"count_cl_code_{value.lower()}.json",)
+            for value in [
+                *("H0", "H1", "H2", "H3", "H4", "H5"),
+                *("B4", "B5", "S1", "S2", "S3", "S4", "SS"),
+                *("EB", "EB02", "EB10", "EB10S"),
+            ]
+        },
     },
 }
 """Recorded ``data/v1/get`` counts under ``tests/fixtures/get/`` that try one value.
 
-HTTP 200 means upstream accepted the value, HTTP 400 that it refused it; any other status
-settles nothing.
+Every ``clCode`` value has at least one: the fixture query (757, partner 0, 2023, exports,
+``TOTAL``) with ``countOnly``; the EBOPS ones with ``typeCode`` S and the services total
+their files document (``200``, or ``S`` for EB10S). HTTP 200 means upstream accepted the
+value, HTTP 400 that it refused it; anything else settles nothing. Where a value has several
+recordings, one 200 settles it as accepted, else one 400 as refused.
 """
 
 
 def _verdict(name: str, value: str) -> tuple[str, str] | None:
-    fixture = EVIDENCE.get(name, {}).get(value)
-    if fixture is None:
+    fixtures = EVIDENCE.get(name, {}).get(value)
+    if not fixtures:
         return None
-    status = json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))["response"]["status"]
-    outcome = {200: "accepted it", 400: "refused it"}.get(status, "answered without settling it")
-    return outcome, f"tests/fixtures/get/{fixture}, HTTP {status}"
+    statuses = [
+        json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))["response"]["status"]
+        for fixture in fixtures
+    ]
+    if 200 in statuses:
+        outcome = "accepted it"
+    elif 400 in statuses:
+        outcome = "refused it"
+    else:
+        outcome = "answered without settling it"
+    cited = "; ".join(
+        f"tests/fixtures/get/{fixture}, HTTP {status}"
+        for fixture, status in zip(fixtures, statuses, strict=True)
+    )
+    return outcome, cited
 
 
 def _reconcile(

@@ -3,6 +3,7 @@
 import inspect
 import json
 import os
+import re
 from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
@@ -349,6 +350,230 @@ async def test_mif_is_accepted_upstream(replay_get: Replay) -> None:
     assert (response.count, response.error) == (0, "")
 
 
+def _rows(fixtures_dir: Path, case: str) -> list[dict[str, Any]]:
+    """The raw ``data`` rows of a recorded ``data/v1/get`` answer."""
+    fixture = load_fixture(fixtures_dir / "get" / f"{case}.json")
+    rows: list[dict[str, Any]] = json.loads(fixture.response.body)["data"]
+    return rows
+
+
+TOTAL_ROW = ("C00", 0, 0)
+"""customs_code, mot_code, partner2_code of the total row."""
+
+
+def test_flow_code_xif_is_accepted_upstream(replay_get: Replay, recorded_params: Recorded) -> None:
+    route = replay_get("count_flow_code_xif")
+    assert tasks.get_counts(**{**CH_EXPORTS_2023, "flow_code": "XIF"}).data == 0
+    assert dict(route.calls.last.request.url.params) == recorded_params("count_flow_code_xif")
+
+
+def test_breakdown_mode_classic_returns_the_total_row_only(
+    replay_get: Replay, recorded_params: Recorded
+) -> None:
+    counted = replay_get("count_breakdown_mode_classic")
+    fetched = replay_get("ch_exports_2023_breakdown_mode_classic")
+    result = tasks.get_data(**CH_EXPORTS_2023, breakdown_mode="classic")
+    assert dict(counted.calls.last.request.url.params) == recorded_params(
+        "count_breakdown_mode_classic"
+    )
+    assert dict(fetched.calls.last.request.url.params) == recorded_params(
+        "ch_exports_2023_breakdown_mode_classic"
+    )
+    [row] = result.data
+    assert (row.customs_code, row.mot_code, row.partner2_code) == TOTAL_ROW
+    assert row.primary_value == Decimal("419922543423.509")
+
+
+def test_breakdown_mode_plus_is_upstreams_default(
+    replay_get: Replay, recorded_params: Recorded, fixtures_dir: Path
+) -> None:
+    """``plus`` counts 32 like the omitted parameter, and returns the same rows."""
+    replay_get("count_breakdown_mode_plus")
+    fetched = replay_get("ch_exports_2023_breakdown_mode_plus")
+    result = tasks.get_data(**CH_EXPORTS_2023, breakdown_mode="plus")
+    assert dict(fetched.calls.last.request.url.params) == recorded_params(
+        "ch_exports_2023_breakdown_mode_plus"
+    )
+    assert len(result.data) == 32
+    plus = _rows(fixtures_dir, "ch_exports_2023_breakdown_mode_plus")
+    assert plus == _rows(fixtures_dir, "ch_exports_2023")
+
+
+def test_pinning_the_totals_returns_one_row(
+    replay_get: Replay, recorded_params: Recorded, fixtures_dir: Path
+) -> None:
+    """partner2Code 0, customsCode C00 and motCode 0: one row, the same as ``classic``."""
+    replay_get("count_ch_exports_2023_totals")
+    fetched = replay_get("ch_exports_2023_totals")
+    result = tasks.get_data(**CH_EXPORTS_2023, partner2_code="0", customs_code="C00", mot_code="0")
+    assert dict(fetched.calls.last.request.url.params) == recorded_params("ch_exports_2023_totals")
+    [row] = result.data
+    assert (row.customs_code, row.mot_code, row.partner2_code) == TOTAL_ROW
+    assert _rows(fixtures_dir, "ch_exports_2023_totals") == _rows(
+        fixtures_dir, "ch_exports_2023_breakdown_mode_classic"
+    )
+
+
+def test_partner2_code_0_counts_what_omitting_it_counts(
+    replay_get: Replay, fixtures_dir: Path
+) -> None:
+    replay_get("count_partner2_code_0")
+    assert tasks.get_counts(**CH_EXPORTS_2023, partner2_code="0").data == 32
+    assert {row["partner2Code"] for row in _rows(fixtures_dir, "ch_exports_2023")} == {0}
+
+
+AG2 = {**CH_EXPORTS_2023, "cmd_code": "AG2"}
+
+
+def test_ag2_counts_every_chapter_and_breakdown(replay_get: Replay) -> None:
+    replay_get("count_ch_exports_2023_ag2")
+    assert tasks.get_counts(**AG2).data == 1338
+
+
+@pytest.mark.parametrize(
+    ("aggregate_by", "case", "partner_code"),
+    [
+        ("cmdCode", "aggregate_by_cmd_code", 0),
+        ("partnerCode,cmdCode", "aggregate_by_partner_code_cmd_code", -2),
+    ],
+)
+def test_aggregate_by_collapses_the_named_parameters_into_minus_2(
+    replay_get: Replay, recorded_params: Recorded, aggregate_by: str, case: str, partner_code: int
+) -> None:
+    """Over the 1,338 AG2 records: one row per remaining breakdown; the count matches."""
+    replay_get(f"count_{case}")
+    fetched = replay_get(f"ch_exports_2023_ag2_{case}")
+    assert tasks.get_counts(**AG2, aggregate_by=aggregate_by).data == 32
+    result = tasks.get_data(**AG2, aggregate_by=aggregate_by)
+    assert dict(fetched.calls.last.request.url.params) == recorded_params(
+        f"ch_exports_2023_ag2_{case}"
+    )
+    assert len(result.data) == 32
+    assert {row.cmd_code for row in result.data} == {"-2"}
+    assert {row.partner_code for row in result.data} == {partner_code}
+    assert {row.classification_code for row in result.data} == {"GG"}
+    assert {(row.aggr_level, row.is_leaf, row.cmd_desc) for row in result.data} == {
+        (None, None, None)
+    }
+    total = next(
+        row for row in result.data
+        if (row.customs_code, row.mot_code, row.partner2_code) == TOTAL_ROW
+    )  # fmt: skip
+    assert total.primary_value == Decimal("419922543423.5139")
+
+
+@pytest.mark.anyio
+async def test_include_desc_fills_the_descriptions(
+    replay_get: Replay, recorded_params: Recorded
+) -> None:
+    route = replay_get("ch_exports_2023_include_desc")
+    response = await api.get(
+        "C", "A", "HS", reporter_code="757", period="2023", partner_code="0", cmd_code="TOTAL",
+        flow_code="X", include_desc=True,
+    )  # fmt: skip
+    assert dict(route.calls.last.request.url.params) == recorded_params(
+        "ch_exports_2023_include_desc"
+    )
+    total = next(
+        row for row in response.data
+        if (row.customs_code, row.mot_code, row.partner2_code) == TOTAL_ROW
+    )  # fmt: skip
+    assert (total.reporter_iso, total.reporter_desc) == ("CHE", "Switzerland")
+    assert (total.partner_iso, total.partner_desc) == ("W00", "World")
+    assert (total.partner2_iso, total.partner2_desc) == ("W00", "World")
+    assert (total.flow_desc, total.cmd_desc) == ("Export", "All Commodities")
+    assert (total.customs_desc, total.mot_desc) == ("TOTAL CPC", "TOTAL MOT")
+    assert (total.qty_unit_abbr, total.alt_qty_unit_abbr) == ("N/A", "N/A")
+    assert (total.aggr_level, total.is_leaf) == (0, False)
+    assert all(row.reporter_desc == "Switzerland" for row in response.data)
+
+
+@pytest.mark.parametrize(
+    ("cmd_code", "case", "count"),
+    [("999999", "count_cmd_code_999999", 10), ("999998", "count_cmd_code_absent", 0)],
+)
+def test_product_codes_upstream_does_not_have_count_zero(
+    replay_get: Replay, cmd_code: str, case: str, count: int
+) -> None:
+    """999999 is HS's "Commodities not specified according to kind"; 999998 is not in HS.json."""
+    replay_get(case)
+    assert tasks.get_counts(**{**CH_EXPORTS_2023, "cmd_code": cmd_code}).data == count
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("case", "overrides", "field"),
+    [
+        ("count_period_malformed", {"period": "2023-01"}, "period"),
+        ("count_flow_code_unknown", {"flow_code": "Z"}, "flowCode"),
+    ],
+)
+async def test_upstream_refuses_malformed_values_naming_the_field(
+    replay_get: Replay, case: str, overrides: dict[str, str], field: str
+) -> None:
+    """Layer 1, past the task's own checks (which refuse both before any call)."""
+    replay_get(case)
+    query: dict[str, Any] = {
+        "reporter_code": "757", "period": "2023", "partner_code": "0", "cmd_code": "TOTAL",
+        "flow_code": "X", **overrides,
+    }  # fmt: skip
+    with pytest.raises(InvalidRequestError) as info:
+        await api.get_count_only("C", "A", "HS", **query)
+    assert f"Invalid parameter value (The field {field} is invalid)" in str(info.value)
+    with pytest.raises(InvalidRequestError):
+        validate_get("C", "A", "HS", **query)
+
+
+SERVICES_2023 = {**CH_EXPORTS_2023, "type_code": "S", "cl_code": "EB10", "cmd_code": "200"}
+
+
+@pytest.mark.parametrize(
+    ("cl_code", "cmd_code", "case", "count"),
+    [
+        ("EB10", "200", "count_cl_code_eb10", 1),
+        ("EB10", "TOTAL", "count_services_eb10_total", 0),
+        ("EB02", "200", "count_cl_code_eb02", 1),
+        ("EB10S", "S", "count_cl_code_eb10s", 0),
+        ("EB", "200", "count_cl_code_eb", 0),
+        ("EB", "TOTAL", "count_services_eb_total", 0),
+    ],
+)
+def test_services_take_their_files_total_code_not_total(
+    replay_get: Replay, cl_code: str, cmd_code: str, case: str, count: int
+) -> None:
+    """EB10 counts its one row under 200 and none under TOTAL; combined EB counts none."""
+    route = replay_get(case)
+    query = {**SERVICES_2023, "cl_code": cl_code, "cmd_code": cmd_code}
+    assert tasks.get_counts(**query).data == count
+    assert route.calls.last.request.url.path == f"/data/v1/get/S/A/{cl_code}"
+
+
+def test_services_rows(replay_get: Replay) -> None:
+    replay_get("count_cl_code_eb10")
+    replay_get("services_ch_exports_2023_eb10")
+    [row] = tasks.get_data(**SERVICES_2023).data
+    assert (row.type_code, row.classification_code, row.cmd_code) == ("S", "EB10", "200")
+    assert (row.mos_code, row.customs_code, row.mot_code, row.partner2_code) == ("0", "C00", 0, 0)
+    assert row.cifvalue == row.primary_value == Decimal("165139886737.593")
+    assert row.fobvalue is None
+    assert row.is_reported is True
+
+
+def test_mos_code_is_accepted_upstream_but_not_a_parameter_here(fixtures_dir: Path) -> None:
+    """Not in the spec: upstream filters on 0 and 1 and refuses ModeOfSupply.json's "Mode 1"."""
+    answers = {}
+    for case in ["eb10_mos_code_0", "eb10_mos_code_1", "eb10_mos_code_mode_1", "eb_mos_code_0"]:
+        fixture = load_fixture(fixtures_dir / "get" / f"count_services_{case}.json")
+        assert "mosCode=" in fixture.request.url
+        body = json.loads(fixture.response.body)
+        answers[case] = (fixture.response.status, body.get("count"))
+    assert answers == {
+        "eb10_mos_code_0": (200, 1), "eb10_mos_code_1": (200, 0),
+        "eb10_mos_code_mode_1": (400, None), "eb_mos_code_0": (200, 0),
+    }  # fmt: skip
+    assert "mos_code" not in inspect.signature(tasks.get_data).parameters
+
+
 def _refused(respx_mock: respx.MockRouter, **overrides: str) -> str:
     with pytest.raises(InvalidRequestError) as info:
         tasks.get_data(**{**CH_EXPORTS_2023, **overrides})
@@ -459,12 +684,19 @@ def test_enums_match_the_packaged_lists() -> None:
 
 
 def test_list_exceptions_rest_on_recorded_answers(fixtures_dir: Path) -> None:
-    """clCode is ListofReferences plus what upstream accepted, minus what it refused."""
+    """Every clCode value rests on a recorded count; flowCode's spec additions too.
+
+    clCode is ListofReferences plus what upstream accepted, minus what it refused. H6
+    answered HTTP 500 to all five tries (two reporters, two cmdCodes) and stays, unsettled.
+    """
     cl_code = packaged_values("clCode")
     assert cl_code is not None
     decisions = {item.value: item.decision for item in cl_code.exceptions}
-    assert decisions == {"BE": "added", "BE5": "left out", "TM": "added", "H6": "kept"}
-    assert {"BE", "TM", "H6"} <= set(cl_code.values)
+    assert decisions == {
+        "BE": "added", "BE5": "left out", "TM": "added",
+        **{value: "kept" for value in cl_code.values if value not in {"BE", "TM"}},
+    }  # fmt: skip
+    assert set(cl_code.values) == set(decisions) - {"BE5"}
     assert "BE5" not in cl_code.values
     flow_code = packaged_values("flowCode")
     assert flow_code is not None
@@ -472,14 +704,25 @@ def test_list_exceptions_rest_on_recorded_answers(fixtures_dir: Path) -> None:
         "MIF": "added",
         "XIF": "added",
     }
-    statuses = {"added": 200, "left out": 400, "kept": 500}
+    cited = re.compile(r"tests/fixtures/get/(\S+?\.json), HTTP (\d+)")
     for item in [*cl_code.exceptions, *flow_code.exceptions]:
-        if "tests/fixtures/get/" not in item.evidence:
-            assert item.value == "XIF"
-            continue
-        name = item.evidence.split("tests/fixtures/get/")[1].split(",")[0]
-        fixture = load_fixture(fixtures_dir / "get" / name)
-        assert fixture.response.status == statuses[item.decision], item.value
+        recorded = cited.findall(item.evidence)
+        assert recorded, item.value
+        statuses = set()
+        for name, status in recorded:
+            fixture = load_fixture(fixtures_dir / "get" / name)
+            assert fixture.response.status == int(status), name
+            statuses.add(fixture.response.status)
+        if "accepted it" in item.evidence:
+            assert 200 in statuses, item.value
+            assert item.decision in {"added", "kept"}, item.value
+        elif "refused it" in item.evidence:
+            assert statuses == {400}, item.value
+            assert item.decision in {"left out", "removed"}, item.value
+        else:
+            assert (item.value, statuses) == ("H6", {500})
+    h6 = next(item for item in cl_code.exceptions if item.value == "H6")
+    assert len(cited.findall(h6.evidence)) == 5
 
 
 @pytest.mark.anyio

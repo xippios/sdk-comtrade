@@ -1,0 +1,74 @@
+{
+  "recorded_at": "2026-10-23T05:00:34.760011Z",
+  "request": {
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/data/v1/get/C/A/HS?reporterCode=757&period=2023&partnerCode=0&cmdCode=TOTAL&flowCode=X&breakdownMode=classic"
+  },
+  "response": {
+    "body": "{\"elapsedTime\":\"0.39 secs\",\"count\":1,\"data\":[{\"typeCode\":\"C\",\"freqCode\":\"A\",\"refPeriodId\":20230101,\"refYear\":2023,\"refMonth\":52,\"period\":\"2023\",\"reporterCode\":757,\"reporterISO\":null,\"reporterDesc\":null,\"flowCode\":\"X\",\"flowDesc\":null,\"partnerCode\":0,\"partnerISO\":null,\"partnerDesc\":null,\"partner2Code\":0,\"partner2ISO\":null,\"partner2Desc\":null,\"classificationCode\":\"H6\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"cmdCode\":\"TOTAL\",\"cmdDesc\":null,\"aggrLevel\":null,\"isLeaf\":null,\"customsCode\":\"C00\",\"customsDesc\":null,\"mosCode\":\"0\",\"motCode\":0,\"motDesc\":null,\"qtyUnitCode\":-1,\"qtyUnitAbbr\":null,\"qty\":0.0,\"isQtyEstimated\":false,\"altQtyUnitCode\":-1,\"altQtyUnitAbbr\":null,\"altQty\":0.0,\"isAltQtyEstimated\":false,\"netWgt\":null,\"isNetWgtEstimated\":false,\"grossWgt\":0.0,\"isGrossWgtEstimated\":false,\"cifvalue\":null,\"fobvalue\":419922543423.509,\"primaryValue\":419922543423.509,\"legacyEstimationFlag\":0,\"isReported\":false,\"isAggregate\":true}],\"error\":\"\"}",
+    "body_base64": false,
+    "headers": [
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "x-frame-options",
+        "deny"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-xss-protection",
+        "1;mode=block"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000;includeSubDomains"
+      ],
+      [
+        "content-security-policy",
+        "frame-src 'self'"
+      ],
+      [
+        "x-permitted-cross-domain-policies",
+        "none"
+      ],
+      [
+        "referrer-policy",
+        "no-referrer-when-downgrade"
+      ],
+      [
+        "permissions-policy",
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "0"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1"
+      ],
+      [
+        "x-ratelimit-operation-remaining",
+        "57"
+      ],
+      [
+        "x-ratelimit-operation-limit",
+        "60"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Fri, 23 Oct 2026 05:00:32 GMT"
+      ]
+    ],
+    "status": 200
+  }
+}
