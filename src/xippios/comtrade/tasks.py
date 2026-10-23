@@ -130,9 +130,10 @@ async def get_counts_async(
             ``list_commodities(cl_code)`` lists them: ``"TOTAL"`` for all goods,
             ``"AG2"``, ``"AG4"``, ``"AG6"`` for every code at that level, codes such as
             ``"0901"`` or ``"090111"``, wildcards such as ``"27??"`` (every four-digit code
-            under 27) or ``"27*"``. For services the total is ``"200"`` (EB, EB02, EB10)
-            or ``"S"`` (EB10S); ``"TOTAL"`` counts 0 there. A code upstream does not have
-            counts 0.
+            under 27) or ``"27*"``. For services the classification files name ``"200"``
+            (EB, EB02, EB10) or ``"S"`` (EB10S) as the total; recorded counts confirm
+            ``"200"`` on EB10 and EB02, where ``"TOTAL"`` counted 0 (EB10). A code
+            upstream does not have counts 0 too, so a 0 does not prove that a code exists.
         flow_code: Trade flows, comma-separated: ``"X"`` exports, ``"M"`` imports,
             ``"RX"`` re-exports, ``"RM"`` re-imports, also ``"DX"``, ``"FM"``, ``"MIP"``,
             ``"MOP"``, ``"XIP"``, ``"XOP"``, ``"MIF"``, ``"XIF"``; e.g. ``"M,X"``.
@@ -234,9 +235,10 @@ async def get_data_async(
             ``list_commodities(cl_code)`` lists them: ``"TOTAL"`` for all goods,
             ``"AG2"``, ``"AG4"``, ``"AG6"`` for every code at that level, codes such as
             ``"0901"`` or ``"090111"``, wildcards such as ``"27??"`` (every four-digit code
-            under 27) or ``"27*"``. For services the total is ``"200"`` (EB, EB02, EB10)
-            or ``"S"`` (EB10S); ``"TOTAL"`` counts 0 there. A code upstream does not have
-            counts 0.
+            under 27) or ``"27*"``. For services the classification files name ``"200"``
+            (EB, EB02, EB10) or ``"S"`` (EB10S) as the total; recorded counts confirm
+            ``"200"`` on EB10 and EB02, where ``"TOTAL"`` counted 0 (EB10). A code
+            upstream does not have counts 0 too, so a 0 does not prove that a code exists.
         flow_code: Trade flows, comma-separated: ``"X"`` exports, ``"M"`` imports,
             ``"RX"`` re-exports, ``"RM"`` re-imports, also ``"DX"``, ``"FM"``, ``"MIP"``,
             ``"MOP"``, ``"XIP"``, ``"XOP"``, ``"MIF"``, ``"XIF"``; e.g. ``"M,X"``.
@@ -397,10 +399,11 @@ async def get_live_update_async() -> Result[list[LiveUpdateRecord]]:
 async def list_reporters_async() -> Result[list[Reporter]]:
     """List the reporters UN Comtrade has trade data from, with the codes reporter_code takes.
 
-    Answered from ``Reporters.json`` as packaged with this version, without an upstream
-    call; ``meta.vintage`` is the day it was fetched. 255 rows when packaged, one per
-    reporter code, current and historical (``entry_expired_date`` is set on codes no
-    longer used, such as 251 France until 1999). Codes are UN Comtrade's, not always ISO
+    Answered from upstream's ``Reporters.json`` as packaged with this version
+    (``reference/Reporters.csv``), without an upstream call; ``meta.vintage`` is the day
+    it was fetched. 255 rows when packaged, one per reporter code, current and historical
+    (``entry_expired_date`` is set on codes no longer used, such as ``280`` Fed. Rep. of
+    Germany until 1990 or ``810`` USSR). Codes are UN Comtrade's, not always ISO
     numeric: ``757`` Switzerland (not 756), ``842`` USA, ``276`` Germany, ``156`` China;
     ``97`` European Union and ``975`` ASEAN are groups (``is_group``). Over MCP the list
     is cut at the result cap (200 rows or 64 KB); the Python and HTTP results are whole.
@@ -411,13 +414,13 @@ async def list_reporters_async() -> Result[list[Reporter]]:
 async def list_partners_async() -> Result[list[PartnerArea]]:
     """List the partner areas UN Comtrade records trade with, for partner_code and partner2_code.
 
-    Answered from ``partnerAreas.json`` as packaged with this version, without an upstream
-    call; ``meta.vintage`` is the day it was fetched. 310 rows when packaged: ``0`` World
-    (the total over all partners), countries in the reporters' code space (``757``
-    Switzerland, ``842`` USA, ``276`` Germany, ``156`` China) and areas that only occur as
-    partners, such as ``899`` "Areas, nes" or ``756`` Switzerland under its ISO code. Over
-    MCP the list is cut at the result cap (200 rows or 64 KB); the Python and HTTP results
-    are whole.
+    Answered from upstream's ``partnerAreas.json`` as packaged with this version
+    (``reference/partnerAreas.csv``), without an upstream call; ``meta.vintage`` is the
+    day it was fetched. 310 rows when packaged: ``0`` World (the total over all
+    partners), countries in the reporters' code space (``757`` Switzerland, ``842`` USA,
+    ``276`` Germany, ``156`` China) and areas that only occur as partners, such as ``899``
+    "Areas, nes" or ``756`` Switzerland under its ISO code. Over MCP the list is cut at the
+    result cap (200 rows or 64 KB); the Python and HTTP results are whole.
     """
     return Result(
         data=packaged_table("partnerAreas", PartnerArea), meta=_packaged_meta("partnerAreas")

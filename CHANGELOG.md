@@ -73,8 +73,8 @@ All notable changes to this project are documented here. The format follows
 
 - Calls are spaced 1.5 s apart (`RATE_LIMIT = RateLimit(per_minute=40, burst=1)`): at
   exactly 1.0 s, 9 of 18 calls drew HTTP 429 "Rate limit is exceeded" (2026-10-23).
-- `reporter_code` is checked against the packaged `Reporters.json`, `partner_code` and
-  `partner2_code` against `partnerAreas.json`, each member of a comma-separated list. An
+- `reporter_code` is checked against the packaged `Reporters.csv`, `partner_code` and
+  `partner2_code` against `partnerAreas.csv`, each member of a comma-separated list. An
   unknown code raises `InvalidRequestError` before any call, naming the same area's code
   where `country_area_code_iso.json` knows it (`756` names `757`, Switzerland), or saying
   that a code belongs to the other table (`0` World is a partner only). Upstream itself

@@ -315,8 +315,9 @@ class Commodity(UpstreamModel):
 
     Attributes:
         id: The code as ``cmd_code`` takes it, e.g. ``"TOTAL"``, ``"09"``, ``"0901"``,
-            ``"090111"``; for EBOPS ``"200"`` (EB, EB02, EB10) or ``"S"`` (EB10S) is the
-            services total.
+            ``"090111"``; the EBOPS files label ``"200"`` (EB, EB02, EB10) or ``"S"``
+            (EB10S) as the services total (``get_data`` counts confirm ``"200"`` on EB10
+            and EB02 only).
         text: Upstream's label, e.g. ``"0901 - Coffee, whether or not roasted or ..."``.
         parent: The ``id`` of the parent code; ``"#"`` for a top-level code.
         is_leaf: ``True`` for the most detailed codes (upstream sends ``"1"``/``"0"``).

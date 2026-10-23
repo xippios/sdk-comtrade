@@ -42,8 +42,9 @@ Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 75
 Every argument is checked before the call: coded ones (`type_code`, `cl_code`,
 `flow_code`, `customs_code`, `mot_code`, `aggregate_by`, `breakdown_mode`) against
 the lists packaged from upstream's reference files and spec (`xippios.comtrade.enums`),
-`reporter_code` against the packaged `Reporters.json` and `partner_code` and
-`partner2_code` against `partnerAreas.json`, the others by shape; a mistake raises
+`reporter_code` against the packaged copy of upstream's `Reporters.json`
+(`reference/Reporters.csv`) and `partner_code` and `partner2_code` against that of
+`partnerAreas.json`, the others by shape; a mistake raises
 `InvalidRequestError` naming the closest valid value (`756` names `757`, Switzerland).
 
 ```python

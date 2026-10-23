@@ -55,8 +55,9 @@ cache, `REFERENCE_CACHE`; tests empty it before each test), so
 `scripts/refresh_reference.py` and `list_commodities` need no key and cost no quota.
 Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757 in
 `Reporters.json`. Upstream answers 756, which is no reporter, with count 0; the tasks
-refuse it before the call, naming 757, because they check `reporter_code` against the
-packaged `Reporters.json` and partner codes against `partnerAreas.json`. Both tables
+refuse it before the call, naming 757, because they check `reporter_code` against
+`reference/Reporters.csv` and partner codes against `reference/partnerAreas.csv`, the
+package's copies of upstream's `Reporters.json` and `partnerAreas.json`. Both tables
 share one code space (a code in both is the same area) but differ: 0 World and 56 other
 areas are partners only, 97 European Union and 975 ASEAN reporters only.
 
@@ -72,15 +73,19 @@ count over all reporters outlasted the former 60 s read timeout (the repeat answ
 never keep a body of many megabytes: narrow the query or use `maxRecords`. Replay tests
 always send a placeholder key, whatever the shell holds (`tests/conftest.py`).
 
-What the recorded answers established (2026-10-23; the fixtures are named in the
-docstrings of `tasks.py`, the wrappers and `reference/clCode.json`):
+What the recorded answers established (2026-10-23). The fixtures are named in
+`reference/clCode.json` and `flowCode.json`, in the docstrings of the `getDa`,
+`getMetadata` and `getLiveUpdate` wrappers, and, for the `data/v1/get` behaviours, in
+`tests/test_tasks.py` and the PR description of wave 1:
 
 - `data/v1/get`: `breakdownMode` `plus` is the default (omitting it gives the same 32 rows
   for Switzerland's 2023 exports); `classic` returns only the total row, as pinning
   `partner2Code` 0, `customsCode` C00 and `motCode` 0 does. `aggregateBy` returns the
   aggregated parameters as `-2` with `classificationCode` `GG`; counts match rows.
-  `includeDesc` fills the `*ISO`/`*Desc` fields. Services take their file's total code
-  (`200`, or `S` for EB10S); `TOTAL` counts 0 there. `mosCode`, not in the spec, is
+  `includeDesc` fills the `*ISO`/`*Desc` fields. For services the classification files
+  name `200` (EB, EB02, EB10) or `S` (EB10S) as the total; counts confirm `200` on EB10
+  and EB02 (one row each) and `TOTAL` counting 0 on EB10. On EB and EB10S both forms
+  counted 0, which cannot be told from an unknown code. `mosCode`, not in the spec, is
   accepted and filters (`0`, `1`), but `Mode 1` from `ModeOfSupply.json` is refused; it
   is not a parameter of the tasks. Malformed values get HTTP 400 naming the field; a code
   upstream does not have counts 0.
@@ -123,7 +128,10 @@ src/xippios/comtrade/
   tasks.py         task functions; __all__ is what the adapters register
   mcp.py           xippios-comtrade-mcp entry point
   http.py          FastAPI router
-  params.py        packaged value lists: PACKAGED_LISTS, packaged_values(), validate_get()
+  params.py        packaged lists and tables: PACKAGED_LISTS, packaged_values(),
+                   PACKAGED_TABLES, packaged_table(), packaged_table_info(),
+                   classification_files(); checks run before a call: validate_get(),
+                   validate_datasets(), validate_classification_file()
   enums.py         StrEnums generated from the packaged lists; never edited by hand
   reference/       packaged value lists (JSON), tables (CSV, provenance in tables.json)
                    plus README with provenance
