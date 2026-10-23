@@ -2,6 +2,7 @@
 
 import inspect
 import json
+import os
 from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
@@ -22,7 +23,15 @@ from xippios.core.http import status_for
 from xippios.core.testing import load_fixture, mcp_call
 
 from xippios.comtrade import __version__, api, enums, tasks
-from xippios.comtrade._client import API_KEY_ENV, TIMEOUTS, _quota_reset, classify, config
+from xippios.comtrade._client import (
+    API_KEY_ENV,
+    BASE_URL,
+    TIMEOUTS,
+    _quota_reset,
+    auth,
+    classify,
+    config,
+)
 from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.mcp import server
 from xippios.comtrade.models import (
@@ -43,6 +52,9 @@ from xippios.comtrade.params import (
     validate_get,
 )
 
+SHELL_KEY = os.environ.get(API_KEY_ENV)
+"""The key the shell held when the tests were collected, before any fixture; never printed."""
+
 TASKS = [getattr(tasks, name) for name in tasks.__all__]
 
 Replay = Callable[[str], respx.Route]
@@ -54,6 +66,25 @@ UPSTREAM = Path(__file__).resolve().parents[1] / "docs" / "upstream"
 
 def test_package_has_a_version() -> None:
     assert __version__
+
+
+def test_replay_tests_send_the_placeholder_key(placeholder_api_key: str | None) -> None:
+    """A request sent outside a live test carries the placeholder, never the shell's key.
+
+    Every assertion is on a boolean, so a failure says where the key went, never the key.
+    """
+    assert placeholder_api_key is not None
+    env_holds_placeholder = os.environ[API_KEY_ENV] == placeholder_api_key
+    assert env_holds_placeholder, f"{API_KEY_ENV} does not hold the placeholder"
+    sent = next(auth.sync_auth_flow(httpx.Request("GET", BASE_URL)))
+    carried = sent.headers.get(auth.header, "")
+    where = f"the {auth.header} header"
+    sends_placeholder = carried == placeholder_api_key
+    assert sends_placeholder, f"{where} does not carry the placeholder"
+    if SHELL_KEY and placeholder_api_key != SHELL_KEY:
+        outgoing = [str(sent.url), *sent.headers.values(), carried]
+        leaked = any(SHELL_KEY in part for part in outgoing)
+        assert not leaked, f"the key in {API_KEY_ENV} went out with the request"
 
 
 @pytest.mark.parametrize("task", TASKS, ids=tasks.__all__)
