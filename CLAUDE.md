@@ -64,12 +64,30 @@ The MCP result cap (200 rows or 64 KB) cuts `list_reporters` (255 rows) and
 `list_partners` (310) in upstream's alphabetical order, past Switzerland and the USA;
 the tasks take no filter yet.
 
-When recording fixtures, budget the calls. The package client retries 5xx and transport
-errors up to four attempts, each a keyed call (a count on `clCode=H6` answered HTTP 500
-once), and a count over all reporters outlasted the former 60 s read timeout (the repeat
-answered in 27 s). Record with a one-attempt copy of the client, and never keep a body of
-many megabytes: narrow the query or use `maxRecords`. Replay tests always send a
-placeholder key, whatever the shell holds (`tests/conftest.py`).
+When recording fixtures, budget the calls. The package client retries 429, 5xx and
+transport errors up to four attempts, each a keyed call (`clCode=H6` on `data/v1/get`
+answered HTTP 500 to all five tries on 2026-10-23, two reporters, two product codes), and a
+count over all reporters outlasted the former 60 s read timeout (the repeat answered in
+27 s). Record with a one-attempt copy of the client, spaced at least 1.5 s apart, and
+never keep a body of many megabytes: narrow the query or use `maxRecords`. Replay tests
+always send a placeholder key, whatever the shell holds (`tests/conftest.py`).
+
+What the recorded answers established (2026-10-23; the fixtures are named in the
+docstrings of `tasks.py`, the wrappers and `reference/clCode.json`):
+
+- `data/v1/get`: `breakdownMode` `plus` is the default (omitting it gives the same 32 rows
+  for Switzerland's 2023 exports); `classic` returns only the total row, as pinning
+  `partner2Code` 0, `customsCode` C00 and `motCode` 0 does. `aggregateBy` returns the
+  aggregated parameters as `-2` with `classificationCode` `GG`; counts match rows.
+  `includeDesc` fills the `*ISO`/`*Desc` fields. Services take their file's total code
+  (`200`, or `S` for EB10S); `TOTAL` counts 0 there. `mosCode`, not in the spec, is
+  accepted and filters (`0`, `1`), but `Mode 1` from `ModeOfSupply.json` is refused; it
+  is not a parameter of the tasks. Malformed values get HTTP 400 naming the field; a code
+  upstream does not have counts 0.
+- `data/v1/getDa`: takes more than 12 periods; refuses the spec's `EBSDMX`.
+- `data/v1/getMetadata`: honours `reporterCode` and `period`, which the spec omits and
+  `comtradeapicall` sends; answers `H6` like `HS`.
+- `data/v1/getLiveUpdate`: 50 rows but `count` 174; no `publishedDate` field.
 
 ## Read first, in this order
 
@@ -167,7 +185,7 @@ key patterns before committing. Fixtures are never typed in by hand.
 ```bash
 uv sync --all-extras
 uv run pytest                      # offline, replays fixtures
-uv run pytest -m live              # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY; 4 keyed calls, 3 keyless
+uv run pytest -m live              # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY; 7 keyed calls, 3 keyless
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pre-commit run --all-files

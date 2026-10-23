@@ -54,6 +54,18 @@ list_partners().data  # 310 partner areas, 0 World among them
 list_commodities("HS").data  # 8,262 HS codes, fetched keyless once per process
 ```
 
+Release dates are per dataset, so they sit on the rows, not in `meta.published_at`:
+
+```python
+from xippios.comtrade import get_data_availability, get_live_update, get_metadata
+
+[dataset] = get_data_availability("C", "A", "HS", reporter_code="757", period="2023").data
+dataset.first_released, dataset.last_released  # first publication and latest revision
+notes = get_metadata("C", "A", "HS", reporter_code="757", period="2023").data[0].notes
+[note.publication_date for note in notes]  # "New Data", then each "Revised Data"
+get_live_update().data  # the 50 most recent releases, newest first
+```
+
 `get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
 result without a second call, and a count above 100,000 raises `QueryTooLarge` with the
 count before anything is fetched, because upstream would cut the answer at 100,000 rows
@@ -87,6 +99,9 @@ order). `--http` serves streamable HTTP instead of stdio.
 | --- | --- | --- | --- |
 | `data/v1/get/{typeCode}/{freqCode}/{clCode}` with `countOnly=true` | `get_counts(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, ...)` | `comtrade_get_counts` | alpha |
 | `data/v1/get/{typeCode}/{freqCode}/{clCode}` | `get_data(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, ...)` | `comtrade_get_data` | alpha |
+| `data/v1/getDa/{typeCode}/{freqCode}/{clCode}` | `get_data_availability(type_code, freq_code, cl_code, *, reporter_code=, period=, published_date_from=, published_date_to=)` | `comtrade_get_data_availability` | alpha |
+| `data/v1/getMetadata/{typeCode}/{freqCode}/{clCode}` | `get_metadata(type_code, freq_code, cl_code, *, reporter_code=, period=)` | `comtrade_get_metadata` | alpha |
+| `data/v1/getLiveUpdate` | `get_live_update()` | `comtrade_get_live_update` | alpha |
 | `files/v1/app/reference/Reporters.json`, packaged | `list_reporters()` | `comtrade_list_reporters` | alpha |
 | `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners()` | `comtrade_list_partners` | alpha |
 | `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code)` | `comtrade_list_commodities` | alpha |

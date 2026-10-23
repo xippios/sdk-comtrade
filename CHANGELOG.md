@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `get_data_availability` on `data/v1/getDa`, `get_metadata` on `data/v1/getMetadata` and
+  `get_live_update` on `data/v1/getLiveUpdate`, MCP tools `comtrade_get_data_availability`,
+  `comtrade_get_metadata` and `comtrade_get_live_update`. Rows mirror the spec's schemas
+  under upstream names and carry their own dates (`first_released`/`last_released`,
+  `publication_date`, `started_at`/`completed_at`/`last_updated`/`queued_at`), typed;
+  `meta.published_at` stays `None`. `get_metadata` takes `reporter_code` and `period`,
+  which the spec omits and upstream honours. getLiveUpdate has no `publishedDate`.
+- Every `clCode` value and `flowCode`'s `XIF` rest on a recorded count
+  (`reference/clCode.json`, `flowCode.json`); `H6` answered HTTP 500 to all five tries.
+  The docstrings of `get_counts` and `get_data` say what the recorded answers established
+  for `breakdownMode` (default `plus`), `aggregateBy`, `includeDesc` and services totals.
 - `list_reporters` and `list_partners`, MCP tools `comtrade_list_reporters` and
   `comtrade_list_partners`: UN Comtrade's `Reporters.json` (255 rows) and
   `partnerAreas.json` (310 rows) as packaged with this version, every column under its
@@ -27,6 +38,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Calls are spaced 1.5 s apart (`RATE_LIMIT = RateLimit(per_minute=40, burst=1)`): at
+  exactly 1.0 s, 9 of 18 calls drew HTTP 429 "Rate limit is exceeded" (2026-10-23).
 - `reporter_code` is checked against the packaged `Reporters.json`, `partner_code` and
   `partner2_code` against `partnerAreas.json`, each member of a comma-separated list. An
   unknown code raises `InvalidRequestError` before any call, naming the same area's code
@@ -53,8 +66,7 @@ All notable changes to this project are documented here. The format follows
   which upstream refused.
 - `_client.classify`: an HTTP 400 `ErrorResponse` becomes `InvalidRequestError` with
   upstream's message; a 403 that mentions a quota becomes `RateLimitError` (API
-  Management's text, not observed). The rate limit no longer bursts:
-  `RateLimit(per_minute=60, burst=1)`, one call per second as documented. The read
+  Management's text, not observed). The rate limit never bursts. The read
   timeout is 180 s, since a broad count can take over a minute.
 - Fifteen recorded fixtures under `tests/fixtures/get/` and live smoke tests for both
   tasks. Replay tests always send a placeholder key, whatever the shell holds.
