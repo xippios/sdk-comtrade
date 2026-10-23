@@ -19,13 +19,38 @@ Set `COMTRADE_API_KEY` in the environment. Nothing is read from files.
 ## 30-second example
 
 ```python
-from xippios.comtrade import tasks
+from xippios.comtrade import get_counts, get_data
 
-# result = tasks.<task>(...)
-# result.data, result.meta.retrieved_at, result.meta.request
+# Switzerland (reporter 757) exports to the World (partner 0) in 2023, all products.
+query = {
+    "reporter_code": "757",
+    "partner_code": "0",
+    "period": "2023",
+    "cmd_code": "TOTAL",
+    "flow_code": "X",
+}
+get_counts("C", "A", "HS", **query).data  # 32: every customs procedure and mode of transport
+result = get_data("C", "A", "HS", **query)
+total = next(r for r in result.data if (r.customs_code, r.mot_code) == ("C00", 0))
+total.primary_value  # Decimal('419922543423.509'); JSON: a number
+result.meta.endpoint, result.meta.request  # 'data/v1/get', the arguments above
 ```
 
-Task functions are listed in the status table below as they are added.
+Parameters are upstream's (`typeCode`, `reporterCode`, ...) in snake_case and take
+upstream's codes, several of them comma-separated as upstream takes them (`"757,842"`).
+Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757.
+Every argument is checked before the call: coded ones (`type_code`, `cl_code`,
+`flow_code`, `customs_code`, `mot_code`, `aggregate_by`, `breakdown_mode`) against
+the lists packaged from upstream's reference files and spec (`xippios.comtrade.enums`),
+the others by shape; a mistake raises `InvalidRequestError` naming the closest valid
+value.
+
+`get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
+result without a second call, and a count above 100,000 raises `QueryTooLarge` with the
+count before anything is fetched, because upstream would cut the answer at 100,000 rows
+without saying so. A free key allows 1 call per second and 500 calls per day, and
+`countOnly` calls count; the client spaces calls a second apart, the daily quota is
+yours to track.
 
 ## MCP
 
@@ -49,7 +74,8 @@ HTTP instead of stdio.
 
 | Upstream operation | Task function | MCP tool | Status |
 | --- | --- | --- | --- |
-| (none yet) | | | |
+| `data/v1/get/{typeCode}/{freqCode}/{clCode}` with `countOnly=true` | `get_counts(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, ...)` | `comtrade_get_counts` | alpha |
+| `data/v1/get/{typeCode}/{freqCode}/{clCode}` | `get_data(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, ...)` | `comtrade_get_data` | alpha |
 
 ## Upstream terms and attribution
 

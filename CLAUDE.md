@@ -12,12 +12,51 @@ that works here; the family rules it points to apply as well.
 | API base URL | `https://comtradeapi.un.org` |
 | Documentation | https://comtradeplus.un.org/ApiDocs, snapshotted in `docs/upstream/` |
 | Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header |
-| Rate limit | 60 requests per minute, enforced client-side in `_client.py` |
+| Rate limit | 1 per second, no burst (60 per minute), enforced client-side in `_client.py` |
 | Write tools | no, this package is read-only |
 
 The snapshot in `docs/upstream/` is the reference for names, parameters and semantics.
 If it is empty or stale, run `/refresh-upstream` first and review the diff. Never write a
 wrapper from memory of the API.
+
+## The client, the key and the quota
+
+The limits of a Basic Individual (free) key, from `docs/upstream/help/subscriptions.md`,
+and how `_client.py` treats them:
+
+- **1 call per second.** `RATE_LIMIT = RateLimit(per_minute=60, burst=1)`: the bucket
+  never bursts, so calls are spaced a second apart. Upstream's headers agree
+  (`x-ratelimit-limit: 1`, `x-ratelimit-operation-limit: 60`). Replay tests pay that
+  second too.
+- **500 calls per day.** Not enforced client-side. `countOnly` calls count against it,
+  so `get_data` costs two calls (count, then data) and `get_counts` one. Over the quota
+  API Management answers 403 "Out of call volume quota. Quota will be replenished in
+  HH:MM:SS"; `classify` maps a 403 that mentions a quota to `RateLimitError` with
+  `retry_after`. That answer has not been observed; never provoke it.
+- **100,000 records per call.** Above it upstream answers HTTP 200 with the first
+  100,000 rows, `count` 100000 and an empty `error`: it truncates silently (observed
+  2026-10-23 for a query counted at 5,006,385). `get_data` counts first and raises
+  `QueryTooLarge` before any data call.
+- **12 periods per call.** A 13th gets HTTP 400 "Maximum number of periods is 12";
+  `params.validate_get` refuses it before the call.
+- **Slow counts.** A broad count can take over a minute, so the read timeout is 180 s
+  (`TIMEOUTS`), and a timed-out attempt that core retries counts against the quota each
+  time; so does each retry of a 5xx.
+- **Keys may be periodically regenerated** on Basic accounts. A sudden 401 ("Access
+  denied due to invalid subscription key", `AuthError`) means re-copying the key from
+  https://comtradeplus.un.org/MyComtrade/APIPortal into the environment.
+
+The reference files under `files/v1/app/reference/` are public: `reference_client`
+fetches them without the key, so `scripts/refresh_reference.py` needs none and costs no
+quota. Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757
+in `Reporters.json`; 756 is no reporter and simply counts 0.
+
+When recording fixtures, budget the calls. The package client retries 5xx and transport
+errors up to four attempts, each a keyed call (a count on `clCode=H6` answered HTTP 500
+once), and a count over all reporters outlasted the former 60 s read timeout (the repeat
+answered in 27 s). Record with a one-attempt copy of the client, and never keep a body of
+many megabytes: narrow the query or use `maxRecords`. Replay tests always send a
+placeholder key, whatever the shell holds (`tests/conftest.py`).
 
 ## Read first, in this order
 
@@ -45,13 +84,15 @@ src/xippios/comtrade/
   __init__.py      public surface: __version__ and re-exported task functions
   py.typed         PEP 561 marker; consumers' mypy --strict needs it
   _version.py      __version__ from distribution metadata
-  _client.py       the one configured AsyncClient (base URL, key, rate limit)
+  _client.py       the configured AsyncClient (base URL, key, rate limit, classify) and
+                   a keyless one for the public reference files
+  errors.py        RECORD_LIMIT, MAX_PERIODS and QueryTooLarge
   models.py        pydantic models mirroring upstream payloads (UpstreamModel)
   api/             endpoint wrappers, one module per upstream operation
   tasks.py         task functions; __all__ is what the adapters register
   mcp.py           xippios-comtrade-mcp entry point
   http.py          FastAPI router
-  params.py        packaged value lists: PACKAGED_LISTS, packaged_values()
+  params.py        packaged value lists: PACKAGED_LISTS, packaged_values(), validate_get()
   enums.py         StrEnums generated from the packaged lists; never edited by hand
   reference/       packaged code lists (CSV/JSON) plus README with provenance
 scripts/
@@ -112,7 +153,7 @@ key patterns before committing. Fixtures are never typed in by hand.
 ```bash
 uv sync --all-extras
 uv run pytest                      # offline, replays fixtures
-uv run pytest -m live              # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY
+uv run pytest -m live              # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY; 4 keyed calls
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pre-commit run --all-files

@@ -1,0 +1,31 @@
+{
+  "param": "flowCode",
+  "fetched": "2026-10-23",
+  "origin": "https://comtradeapi.un.org/files/v1/app/reference/tradeRegimes.json, reconciled with docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description (see exceptions)",
+  "exceptions": [
+    {
+      "value": "MIF",
+      "decision": "added",
+      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_mif.json, HTTP 200)"
+    },
+    {
+      "value": "XIF",
+      "decision": "added",
+      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; not tried upstream"
+    }
+  ],
+  "values": [
+    "M",
+    "X",
+    "DX",
+    "FM",
+    "MIP",
+    "MOP",
+    "RM",
+    "RX",
+    "XIP",
+    "XOP",
+    "MIF",
+    "XIF"
+  ]
+}

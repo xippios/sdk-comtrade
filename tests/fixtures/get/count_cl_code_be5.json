@@ -1,0 +1,74 @@
+{
+  "recorded_at": "2026-10-23T00:08:51.163151Z",
+  "request": {
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/data/v1/get/C/A/BE5?reporterCode=757&period=2023&partnerCode=0&cmdCode=TOTAL&flowCode=X&countOnly=true"
+  },
+  "response": {
+    "body": "{\"error\":\"Invalid parameter value\",\"details\":[{\"memberNames\":[\"clCode\"],\"errorMessage\":\"The field clCode is invalid\"}]}",
+    "body_base64": false,
+    "headers": [
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "x-frame-options",
+        "deny"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-xss-protection",
+        "1;mode=block"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000;includeSubDomains"
+      ],
+      [
+        "content-security-policy",
+        "frame-src 'self'"
+      ],
+      [
+        "x-permitted-cross-domain-policies",
+        "none"
+      ],
+      [
+        "referrer-policy",
+        "no-referrer-when-downgrade"
+      ],
+      [
+        "permissions-policy",
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "0"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1"
+      ],
+      [
+        "x-ratelimit-operation-remaining",
+        "57"
+      ],
+      [
+        "x-ratelimit-operation-limit",
+        "60"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Fri, 23 Oct 2026 00:08:50 GMT"
+      ]
+    ],
+    "status": 400
+  }
+}

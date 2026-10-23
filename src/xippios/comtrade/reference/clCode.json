@@ -1,0 +1,50 @@
+{
+  "param": "clCode",
+  "fetched": "2026-10-23",
+  "origin": "https://comtradeapi.un.org/files/v1/app/reference/ListofReferences.json, the cmd:<clCode> categories, reconciled with docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum (see exceptions)",
+  "exceptions": [
+    {
+      "value": "BE",
+      "decision": "added",
+      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum; upstream accepted it (tests/fixtures/get/count_cl_code_be.json, HTTP 200)"
+    },
+    {
+      "value": "BE5",
+      "decision": "left out",
+      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum; upstream refused it (tests/fixtures/get/count_cl_code_be5.json, HTTP 400)"
+    },
+    {
+      "value": "TM",
+      "decision": "added",
+      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum; upstream accepted it (tests/fixtures/get/count_cl_code_tm.json, HTTP 200)"
+    },
+    {
+      "value": "H6",
+      "decision": "kept",
+      "evidence": "in the reference file; upstream answered without settling it (tests/fixtures/get/count_cl_code_h6.json, HTTP 500)"
+    }
+  ],
+  "values": [
+    "B4",
+    "B5",
+    "EB02",
+    "EB10",
+    "EB10S",
+    "EB",
+    "H0",
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "HS",
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "SS",
+    "BE",
+    "TM"
+  ]
+}
