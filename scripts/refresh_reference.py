@@ -38,12 +38,13 @@ result with ruff::
     uv run ruff format src/xippios/comtrade/enums.py
 """
 
+import argparse
 import csv
 import io
 import json
 import re
 import textwrap
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -334,8 +335,21 @@ def _write_table(name: str, file: str, today: str) -> dict[str, Any]:
     return {"file": path.name, "origin": origin, "fetched": today, "rows": len(rows)}
 
 
-def main() -> None:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """The command line: no options besides ``--help``, which exits before any fetch."""
+    summary, _, details = (__doc__ or "").partition("\n\n")
+    parser = argparse.ArgumentParser(
+        prog="refresh_reference.py",
+        description=summary,
+        epilog=details,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
     """Fetch and derive every list and table, write their files and regenerate ``enums.py``."""
+    parse_args(argv)
     names = [*LISTS, *SPEC_LISTS]
     if sorted(names) != sorted(PACKAGED_LISTS):
         raise SystemExit(f"params.PACKAGED_LISTS {PACKAGED_LISTS} does not match {names}")
