@@ -147,6 +147,7 @@ __all__ = [
     "REFERENCE_CACHE",
     "SOURCE",
     "TIMEOUTS",
+    "auth",
     "classify",
     "client",
     "config",
