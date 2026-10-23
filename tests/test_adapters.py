@@ -44,3 +44,21 @@ async def test_http_routes_are_the_tasks_with_the_right_methods() -> None:
     for name, fn in TASKS.items():
         scalar_only = all(is_scalar(annotation) for annotation in _parameters(fn).values())
         assert routes[f"/{SOURCE}/{name}"].methods == ({"GET"} if scalar_only else {"POST"}), name
+
+
+async def test_get_data_and_get_counts_are_exposed_without_touching_the_adapters() -> None:
+    """Both tasks reach MCP and HTTP through tasks.__all__ alone; mcp.py and http.py are generic."""
+    from pathlib import Path
+
+    import xippios.comtrade as package
+
+    tools = {tool.name for tool in await server.list_tools()}
+    assert {"comtrade_get_counts", "comtrade_get_data"} <= tools
+    routes = {route.path: route.methods for route in router.routes if isinstance(route, APIRoute)}
+    assert routes["/comtrade/get_counts"] == {"GET"}
+    assert routes["/comtrade/get_data"] == {"GET"}
+    package_dir = Path(package.__file__ or "").parent
+    for adapter in ("mcp.py", "http.py"):
+        source = (package_dir / adapter).read_text(encoding="utf-8")
+        assert "get_data" not in source
+        assert "get_counts" not in source

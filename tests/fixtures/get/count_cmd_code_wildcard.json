@@ -1,0 +1,74 @@
+{
+  "recorded_at": "2026-10-23T00:09:26.050216Z",
+  "request": {
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/data/v1/get/C/A/HS?reporterCode=757&period=2023&partnerCode=0&cmdCode=27%3F%3F&flowCode=X&countOnly=true"
+  },
+  "response": {
+    "body": "{\"elapsedTime\":\"1.42 secs\",\"count\":113,\"data\":{\"typeCode\":null,\"freqCode\":null,\"refPeriodId\":0,\"refYear\":0,\"refMonth\":0,\"period\":null,\"reporterCode\":0,\"reporterISO\":null,\"reporterDesc\":null,\"flowCode\":null,\"flowDesc\":null,\"partnerCode\":0,\"partnerISO\":null,\"partnerDesc\":null,\"partner2Code\":0,\"partner2ISO\":null,\"partner2Desc\":null,\"classificationCode\":null,\"classificationSearchCode\":null,\"isOriginalClassification\":false,\"cmdCode\":null,\"cmdDesc\":null,\"aggrLevel\":null,\"isLeaf\":null,\"customsCode\":null,\"customsDesc\":null,\"mosCode\":null,\"motCode\":0,\"motDesc\":null,\"qtyUnitCode\":null,\"qtyUnitAbbr\":null,\"qty\":null,\"isQtyEstimated\":false,\"altQtyUnitCode\":null,\"altQtyUnitAbbr\":null,\"altQty\":null,\"isAltQtyEstimated\":false,\"netWgt\":null,\"isNetWgtEstimated\":false,\"grossWgt\":null,\"isGrossWgtEstimated\":false,\"cifvalue\":null,\"fobvalue\":null,\"primaryValue\":0.0,\"legacyEstimationFlag\":null,\"isReported\":null,\"isAggregate\":null},\"error\":\"\"}",
+    "body_base64": false,
+    "headers": [
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "x-frame-options",
+        "deny"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-xss-protection",
+        "1;mode=block"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000;includeSubDomains"
+      ],
+      [
+        "content-security-policy",
+        "frame-src 'self'"
+      ],
+      [
+        "x-permitted-cross-domain-policies",
+        "none"
+      ],
+      [
+        "referrer-policy",
+        "no-referrer-when-downgrade"
+      ],
+      [
+        "permissions-policy",
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "0"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1"
+      ],
+      [
+        "x-ratelimit-operation-remaining",
+        "57"
+      ],
+      [
+        "x-ratelimit-operation-limit",
+        "60"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Fri, 23 Oct 2026 00:09:24 GMT"
+      ]
+    ],
+    "status": 200
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "recorded_at": "2026-10-23T00:05:21.983273Z",
+  "request": {
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/data/v1/get/C/A/HS?reporterCode=757&period=2023&partnerCode=0&cmdCode=TOTAL&flowCode=X&countOnly=true"
+  },
+  "response": {
+    "body": "{ \"statusCode\": 401, \"message\": \"Access denied due to invalid subscription key. Make sure to provide a valid key for an active subscription.\" }",
+    "body_base64": false,
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Fri, 23 Oct 2026 00:05:18 GMT"
+      ]
+    ],
+    "status": 401
+  }
+}
