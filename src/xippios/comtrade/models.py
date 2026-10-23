@@ -14,11 +14,20 @@ public files under ``files/v1/app/reference/``. Trade values and quantities are
 ``Decimal`` (ADR-0008) and travel as JSON numbers through the adapters.
 """
 
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
-from pydantic import AliasChoices, BeforeValidator, Field, model_validator
+from pydantic import (
+    AliasChoices,
+    BeforeValidator,
+    Field,
+    ValidatorFunctionWrapHandler,
+    WrapValidator,
+    model_validator,
+)
+from pydantic import ValidationError as PydanticValidationError
 from xippios.core import UpstreamModel
 
 __all__ = [
@@ -467,18 +476,69 @@ class MetadataResponse(UpstreamModel):
     error: str
 
 
+_MONTHS = {
+    name: number
+    for number, name in enumerate(
+        (
+            "January", "February", "March", "April", "May", "June", "July", "August",
+            "September", "October", "November", "December",
+        ),
+        start=1,
+    )
+}  # fmt: skip
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_LONG_DATE = re.compile(r"([A-Za-z]+), ([A-Za-z]+) (\d{1,2}), (\d{4})")
+_US_DATETIME = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4}) (\d{1,2}):(\d{2}):(\d{2}) ([AP]M)")
+
+
 def _long_date(value: Any) -> Any:
-    """``"Thursday, October 22, 2026"``, getLiveUpdate's ``lastUpdated``, as a date."""
-    if isinstance(value, str):
-        return datetime.strptime(value, "%A, %B %d, %Y").date()
-    return value
+    """``"Thursday, October 22, 2026"``, getLiveUpdate's ``lastUpdated``, as a date.
+
+    English names from fixed tables, so the process locale plays no part; a string that
+    is not such a date, or whose weekday does not fit it, gives ``None``.
+    """
+    if not isinstance(value, str):
+        return value
+    match = _LONG_DATE.fullmatch(value.strip())
+    if match is None or match[2] not in _MONTHS:
+        return None
+    try:
+        day = date(int(match[4]), _MONTHS[match[2]], int(match[3]))
+    except ValueError:
+        return None
+    return day if _WEEKDAYS[day.weekday()] == match[1] else None
 
 
 def _us_datetime(value: Any) -> Any:
-    """``"10/22/2026 11:18:33 PM"``, getLiveUpdate's ``queuedAt``, as a naive datetime."""
-    if isinstance(value, str):
-        return datetime.strptime(value, "%m/%d/%Y %I:%M:%S %p")
-    return value
+    """``"10/22/2026 11:18:33 PM"``, getLiveUpdate's ``queuedAt``, as a naive datetime.
+
+    Month first, 12-hour clock with ``AM``/``PM`` read by hand, so the process locale
+    plays no part; a string that is not such a time gives ``None``.
+    """
+    if not isinstance(value, str):
+        return value
+    match = _US_DATETIME.fullmatch(value.strip())
+    if match is None:
+        return None
+    month, day, year, hour, minute, second = (int(part) for part in match.groups()[:6])
+    if not 1 <= hour <= 12:
+        return None
+    hour = hour % 12 + (12 if match[7] == "PM" else 0)
+    try:
+        return datetime(year, month, day, hour, minute, second)
+    except ValueError:
+        return None
+
+
+def _none_if_unparsed(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+    """The parsed value, or ``None`` when it does not parse: one odd time keeps its row."""
+    try:
+        return handler(value)
+    except PydanticValidationError:
+        return None
+
+
+_Tolerant = WrapValidator(_none_if_unparsed)
 
 
 class LiveUpdateRecord(UpstreamModel):
@@ -486,7 +546,10 @@ class LiveUpdateRecord(UpstreamModel):
 
     Every field of the schema under its upstream name in snake_case, typed from the
     recorded answer (``tests/fixtures/get_live_update/latest.json``); there is no
-    ``publishedDate``. The four times come in four formats:
+    ``publishedDate``. That answer holds only ``"Released"``/``"Success"`` rows, so the
+    shapes of the other release states are unseen: a time that does not parse becomes
+    ``None`` for that field rather than failing the call. The four times come in four
+    formats, read without the process locale:
 
     - ``started_at``, ``completed_at``: ``"2026-10-22 21:27:39Z"``, UTC, timezone-aware.
       Upstream's ``completed_at`` is often earlier than ``started_at`` (it equals the next
@@ -506,13 +569,13 @@ class LiveUpdateRecord(UpstreamModel):
     """
 
     size: int
-    started_at: datetime | None = Field(validation_alias="startedAt")
-    completed_at: datetime | None = Field(validation_alias="completedAt")
+    started_at: Annotated[datetime | None, _Tolerant] = Field(validation_alias="startedAt")
+    completed_at: Annotated[datetime | None, _Tolerant] = Field(validation_alias="completedAt")
     status: str | None
-    last_updated: Annotated[date | None, BeforeValidator(_long_date)] = Field(
+    last_updated: Annotated[date | None, _Tolerant, BeforeValidator(_long_date)] = Field(
         validation_alias="lastUpdated"
     )
-    queued_at: Annotated[datetime | None, BeforeValidator(_us_datetime)] = Field(
+    queued_at: Annotated[datetime | None, _Tolerant, BeforeValidator(_us_datetime)] = Field(
         validation_alias="queuedAt"
     )
     release_status: str | None = Field(validation_alias="releaseStatus")

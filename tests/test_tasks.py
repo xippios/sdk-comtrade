@@ -42,6 +42,7 @@ from xippios.comtrade.mcp import server
 from xippios.comtrade.models import (
     Commodity,
     CountryAreaCodeIso,
+    LiveUpdateRecord,
     MetadataDataset,
     PartnerArea,
     ReferenceCode,
@@ -1290,6 +1291,54 @@ def test_get_live_update(replay_fixture: ReplayFixture) -> None:
     started = [row.started_at for row in result.data]
     assert started == sorted(started, reverse=True)  # type: ignore[type-var]
     assert "published_date" not in type(newest).model_fields
+
+
+def _live_update_row(fixtures_dir: Path) -> dict[str, Any]:
+    body = load_fixture(fixtures_dir / "get_live_update" / "latest.json").response.body
+    row: dict[str, Any] = json.loads(body)["data"][0]
+    return row
+
+
+def test_a_live_update_time_that_does_not_parse_is_none(fixtures_dir: Path) -> None:
+    """Only Released/Success rows were recorded; other shapes must not fail the whole call."""
+    row = _live_update_row(fixtures_dir)
+    odd = {
+        **row, "startedAt": "", "completedAt": "soon",
+        "lastUpdated": "Donnerstag, 22. Oktober 2026", "queuedAt": "22.10.2026 23:18:33",
+    }  # fmt: skip
+    record = LiveUpdateRecord.model_validate(odd)
+    assert (record.started_at, record.completed_at) == (None, None)
+    assert (record.last_updated, record.queued_at) == (None, None)
+    assert (record.reporter_code, record.period, record.size) == ("234", 202604, 21_285_480)
+    wrong_weekday = LiveUpdateRecord.model_validate(
+        {**row, "lastUpdated": "Friday, October 22, 2026", "queuedAt": "13/22/2026 01:00:00 PM"}
+    )
+    assert (wrong_weekday.last_updated, wrong_weekday.queued_at) == (None, None)
+    midnight = LiveUpdateRecord.model_validate({**row, "queuedAt": "10/22/2026 12:05:00 AM"})
+    noon = LiveUpdateRecord.model_validate({**row, "queuedAt": "10/22/2026 12:05:00 PM"})
+    assert midnight.queued_at == datetime(2026, 10, 22, 0, 5)
+    assert noon.queued_at == datetime(2026, 10, 22, 12, 5)
+
+
+def test_live_update_times_do_not_depend_on_the_locale(fixtures_dir: Path) -> None:
+    """Parsed from fixed English tables; checked under a German LC_TIME where one exists."""
+    import locale
+
+    previous = locale.setlocale(locale.LC_TIME)
+    for name in ("de_DE.UTF-8", "de_DE.utf8", "de_CH.UTF-8", "fr_FR.UTF-8"):
+        try:
+            locale.setlocale(locale.LC_TIME, name)
+            break
+        except locale.Error:
+            continue
+    else:
+        pytest.skip("no non-English LC_TIME locale is installed")
+    try:
+        record = LiveUpdateRecord.model_validate(_live_update_row(fixtures_dir))
+    finally:
+        locale.setlocale(locale.LC_TIME, previous)
+    assert record.last_updated == date(2026, 10, 22)
+    assert record.queued_at == datetime(2026, 10, 22, 23, 18, 33)
 
 
 @pytest.mark.anyio
