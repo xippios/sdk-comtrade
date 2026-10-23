@@ -134,6 +134,9 @@ serves streamable HTTP instead of stdio.
 | `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(search=None)` | `comtrade_list_partners` | alpha |
 | `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
 
+All twelve are covered in 0.1.0, the first release. Alpha: the public surface may change
+in a minor version before 1.0; `CHANGELOG.md` lists every change.
+
 ## Upstream terms and attribution
 
 Data comes from UN Comtrade (https://comtradeplus.un.org) under its own terms of use;
