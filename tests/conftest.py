@@ -1,4 +1,3 @@
-import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -7,7 +6,14 @@ import pytest
 import respx
 from respx.patterns import M
 
-from xippios.comtrade._client import API_KEY_ENV
+# Importing xippios.core.testing loads its pytest plugin before pytest_plugins below is
+# processed; registering the package first lets pytest rewrite its asserts and keeps the
+# "already imported" warning away.
+pytest.register_assert_rewrite("xippios.core.testing")
+
+from xippios.core.testing import fixture_path, load_fixture  # noqa: E402
+
+from xippios.comtrade._client import API_KEY_ENV, auth  # noqa: E402
 
 pytest_plugins = ["xippios.core.testing.plugin"]
 
@@ -19,11 +25,22 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+PLACEHOLDER_KEY = "placeholder-for-fixture-replay"  # pragma: allowlist secret
+
+
 @pytest.fixture(autouse=True)
-def placeholder_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fixture-backed tests never need a real key; live tests use the one in the environment."""
-    if not os.environ.get(API_KEY_ENV):
-        monkeypatch.setenv(API_KEY_ENV, "placeholder-for-fixture-replay")
+def placeholder_api_key(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test but a live one sends the placeholder, whatever the shell holds.
+
+    Setting the variable is not enough: the client's ``HeaderKeyAuth`` resolves the key
+    once per process and caches it, so a live test earlier in the same run would leave
+    the real key in place. The auth's ``key`` is pinned to the placeholder as well, and
+    the original comes back after the test.
+    """
+    if "live" in request.keywords:
+        return
+    monkeypatch.setenv(API_KEY_ENV, PLACEHOLDER_KEY)
+    monkeypatch.setattr(auth, "key", lambda: PLACEHOLDER_KEY)
 
 
 @pytest.fixture
@@ -35,8 +52,6 @@ def replay_get(respx_mock: respx.MockRouter, fixtures_dir: Path) -> Callable[[st
     only ``countOnly`` requests, a data fixture only the others. Every other query
     parameter is left to the test, which compares the sent query with the recorded one.
     """
-
-    from xippios.core.testing import fixture_path, load_fixture
 
     def _replay(case: str) -> respx.Route:
         fixture = load_fixture(fixture_path(fixtures_dir, "get", case))
@@ -59,8 +74,6 @@ def replay_get(respx_mock: respx.MockRouter, fixtures_dir: Path) -> Callable[[st
 @pytest.fixture
 def recorded_params(fixtures_dir: Path) -> Callable[[str], dict[str, str]]:
     """The query parameters a fixture was recorded with, for comparison with what is sent."""
-
-    from xippios.core.testing import fixture_path, load_fixture
 
     def _params(case: str) -> dict[str, str]:
         fixture = load_fixture(fixture_path(fixtures_dir, "get", case))
