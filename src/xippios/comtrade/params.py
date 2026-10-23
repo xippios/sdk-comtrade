@@ -718,7 +718,8 @@ def validate_slice(
     one year or month, ``periods`` several of one format, at most ``max_periods`` (no
     limit when ``None``); the format sets ``freqCode``, ``A`` for ``YYYY`` and ``M`` for
     ``YYYYMM``. ``flow`` is one flow code. ``n``, how many rows a ranking keeps, is at
-    least 1 and not sent. Nothing is sent.
+    least 1; it is not an upstream parameter, so it is not returned (the task records it
+    in ``meta.request`` itself). Nothing is sent.
 
     Returns:
         The ``get_data`` arguments, ``SLICE_PINS`` included, in ``validate_get``'s order:

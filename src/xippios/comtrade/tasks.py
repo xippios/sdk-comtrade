@@ -15,7 +15,8 @@ reference file a list comes from (``files/v1/app/reference/Reporters.json``), an
 repeats the call. The task-shaped slices (``get_bilateral_flows``,
 ``get_commodity_series``, ``get_world_trade``, ``get_top_partners``) put the resolved
 ``get_data`` arguments there instead, pins included (``params.SLICE_PINS``); a commodity
-series lists every period, though it sent them 12 per call.
+series lists every period, though it sent them 12 per call, and ``get_top_partners``
+adds ``n``.
 
 ``meta.published_at`` stays ``None`` on every task. Data rows carry no publication date,
 and where upstream does publish release dates it publishes one per reporter and period
@@ -481,7 +482,9 @@ async def get_bilateral_flows_async(
             reporter reported them (rows name the edition in ``classification_code``, e.g.
             ``"H6"``); an edition ``"H0"`` to ``"H5"``, SITC ``"SS"`` or ``"S1"`` to ``"S4"``,
             BEC ``"B4"``, ``"B5"`` also work. ``"H6"`` is valid but upstream answered HTTP 500
-            to every try on 2026-10-23, so ``"HS"`` stays the default.
+            to every try on 2026-10-23, so ``"HS"`` stays the default. EBOPS ``"EB"``,
+            ``"EB02"``, ``"EB10"``, ``"EB10S"`` (services), ``"BE"`` and ``"TM"`` are
+            accepted but untested with the pinned ``typeCode`` C.
     """
     request = validate_slice(
         cl_code, flow, reporter=reporter, partner=partner, commodities=commodities,
@@ -535,7 +538,9 @@ async def get_commodity_series_async(
             reporter reported them (rows name the edition in ``classification_code``, e.g.
             ``"H6"``); an edition ``"H0"`` to ``"H5"``, SITC ``"SS"`` or ``"S1"`` to ``"S4"``,
             BEC ``"B4"``, ``"B5"`` also work. ``"H6"`` is valid but upstream answered HTTP 500
-            to every try on 2026-10-23, so ``"HS"`` stays the default.
+            to every try on 2026-10-23, so ``"HS"`` stays the default. EBOPS ``"EB"``,
+            ``"EB02"``, ``"EB10"``, ``"EB10S"`` (services), ``"BE"`` and ``"TM"`` are
+            accepted but untested with the pinned ``typeCode`` C.
     """
     request = validate_slice(
         cl_code, flow, reporter=reporter, partner="0", commodity=commodity, periods=periods,
@@ -584,7 +589,9 @@ async def get_world_trade_async(
             reporter reported them (rows name the edition in ``classification_code``, e.g.
             ``"H6"``); an edition ``"H0"`` to ``"H5"``, SITC ``"SS"`` or ``"S1"`` to ``"S4"``,
             BEC ``"B4"``, ``"B5"`` also work. ``"H6"`` is valid but upstream answered HTTP 500
-            to every try on 2026-10-23, so ``"HS"`` stays the default.
+            to every try on 2026-10-23, so ``"HS"`` stays the default. EBOPS ``"EB"``,
+            ``"EB02"``, ``"EB10"``, ``"EB10S"`` (services), ``"BE"`` and ``"TM"`` are
+            accepted but untested with the pinned ``typeCode`` C.
     """
     request = validate_slice(cl_code, flow, partner="0", commodity=commodity, period=period)
     _bounded(len(packaged_table("Reporters", Reporter)))
@@ -614,7 +621,8 @@ async def get_top_partners_async(
     reporter reported them. Bounded by construction at one row per partner (310 in the
     packaged ``partnerAreas.json``), so there is no count call. Arguments are resolved and
     checked before the call; a mistake raises ``InvalidRequestError`` naming the closest
-    valid value. ``meta.request`` holds the ``get_data`` arguments that were sent.
+    valid value. ``meta.request`` holds the ``get_data`` arguments that were sent, and
+    ``n``.
 
     Args:
         reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:
@@ -635,7 +643,9 @@ async def get_top_partners_async(
             reporter reported them (rows name the edition in ``classification_code``, e.g.
             ``"H6"``); an edition ``"H0"`` to ``"H5"``, SITC ``"SS"`` or ``"S1"`` to ``"S4"``,
             BEC ``"B4"``, ``"B5"`` also work. ``"H6"`` is valid but upstream answered HTTP 500
-            to every try on 2026-10-23, so ``"HS"`` stays the default.
+            to every try on 2026-10-23, so ``"HS"`` stays the default. EBOPS ``"EB"``,
+            ``"EB02"``, ``"EB10"``, ``"EB10S"`` (services), ``"BE"`` and ``"TM"`` are
+            accepted but untested with the pinned ``typeCode`` C.
     """
     request = validate_slice(
         cl_code, flow, reporter=reporter, commodity=commodity, period=period, n=n
@@ -643,7 +653,7 @@ async def get_top_partners_async(
     _bounded(len(packaged_table("partnerAreas", PartnerArea)))
     rows = [row for row in await _flows(request) if row.partner_code != 0]
     rows.sort(key=lambda row: (-row.primary_value, row.partner_code))
-    return Result(data=rows[:n], meta=_meta(request))
+    return Result(data=rows[:n], meta=_meta({**request, "n": n}))
 
 
 async def list_reporters_async(search: str | None = None) -> Result[list[Reporter]]:

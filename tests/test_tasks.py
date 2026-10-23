@@ -1527,7 +1527,10 @@ def test_top_partners_drop_world_and_keep_n(replay_query: ReplayQuery, fixtures_
     route = replay_query("partners_ch_total_2023")
     result = tasks.get_top_partners("CHE", "TOTAL", "2023", "X", 5)
     assert "partnerCode" not in route.calls.last.request.url.params
-    assert "partner_code" not in result.meta.request
+    every_partner = {
+        key: value for key, value in BILATERAL_REQUEST.items() if key != "partner_code"
+    }
+    assert result.meta.request == {**every_partner, "period": "2023", "cmd_code": "TOTAL", "n": 5}
     assert [row.partner_code for row in result.data] == [842, 276, 156, 380, 251]
     raw = {row.partner_code: row for row in _records(fixtures_dir, "partners_ch_total_2023")}
     assert raw[0].primary_value == Decimal("419922543423.509"), "World is the total row"
@@ -1713,6 +1716,7 @@ async def test_slice_tools_end_to_end(replay_query: ReplayQuery) -> None:
         {"reporter": "CHE", "commodity": "TOTAL", "period": "2023", "flow": "X", "n": 3},
     )
     assert [row["partner_code"] for row in top["data"]] == [842, 276, 156]
+    assert top["meta"]["request"]["n"] == 3
     reporters = await mcp_call(server, "comtrade_list_reporters", {"search": "switz"})
     assert [row["reporter_code"] for row in reporters["data"]] == [757]
     assert reporters["meta"]["request"] == {"search": "switz"}
