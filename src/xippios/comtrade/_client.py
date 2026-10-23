@@ -22,6 +22,7 @@ from xippios.core import (
     InvalidRequestError,
     RateLimit,
     RateLimitError,
+    Timeouts,
     XippiosError,
 )
 
@@ -31,6 +32,13 @@ SOURCE = "comtrade"
 BASE_URL = "https://comtradeapi.un.org"
 API_KEY_ENV = "COMTRADE_API_KEY"  # pragma: allowlist secret (a variable name, not a key)
 RATE_LIMIT = RateLimit(per_minute=60, burst=1)
+TIMEOUTS = Timeouts(read=180.0)
+"""Read timeout 180 s, the rest at the family defaults (conventions §6).
+
+A ``countOnly`` count over all reporters outlasted the default 60 s once and answered in
+27 s on the repeat (2026-10-23, ``count_over_limit.json``). Core's retry policy stays: a
+timed-out attempt it retries is another call against the daily quota.
+"""
 
 _REPLENISHED = re.compile(r"replenished in (\d+):(\d{2}):(\d{2})", re.IGNORECASE)
 
@@ -101,6 +109,7 @@ config = ClientConfig(
     source=SOURCE,
     version=__version__,
     base_url=BASE_URL,
+    timeouts=TIMEOUTS,
     rate_limit=RATE_LIMIT,
     classify=classify,
 )
@@ -118,6 +127,7 @@ __all__ = [
     "BASE_URL",
     "RATE_LIMIT",
     "SOURCE",
+    "TIMEOUTS",
     "classify",
     "client",
     "config",
