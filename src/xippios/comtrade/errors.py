@@ -29,19 +29,30 @@ class QueryTooLarge(InvalidRequestError):
     """The query would return more than UN Comtrade's per-call record limit (HTTP 422).
 
     Raised by ``get_data`` from the ``countOnly`` count, before any data is fetched,
-    because upstream would otherwise cut the answer at the limit without saying so.
+    because upstream would otherwise cut the answer at the limit without saying so. The
+    task-shaped slices skip the count, since their arguments bound the rows (one per
+    product code and period, reporter or partner); they raise it with that bound
+    (``bound=True``) before the call when it exceeds the limit.
 
     Attributes:
-        count: Records the query would return.
+        count: Records the query would return, or with ``bound`` at most return.
         limit: The per-call limit.
     """
 
-    def __init__(self, count: int, *, limit: int = RECORD_LIMIT) -> None:
+    def __init__(self, count: int, *, limit: int = RECORD_LIMIT, bound: bool = False) -> None:
+        if bound:
+            what = f"query could return up to {count:,} records"
+            advice = "Name fewer product codes or periods per call."
+        else:
+            what = f"query would return {count:,} records"
+            advice = (
+                f"Split by period (max {MAX_PERIODS} per call), then by reporter, then raise "
+                "the aggregation level (for example cmd_code 'AG2' instead of 'AG6'), and "
+                "check each part with get_counts."
+            )
         super().__init__(
-            f"query would return {count:,} records; UN Comtrade serves at most {limit:,} per "
-            f"call and silently cuts the rest. Split by period (max {MAX_PERIODS} per call), "
-            "then by reporter, then raise the aggregation level (for example cmd_code 'AG2' "
-            "instead of 'AG6'), and check each part with get_counts.",
+            f"{what}; UN Comtrade serves at most {limit:,} per call and silently cuts the "
+            f"rest. {advice}",
             source=SOURCE,
         )
         self.count = count
