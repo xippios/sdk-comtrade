@@ -696,14 +696,18 @@ def _slice_commodities(
 ) -> list[str]:
     """Product codes that each name one code, so the slice's rows are bounded by their number.
 
-    ``TOTAL`` and codes of ``cl_code``'s shape pass; the aggregation levels (``AG2``) and
-    wildcards (``27??``) expand to an unknown number of codes upstream, so they are
-    refused with a pointer to ``get_data``, which counts first.
+    ``TOTAL`` and codes of ``cl_code``'s shape pass, each once; the aggregation levels
+    (``AG2``) and wildcards (``27??``) expand to an unknown number of codes upstream, so
+    they are refused with a pointer to ``get_data``, which counts first.
     """
     if one and "," in value:
         problems.append(f"{argument} {value!r} must be one product code, e.g. 'TOTAL' or '27'")
         return []
     members = _members(argument, value, problems)
+    folded = [member.upper() for member in members]
+    twice = sorted({member for member in folded if folded.count(member) > 1})
+    if twice:
+        problems.append(f"{argument} names {', '.join(map(repr, twice))} more than once")
     shape, example = _CMD_SHAPES[_family(cl_code)]
     for member in members:
         if member.upper() == "TOTAL":

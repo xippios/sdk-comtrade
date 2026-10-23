@@ -1643,6 +1643,10 @@ def _slice_refused(respx_mock: respx.MockRouter, call: Callable[[], object]) -> 
             lambda: tasks.get_commodity_series("CHE", "27", "X", "2022,2023,2022"),
             "periods names '2022' more than once",
         ),
+        (
+            lambda: tasks.get_bilateral_flows("CHE", "USA", "TOTAL,27,total", "2023", "X"),
+            "commodities names 'TOTAL' more than once",
+        ),
     ],
 )
 def test_slice_arguments_are_refused_before_any_call(
