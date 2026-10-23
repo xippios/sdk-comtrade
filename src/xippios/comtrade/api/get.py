@@ -19,6 +19,7 @@ with ``count`` 0 (``unknown_reporter.json``, ``count_zero_ch_1900.json``).
 from xippios.core import parse
 
 from xippios.comtrade._client import SOURCE, client
+from xippios.comtrade.api._query import upstream_query
 from xippios.comtrade.models import TradeDataCountResponse, TradeDataResponse
 
 __all__ = ["ENDPOINT", "UPSTREAM_NAMES", "get", "get_count_only"]
@@ -46,15 +47,6 @@ UPSTREAM_NAMES: dict[str, str] = {
     "max_records": "maxRecords",
 }
 """Query parameters: the wrapper's argument to upstream's spelling, in the spec's order."""
-
-
-def _query(**params: str | bool | int | None) -> dict[str, str]:
-    """Upstream spellings for the snake_case arguments; unset ones are left out."""
-    return {
-        UPSTREAM_NAMES[name]: str(value).lower() if isinstance(value, bool) else str(value)
-        for name, value in params.items()
-        if value is not None
-    }
 
 
 async def get(
@@ -96,7 +88,8 @@ async def get(
     """
     raw = await client.get_json(
         _path(type_code, freq_code, cl_code),
-        params=_query(
+        params=upstream_query(
+            UPSTREAM_NAMES,
             reporter_code=reporter_code,
             period=period,
             partner_code=partner_code,
@@ -138,7 +131,8 @@ async def get_count_only(
     a minute upstream (one such count timed out at the 60 s read timeout before a repeat
     answered in 27 s, 2026-10-23).
     """
-    params = _query(
+    params = upstream_query(
+        UPSTREAM_NAMES,
         reporter_code=reporter_code,
         period=period,
         partner_code=partner_code,
