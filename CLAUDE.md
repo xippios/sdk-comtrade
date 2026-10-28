@@ -81,6 +81,24 @@ found; the first unknown code ends the checks, so other problems show once it is
 Both tables share one code space (a code in both is the same area) but differ: 0 World
 and 56 other areas are partners only, 97 European Union and 975 ASEAN reporters only.
 
+The packaged lists carry upstream's words beside each value, under upstream's names, as
+`scripts/refresh_reference.py` fetched them (2026-10-28, keyless): `text` from
+`tradeRegimes.json` (`flowCode`), `CustomsCodes.json`, `ModeOfTransportCodes.json` and
+`ModeOfSupply.json` (`mosCode`); `qtyAbbr` and `qtyDescription` from `QuantityUnits.json`
+(`qtyUnitCode`), which has no `text`; `variable` and `description` from the `cmd:<clCode>`
+entries of `ListofReferences.json` (`clCode`), which has no `id` or `text` either; and,
+as `text`, the wording the spec's description gives each value of `typeCode` and
+`freqCode` ("C for commodities"). A value the package adds from the spec stands alone
+(`MIF`, `XIF`, `BE`, `TM`), and so do `breakdownMode` and `aggregateBy`, whose
+descriptions word none. `ListofReferences.json`, the index of the reference files, is
+packaged as a table too. `list_codes(param)` returns a list's records as the model
+`params.PACKAGED_LISTS` names for it (`MotCodeValue`: `mot_code`, `text`), and
+`list_classifications(category=None)` the index's rows (`Reference`), both without a
+call, without `search` and without a cap of their own: the largest list has 41 rows
+(`qtyUnitCode`, about 4 KB) and the index 28 (about 6 KB), within the default cap. An
+unknown `customs_code` or `mot_code` names the closest codes with their text (core's
+`closest` by code and by text, else the most similar code).
+
 `MCP_CAPS` in `tasks.py` gives the three list tasks result caps of their own (ADR-0016):
 400 rows or 100 KB, so `list_reporters` (255 rows, 69 KB) and `list_partners` (310,
 83 KB) reach an agent whole, past Switzerland and the USA, where the default cap of 200
@@ -203,6 +221,6 @@ Only its `uv run pytest -m live --tb=short` step sees the key, from the org secr
 
 ## UN Comtrade specifics
 
-The live run costs ten keyed calls and four keyless requests (`tests/test_live.py`, whose
+The live run costs ten keyed calls and six keyless requests (`tests/test_live.py`, whose
 docstring counts them): the reachability probe sends no key, and the list tasks fetch the
 public reference files without it. A Basic Individual key allows 500 calls a day.
