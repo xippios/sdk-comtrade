@@ -73,10 +73,13 @@ refuse it before the call with core's `UnknownCode` (conventions §5), naming th
 `reporter_code` against `reference/Reporters.json` and partner codes against
 `reference/partnerAreas.json`, the package's copies of upstream's `Reporters.json` and
 `partnerAreas.json`; an ISO alpha-3 code the slices cannot resolve is refused the same
-way. The value lists (`clCode`, `flowCode`, ...) keep one `InvalidRequestError` naming
-every problem. Both tables
-share one code space (a code in both is the same area) but differ: 0 World and 56 other
-areas are partners only, 97 European Union and 975 ASEAN reporters only.
+way, and so is a `customs_code` or `mot_code` the packaged `customsCode` or `motCode`
+list lacks, where upstream's answer is not recorded. The other lists (`clCode` and
+`flowCode`, which upstream refuses with HTTP 400, and the spec's `typeCode`, `freqCode`,
+`breakdownMode`, `aggregateBy`) keep one `InvalidRequestError` naming every problem
+found; the first unknown code ends the checks, so other problems show once it is fixed.
+Both tables share one code space (a code in both is the same area) but differ: 0 World
+and 56 other areas are partners only, 97 European Union and 975 ASEAN reporters only.
 
 `MCP_CAPS` in `tasks.py` gives the three list tasks result caps of their own (ADR-0016):
 400 rows or 100 KB, so `list_reporters` (255 rows, 69 KB) and `list_partners` (310,
@@ -109,8 +112,9 @@ What the recorded answers established (2026-10-23). The fixtures are named in
   and EB02 (one row each) and `TOTAL` counting 0 on EB10. On EB and EB10S both forms
   counted 0, which cannot be told from an unknown code. `mosCode`, not in the spec, is
   accepted and filters (`0`, `1`), but `Mode 1` from `ModeOfSupply.json` is refused; it
-  is not a parameter of the tasks. Malformed values get HTTP 400 naming the field; a code
-  upstream does not have counts 0.
+  is not a parameter of the tasks. Malformed values get HTTP 400 naming the field; a
+  product or area code upstream does not have counts 0; an unknown `flowCode` or `clCode`
+  gets HTTP 400.
 - `data/v1/getDa`: takes more than 12 periods; refuses the spec's `EBSDMX`.
 - `data/v1/getMetadata`: honours `reporterCode` and `period`, which the spec omits and
   `comtradeapicall` sends; answers `H6` like `HS`.

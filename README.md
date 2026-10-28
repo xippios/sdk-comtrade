@@ -44,8 +44,10 @@ Every argument is checked before the call: coded ones (`type_code`, `cl_code`,
 the lists packaged from upstream's reference files and spec (`xippios.comtrade.enums`),
 `reporter_code` against the packaged copy of upstream's `Reporters.json`
 (`reference/Reporters.json`) and `partner_code` and `partner2_code` against that of
-`partnerAreas.json`, the others by shape; a mistake raises
-`InvalidRequestError` naming the closest valid value (`756` names `757`, Switzerland).
+`partnerAreas.json`, the others by shape. An unknown area, customs or transport code
+raises `UnknownCode`, an `InvalidRequestError` naming the packaged list, its fetch date
+and the closest code (`756` names `757`, Switzerland); any other mistake raises
+`InvalidRequestError` naming the closest valid value.
 
 ```python
 from xippios.comtrade import list_commodities, list_partners, list_reporters
