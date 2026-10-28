@@ -169,8 +169,11 @@ in a minor version before 1.0; `CHANGELOG.md` lists every change.
 
 ## Upstream terms and attribution
 
-Data comes from UN Comtrade (https://comtradeplus.un.org) under its own terms of use;
-this package adds no rights to it. Documentation snapshot: `docs/upstream/`.
+Data comes from UN Comtrade (https://comtradeplus.un.org), on the terms upstream states
+for it in its [Policy on Comtrade Data Use](https://uncomtrade.org/docs/policy-on-comtrade-data-use/),
+under which use of the data is subject to the license agreement at
+https://comtrade.un.org/licenseagreement.html; this package adds no rights to it.
+Documentation snapshot and its attribution: `docs/upstream/FETCHED.md`.
 
 ## Licence
 
