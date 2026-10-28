@@ -53,11 +53,10 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   of the run with `Z`; an Attribution section quotes the Help Center's footer line,
   `© 2026 UN Comtrade Help Center`, read from https://uncomtrade.org/, and the data's
   copyright and licence-agreement lines as the Policy on Comtrade Data Use and Read Me
-  First (Disclaimer) print them; each row records
-  the HTTP status, size, sha256, ETag and Last-Modified (none of the four for a body
-  that changes on every request, as four articles' do) and a note. The capture script
-  stops before writing when a page states a copyright line, licence or terms of use it
-  does not record.
+  First (Disclaimer) print them; each row records the HTTP status, size, sha256, ETag and
+  Last-Modified (none of the four for a body that changes on every request, as four
+  articles' do) and a note. The capture script stops before writing when a page states a
+  copyright line, licence or terms of use it does not record.
 - README: the terms section names upstream's Policy on Comtrade Data Use and the
   license agreement it makes the use of the data subject to, and points at
   `docs/upstream/FETCHED.md` for the attribution.
