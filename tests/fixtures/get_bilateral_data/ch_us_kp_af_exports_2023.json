@@ -1,0 +1,65 @@
+{
+  "recorded_at": "2026-10-28T16:17:21.944678Z",
+  "request": {
+    "body": null,
+    "body_base64": false,
+    "content_type": null,
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/tools/v1/getBilateralData/C/A/HS?reporterCode=757&period=2023&partnerCode=842%2C408%2C4&cmdCode=TOTAL&flowCode=X"
+  },
+  "response": {
+    "body": "{\"timestampRequested\":\"2026-10-28 16:17:21.134\",\"elapsedTime\":\"0.54 secs\",\"note\":\"EXPERIMENTAL: In reviewing the selection criteria, we've identified a data gap for 2 partner(s) during specific periods, which accounts for approximately 0.015% of the accumulated world's share. This means that we do not have data for that combination of partners as reporters, so the calculation of mirror data may be incomplete. <b>As a reminder, users should be aware of the data availability when using the data.</b>\",\"count\":2,\"data\":[{\"typeCode\":\"C\",\"freqCode\":\"A\",\"refPeriodId\":20230101,\"refYear\":2023,\"refMonth\":52,\"period\":\"2023\",\"reporterCode\":757,\"reporterISO\":null,\"reporterDesc\":null,\"flowCode\":\"X\",\"flowDesc\":null,\"partnerCode\":842,\"partnerISO\":null,\"partnerDesc\":null,\"classificationCode\":\"H6\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"cmdCode\":\"TOTAL\",\"cmdDesc\":null,\"aggrLevel\":null,\"isLeaf\":null,\"customsCode\":\"C00\",\"customsDesc\":null,\"mosCode\":\"0\",\"motCode\":0,\"motDesc\":null,\"qtyUnitCode\":-1,\"qtyUnitAbbr\":null,\"mirrorQtyUnitCode\":-1,\"mirrorQtyUnitAbbr\":null,\"mirror2QtyUnitCode\":null,\"mirror2QtyUnitAbbr\":null,\"qty\":0.0,\"mirrorQty\":0.0,\"mirror2Qty\":null,\"isQtyEstimated\":false,\"altQtyUnitCode\":-1,\"altQtyUnitAbbr\":null,\"altQty\":0.0,\"mirrorAltQtyUnitCode\":-1,\"mirrorAltQtyUnitAbbr\":null,\"mirror2AltQtyUnitCode\":null,\"mirror2AltQtyUnitAbbr\":null,\"mirrorAltQty\":0.0,\"mirror2AltQty\":null,\"isAltQtyEstimated\":false,\"netWgt\":0.0,\"mirrorNetWgt\":0.0,\"mirror2NetWgt\":null,\"isNetWgtEstimated\":true,\"grossWgt\":0.0,\"mirrorGrossWgt\":0.0,\"mirror2GrossWgt\":null,\"isGrossWgtEstimated\":false,\"cifvalue\":null,\"fobvalue\":62852531481.607,\"primaryValue\":62852531481.607,\"isExtendedPartnerCode\":true,\"mirrorPrimaryValue\":52815436548.0,\"primaryValueDisc\":-0.15969277126959047,\"mirror2PrimaryValue\":0.0,\"isExtendedPartner2Code\":false,\"legacyEstimationFlag\":4,\"isReported\":false,\"isAggregate\":true},{\"typeCode\":\"C\",\"freqCode\":\"A\",\"refPeriodId\":20230101,\"refYear\":2023,\"refMonth\":52,\"period\":\"2023\",\"reporterCode\":757,\"reporterISO\":null,\"reporterDesc\":null,\"flowCode\":\"X\",\"flowDesc\":null,\"partnerCode\":4,\"partnerISO\":null,\"partnerDesc\":null,\"classificationCode\":\"H6\",\"classificationSearchCode\":\"HS\",\"isOriginalClassification\":true,\"cmdCode\":\"TOTAL\",\"cmdDesc\":null,\"aggrLevel\":null,\"isLeaf\":null,\"customsCode\":\"C00\",\"customsDesc\":null,\"mosCode\":\"0\",\"motCode\":0,\"motDesc\":null,\"qtyUnitCode\":-1,\"qtyUnitAbbr\":null,\"mirrorQtyUnitCode\":null,\"mirrorQtyUnitAbbr\":null,\"mirror2QtyUnitCode\":null,\"mirror2QtyUnitAbbr\":null,\"qty\":0.0,\"mirrorQty\":null,\"mirror2Qty\":null,\"isQtyEstimated\":false,\"altQtyUnitCode\":-1,\"altQtyUnitAbbr\":null,\"altQty\":0.0,\"mirrorAltQtyUnitCode\":null,\"mirrorAltQtyUnitAbbr\":null,\"mirror2AltQtyUnitCode\":null,\"mirror2AltQtyUnitAbbr\":null,\"mirrorAltQty\":null,\"mirror2AltQty\":null,\"isAltQtyEstimated\":false,\"netWgt\":0.0,\"mirrorNetWgt\":null,\"mirror2NetWgt\":null,\"isNetWgtEstimated\":true,\"grossWgt\":0.0,\"mirrorGrossWgt\":null,\"mirror2GrossWgt\":null,\"isGrossWgtEstimated\":false,\"cifvalue\":null,\"fobvalue\":5718328.953,\"primaryValue\":5718328.953,\"isExtendedPartnerCode\":false,\"mirrorPrimaryValue\":0.0,\"primaryValueDisc\":-1.0,\"mirror2PrimaryValue\":0.0,\"isExtendedPartner2Code\":false,\"legacyEstimationFlag\":4,\"isReported\":false,\"isAggregate\":true}],\"error\":\"\"}",
+    "body_base64": false,
+    "headers": [
+      [
+        "x-frame-options",
+        "deny"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-xss-protection",
+        "1;mode=block"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000;includeSubDomains"
+      ],
+      [
+        "content-security-policy",
+        "frame-src 'self'"
+      ],
+      [
+        "x-permitted-cross-domain-policies",
+        "none"
+      ],
+      [
+        "referrer-policy",
+        "no-referrer-when-downgrade"
+      ],
+      [
+        "permissions-policy",
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "0"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Wed, 28 Oct 2026 16:17:21 GMT"
+      ]
+    ],
+    "status": 200
+  }
+}

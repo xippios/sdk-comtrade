@@ -9,18 +9,22 @@ snapshot in ``docs/upstream/``.
 """
 
 from xippios.comtrade.api.get import get, get_count_only
+from xippios.comtrade.api.get_bilateral_data import get_bilateral_data
 from xippios.comtrade.api.get_da import get_da
 from xippios.comtrade.api.get_live_update import get_live_update
 from xippios.comtrade.api.get_metadata import get_metadata
+from xippios.comtrade.api.get_trade_balance import get_trade_balance
 from xippios.comtrade.api.reference import ReferenceFile, reference, reference_rows
 
 __all__ = [
     "ReferenceFile",
     "get",
+    "get_bilateral_data",
     "get_count_only",
     "get_da",
     "get_live_update",
     "get_metadata",
+    "get_trade_balance",
     "reference",
     "reference_rows",
 ]

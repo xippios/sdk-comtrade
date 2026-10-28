@@ -9,10 +9,11 @@ carries the provenance of every file. Each is a packaged-list file,
 (``PACKAGED_LISTS``), a table's records upstream's columns, parsed into its row model
 (``PACKAGED_TABLES``). ``validate_get`` checks the arguments of a ``data/v1/get`` call
 against them, and the free-form ones by shape, before anything is sent (ADR-0007);
-``validate_datasets`` does the same for ``data/v1/getDa`` and ``data/v1/getMetadata``;
-``validate_slice`` resolves and checks the arguments of the task-shaped slices (an area as
-a code or ISO alpha-3, periods of one format) into a ``data/v1/get`` request with
-``SLICE_PINS``.
+``validate_datasets`` does the same for ``data/v1/getDa`` and ``data/v1/getMetadata``,
+``validate_trade_balance`` and ``validate_bilateral_data`` for the Tools operations
+``tools/v1/getTradeBalance`` and ``tools/v1/getBilateralData``; ``validate_slice``
+resolves and checks the arguments of the task-shaped slices (an area as a code or ISO
+alpha-3, periods of one format) into a ``data/v1/get`` request with ``SLICE_PINS``.
 """
 
 import difflib
@@ -34,11 +35,14 @@ __all__ = [
     "PACKAGED_LISTS",
     "PACKAGED_TABLES",
     "SLICE_PINS",
+    "TOOLS_FLOW_CODES",
     "classification_files",
+    "validate_bilateral_data",
     "validate_classification_file",
     "validate_datasets",
     "validate_get",
     "validate_slice",
+    "validate_trade_balance",
 ]
 
 PACKAGE = "xippios.comtrade"
@@ -394,6 +398,190 @@ def validate_get(
         "customs_code": customs_code,
         "aggregate_by": aggregate_by,
         "breakdown_mode": breakdown_mode,
+        "include_desc": include_desc,
+    }
+    return {name: value for name, value in arguments.items() if value is not None}
+
+
+TOOLS_FLOW_CODES: tuple[str, ...] = ("M", "X")
+"""The ``flowCode`` values ``tools/v1/getBilateralData`` takes, one per call: the spec's enum.
+
+``docs/upstream/apidocs/comtradeTools.json`` gives ``flowCode`` the enum ``M``/``X`` and
+the description "Multi value input should be in the form of csv"; upstream refused
+``M,X`` with HTTP 400 "The field flowCode is invalid"
+(``tests/fixtures/get_bilateral_data/ch_us_2023_flow_code_m_x.json``), so one flow per
+call. The packaged ``flowCode`` list holds the twelve flows of ``data/v1/get``.
+"""
+
+_UNBOUNDED = (
+    "{task} needs reporter_code or partner_code, and cmd_code: UN Comtrade's Tools "
+    "operations give no count to check a query's size before the call (countOnly "
+    "answered 0 for a query of 48 rows), so the package bounds a query by its arguments; "
+    "e.g. reporter_code='757', partner_code='0', cmd_code='TOTAL'"
+)
+"""The refusal of a Tools query that names neither area nor a product code.
+
+``tests/fixtures/get_trade_balance/count_only_ch_world_2023.json`` (``count`` 0) and
+``ch_world_2023_include_desc.json`` (48 rows); ``getBilateralData`` ignores ``countOnly``
+(``tests/fixtures/get_bilateral_data/count_only_ch_us_exports_2023.json``).
+"""
+
+
+def _check_bounded(
+    task: str,
+    reporter_code: str | None,
+    partner_code: str | None,
+    cmd_code: str | None,
+    problems: list[str],
+) -> None:
+    if (reporter_code is None and partner_code is None) or cmd_code is None:
+        problems.append(_UNBOUNDED.format(task=task))
+
+
+def _check_tools_flow(value: str | None, problems: list[str]) -> None:
+    if value is None or value in TOOLS_FLOW_CODES:
+        return
+    if "," in value:
+        problems.append(
+            f"flow_code {value!r} must be one flow, 'M' or 'X': getBilateralData refuses "
+            "several in one call (HTTP 400), so call it once per flow"
+        )
+        return
+    closest = _closest(value, TOOLS_FLOW_CODES)
+    hint = f"; closest: {closest!r}" if closest else ""
+    problems.append(
+        f"flow_code {value!r} is not a flowCode getBilateralData takes{hint}. "
+        f"Valid values: {', '.join(TOOLS_FLOW_CODES)}"
+    )
+
+
+def validate_trade_balance(
+    type_code: str,
+    freq_code: str,
+    cl_code: str,
+    *,
+    reporter_code: str | None = None,
+    period: str | None = None,
+    partner_code: str | None = None,
+    partner2_code: str | None = None,
+    cmd_code: str | None = None,
+    customs_code: str | None = None,
+    mot_code: str | None = None,
+    aggregate_by: str | None = None,
+    breakdown_mode: str | None = None,
+    include_desc: bool | None = None,
+) -> dict[str, Any]:
+    """Check the arguments of a ``tools/v1/getTradeBalance`` call before anything is sent.
+
+    ``validate_get``'s checks for the parameters the two share, the same packaged lists:
+    the Tools spec lists the same ``typeCode``, ``freqCode``, ``customsCode``,
+    ``motCode``, ``aggregateBy`` and ``breakdownMode`` values; ``clCode`` is checked
+    against the packaged list, reconciled by ``data/v1/get``'s recorded answers, not the
+    Tools spec's enum. At most 12 periods: upstream refused 13 with HTTP 400
+    (``tests/fixtures/get_trade_balance/ch_world_13_periods.json``). The query must name
+    ``reporter_code`` or ``partner_code``, and ``cmd_code``, since upstream gives no count
+    to check its size first (``_UNBOUNDED``). Values are never rewritten.
+
+    Returns:
+        The arguments that are set, under the task's parameter names, in signature order.
+
+    Raises:
+        UnknownCode: A reporter, partner or second-partner code the packaged table lacks,
+            or a ``customs_code`` or ``mot_code`` the packaged list lacks (conventions
+            §5); the first one found ends the checks.
+        InvalidRequestError: Naming every problem found, with the closest valid value
+            where there is one.
+    """
+    problems: list[str] = []
+    _check_bounded("get_trade_balance", reporter_code, partner_code, cmd_code, problems)
+    _check_list("type_code", type_code, "typeCode", problems)
+    _check_list("freq_code", freq_code, "freqCode", problems)
+    _check_list("cl_code", cl_code, "clCode", problems)
+    _check_areas("reporter_code", reporter_code, "reporter", problems)
+    _check_areas("partner_code", partner_code, "partner", problems)
+    _check_areas("partner2_code", partner2_code, "partner", problems)
+    _check_period(period, problems)
+    if cl_code in _allowed("clCode"):
+        _check_cmd_code(cmd_code, cl_code, problems)
+    # customsCode's pattern in the Tools spec, as in comtrade.json, accepts c and C.
+    _check_list(
+        "customs_code", customs_code, "customsCode", problems, multi=True, case_insensitive=True
+    )
+    _check_list("mot_code", mot_code, "motCode", problems, multi=True)
+    _check_list("aggregate_by", aggregate_by, "aggregateBy", problems, multi=True)
+    _check_list("breakdown_mode", breakdown_mode, "breakdownMode", problems)
+    if problems:
+        raise InvalidRequestError("; ".join(problems) + ".", source=SOURCE)
+    arguments: dict[str, Any] = {
+        "type_code": type_code,
+        "freq_code": freq_code,
+        "cl_code": cl_code,
+        "reporter_code": reporter_code,
+        "period": period,
+        "partner_code": partner_code,
+        "partner2_code": partner2_code,
+        "cmd_code": cmd_code,
+        "customs_code": customs_code,
+        "mot_code": mot_code,
+        "aggregate_by": aggregate_by,
+        "breakdown_mode": breakdown_mode,
+        "include_desc": include_desc,
+    }
+    return {name: value for name, value in arguments.items() if value is not None}
+
+
+def validate_bilateral_data(
+    type_code: str,
+    freq_code: str,
+    cl_code: str,
+    *,
+    reporter_code: str | None = None,
+    period: str | None = None,
+    partner_code: str | None = None,
+    cmd_code: str | None = None,
+    flow_code: str | None = None,
+    include_desc: bool | None = None,
+) -> dict[str, Any]:
+    """Check the arguments of a ``tools/v1/getBilateralData`` call before anything is sent.
+
+    ``validate_get``'s checks for the parameters the two share, except that ``period``
+    takes more than 12 values (13 answered 13 rows,
+    ``tests/fixtures/get_bilateral_data/ch_us_exports_13_periods.json``) and
+    ``flow_code`` is one of ``TOOLS_FLOW_CODES``. The query must name ``reporter_code`` or
+    ``partner_code``, and ``cmd_code``, since upstream gives no count to check its size
+    first (``_UNBOUNDED``). Values are never rewritten.
+
+    Returns:
+        The arguments that are set, under the task's parameter names, in signature order.
+
+    Raises:
+        UnknownCode: A reporter or partner code the packaged table lacks (conventions
+            §5); the first one found ends the checks.
+        InvalidRequestError: Naming every problem found, with the closest valid value
+            where there is one.
+    """
+    problems: list[str] = []
+    _check_bounded("get_bilateral_data", reporter_code, partner_code, cmd_code, problems)
+    _check_list("type_code", type_code, "typeCode", problems)
+    _check_list("freq_code", freq_code, "freqCode", problems)
+    _check_list("cl_code", cl_code, "clCode", problems)
+    _check_areas("reporter_code", reporter_code, "reporter", problems)
+    _check_areas("partner_code", partner_code, "partner", problems)
+    _check_period(period, problems, max_periods=None)
+    if cl_code in _allowed("clCode"):
+        _check_cmd_code(cmd_code, cl_code, problems)
+    _check_tools_flow(flow_code, problems)
+    if problems:
+        raise InvalidRequestError("; ".join(problems) + ".", source=SOURCE)
+    arguments: dict[str, Any] = {
+        "type_code": type_code,
+        "freq_code": freq_code,
+        "cl_code": cl_code,
+        "reporter_code": reporter_code,
+        "period": period,
+        "partner_code": partner_code,
+        "cmd_code": cmd_code,
+        "flow_code": flow_code,
         "include_desc": include_desc,
     }
     return {name: value for name, value in arguments.items() if value is not None}

@@ -1,0 +1,65 @@
+{
+  "recorded_at": "2026-10-28T16:16:03.300525Z",
+  "request": {
+    "body": null,
+    "body_base64": false,
+    "content_type": null,
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/tools/v1/getBilateralData/C/A/HS?reporterCode=757&period=2023&partnerCode=408&cmdCode=TOTAL&flowCode=X&includeDesc=true"
+  },
+  "response": {
+    "body": "{\"timestampRequested\":\"2026-10-28 16:16:01.654\",\"elapsedTime\":\"0.23 secs\",\"note\":\"EXPERIMENTAL: In reviewing the selection criteria, we've identified a data gap for 1 partner(s) during specific periods, which accounts for approximately 0.006% of the accumulated world's share. This means that we do not have data for that combination of partners as reporters, so the calculation of mirror data may be incomplete. <b>As a reminder, users should be aware of the data availability when using the data.</b>\",\"count\":0,\"data\":[],\"error\":\"\"}",
+    "body_base64": false,
+    "headers": [
+      [
+        "x-frame-options",
+        "deny"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-xss-protection",
+        "1;mode=block"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000;includeSubDomains"
+      ],
+      [
+        "content-security-policy",
+        "frame-src 'self'"
+      ],
+      [
+        "x-permitted-cross-domain-policies",
+        "none"
+      ],
+      [
+        "referrer-policy",
+        "no-referrer-when-downgrade"
+      ],
+      [
+        "permissions-policy",
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "0"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Wed, 28 Oct 2026 16:16:00 GMT"
+      ]
+    ],
+    "status": 200
+  }
+}

@@ -10,6 +10,39 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
 
 ### Added
 
+- Two tasks on UN Comtrade's Tools operations, which the spec marks "EXPERIMENTAL - USE
+  SPARINGLY", MCP tools `comtrade_get_trade_balance` and `comtrade_get_bilateral_data`:
+  `get_trade_balance(type_code, freq_code, cl_code, *, reporter_code=, period=,
+  partner_code=, partner2_code=, cmd_code=, customs_code=, mot_code=, aggregate_by=,
+  breakdown_mode=, include_desc=)` on `tools/v1/getTradeBalance`, a reporter's exports
+  and imports side by side (`TradeBalanceRecord`, `primary_value_bal` as upstream sends
+  it), and `get_bilateral_data(type_code, freq_code, cl_code, *, reporter_code=, period=,
+  partner_code=, cmd_code=, flow_code=, include_desc=)` on `tools/v1/getBilateralData`,
+  its figures beside its partners' mirror figures (`BilateralDataRecord`), returned as
+  one `BilateralData`, not a list: upstream's data-gap `note`, which qualifies the mirror
+  values, `timestamp_requested` (UTC) and the rows as `data`; wrappers
+  `api.get_trade_balance` and `api.get_bilateral_data`, `meta.total` upstream's `count`.
+  Both need `reporter_code` or `partner_code`, and `cmd_code`, checked before the call
+  with the other arguments (`params.validate_trade_balance`,
+  `params.validate_bilateral_data`).
+- What the recorded answers of 2026-10-28 established, under
+  `tests/fixtures/get_trade_balance/` and `get_bilateral_data/`:
+  - both operations answered the package's key; getTradeBalance's allow-list refusal
+    (403 "User not allowed" in the spec) did not occur;
+  - `countOnly` counts nothing: getTradeBalance answers `count` 0 with a placeholder for a
+    query of 48 rows, getBilateralData ignores it;
+  - getTradeBalance without `breakdownMode` answers every breakdown (48 rows), with
+    `classic` the total row alone;
+  - getTradeBalance refuses a 13th period with HTTP 400, getBilateralData answers 13;
+  - getBilateralData takes one `flowCode` (`M,X` gets HTTP 400) and fills no description
+    with `includeDesc`;
+  - getBilateralData answers in classic mode; its `note` counts the partners with a data
+    gap without naming them, and Afghanistan, inferred from the counts to be one of them,
+    has a mirror of 0; its `primaryValueDisc` equals (mirror − value) / value in every
+    recorded row, a meaning upstream does not state;
+  - getBilateralData's HTTP 400 spells a detail's message `ErrorMessage`, which
+    `classify` now reads as well as `errorMessage`, so the refusal names the field
+    (getTradeBalance's 400 had `details` null).
 - The upstream snapshot refreshed on 2026-10-28 (`docs/upstream/`), with eight more Help
   Center articles: `un-comtrade-tools` (the Trade Balance and Bilateral Data tools),
   `developer-tools`, `un-comtrade-data-pipeline` (releases and revisions),
