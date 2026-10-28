@@ -30,8 +30,10 @@ Everything is fetched before anything is written, one request at a time, each UR
 at most once; files a previous snapshot had and this one does not are removed. Every run
 stops, before writing, when a page states a copyright line, a licence or terms of use that
 ``ATTRIBUTION`` does not record, or when the page a recorded statement is read from no
-longer prints it. The same upstream gives the same files; ``FETCHED.md`` then differs in
-``Fetched`` alone. No key is needed or read. Run from the repository root::
+longer prints it; an article that is upstream's statement of its terms is kept whole and
+not searched beyond the lines ``ATTRIBUTION`` quotes from it. The same upstream gives the
+same files; ``FETCHED.md`` then differs in ``Fetched`` alone. No key is needed or read. Run
+from the repository root::
 
     uv run scripts/refresh_upstream.py            # fetch, then write the snapshot
     uv run scripts/refresh_upstream.py --check    # fetch and compare; write nothing
@@ -68,6 +70,8 @@ COMMAND = "uv run scripts/refresh_upstream.py"
 
 APIDOCS_URL = "https://comtradeplus.un.org/ApiDocs"
 HELP_HOME = "https://uncomtrade.org/"
+POLICY = "https://uncomtrade.org/docs/policy-on-comtrade-data-use/"
+DISCLAIMER = "https://uncomtrade.org/docs/read-me-first-disclaimer/"
 HELP_API = "https://uncomtrade.org/wp-json/wp/v2/docs"
 HELP_FIELDS = "id,slug,link,modified,title,content"
 HELP_SLUGS = (
@@ -87,6 +91,8 @@ HELP_SLUGS = (
     "bilateral-asymmetries",
     "how-to-retrieve-data-for-world-exports-to-a-country-in-un-comtrade",
     "how-should-i-interpret-and-use-quantity-data-in-un-comtrade",
+    "policy-on-comtrade-data-use",
+    "read-me-first-disclaimer",
 )
 """Help Center articles to capture, by WordPress slug (``uncomtrade.org/docs/<slug>/``)."""
 REFERENCE_BASE = "https://comtradeapi.un.org/files/v1/app/reference/"
@@ -101,15 +107,24 @@ RETRY_PAUSE = 10.0
 SUBDIRS = ("apidocs", "help", "reference")
 REQUESTS: list[str] = []
 """Every request the run sent, retries included, by URL: the count the run reports."""
+CHECKED: set[str] = set()
+"""The pages ``check_attribution`` read this run, by the URL statements are recorded at."""
 
 
 @dataclass(frozen=True)
 class Statement:
-    """A copyright line, licence or terms of use upstream prints, and where it is read."""
+    """A copyright line, licence or terms of use upstream prints, and where it is read.
+
+    ``url`` is the page that prints it: a Help Center article by its link, read through the
+    REST API with the other articles, or a page fetched for it alone. ``terms_page`` marks
+    an article that is upstream's statement of its terms, kept whole in the snapshot: the
+    check requires the line on it and does not search the rest of it.
+    """
 
     text: str
     where: str
     url: str
+    terms_page: bool = False
 
 
 ATTRIBUTION: tuple[Statement, ...] = (
@@ -118,13 +133,40 @@ ATTRIBUTION: tuple[Statement, ...] = (
         "in the footer of the UN Comtrade Help Center's pages",
         HELP_HOME,
     ),
+    Statement(
+        "The United Nations copyright UN Comtrade data. UN Comtrade data are provided for "
+        "internal use only and may not be re-disseminated in any form without "
+        "UNSD\N{RIGHT SINGLE QUOTATION MARK}s permission.",
+        'under "Copyright Statement and Citation" in the Policy on Comtrade Data Use',
+        POLICY,
+        terms_page=True,
+    ),
+    Statement(
+        "Use of UN Comtrade data is subject to a license agreement found at "
+        "https://comtrade.un.org/licenseagreement.html, regardless of whether the data is "
+        "accessed via free or premium access.",
+        'under "License Agreement" in the Policy on Comtrade Data Use',
+        POLICY,
+        terms_page=True,
+    ),
+    Statement(
+        "The License Agreement specifies that the UN Comtrade data are copyrighted by the "
+        "United Nations and are made available for your internal use only. They may not be "
+        "re-disseminated in any form without prior written consent of the United Nations "
+        "Statistics Division subject to the clarification at Policy on use and "
+        "re-dissemination.",
+        'under "License Agreement" in Read Me First (Disclaimer)',
+        DISCLAIMER,
+        terms_page=True,
+    ),
 )
 """Every copyright line, licence or terms of use the documentation states, as printed.
 
 The REST API serves an article's body without the Help Center's footer, so the footer's
 line is read from the Help Center's home page (its article pages print the same footer).
-Every run stops when a page states one that is not here, and when the page a statement is
-read from no longer prints it (a new year, say).
+The data's terms are two articles of their own, captured with the others. Every run stops
+when a page states one that is not here, and when the page a statement is read from no
+longer prints it (a new year, say).
 """
 
 _IDENT = r"[A-Za-z_$][\w$]*"
@@ -232,33 +274,41 @@ def fetch(url: str, accept: frozenset[int] = frozenset({200})) -> Response:
         raise SystemExit(f"GET {url}: {error} (after one retry)") from None
 
 
-def _html_text(body: bytes) -> str:
-    """The text a browser shows of an HTML page: no script, style or markup."""
-    soup = BeautifulSoup(body.decode("utf-8", "replace"), "html.parser")
+def _html_text(markup: str) -> str:
+    """The text a browser shows of HTML: no script, style or markup, whitespace collapsed.
+
+    Inline markup joins without a separator, so a line reads as printed (a link followed
+    by its comma); WordPress separates blocks with whitespace of its own.
+    """
+    soup = BeautifulSoup(markup, "html.parser")
     for tag in _tags(soup, "script", "style", "noscript", "template"):
         tag.decompose()
-    return " ".join(soup.get_text(" ").split())
+    return " ".join(soup.get_text().split())
 
 
 def check_attribution(url: str, text: str) -> None:
     """Stop when ``text`` states a copyright, licence or terms that ``ATTRIBUTION`` lacks.
 
-    ``text`` is what the snapshot keeps of the page, or what a browser shows of an HTML
-    page; the page a statement is read from must still print it.
+    ``text`` is what a reader sees of the page at ``url`` (an article's title and body, an
+    HTML page's text) or, for a JSON file, the file decoded. The page a statement is read
+    from must still print it; the rest of a terms page is not searched.
     """
+    CHECKED.add(url)
     for statement in ATTRIBUTION:
         if statement.url == url and statement.text not in text:
             raise SystemExit(
-                f"GET {url}: the page no longer prints {statement.text!r}, which ATTRIBUTION "
+                f"{url}: the page no longer prints {statement.text!r}, which ATTRIBUTION "
                 "records.\nRead it by hand and update ATTRIBUTION in "
                 "scripts/refresh_upstream.py. Nothing was written."
             )
         text = text.replace(statement.text, "")
+    if any(s.url == url and s.terms_page for s in ATTRIBUTION):
+        return
     match = _STATEMENT.search(text)
     if match:
         around = " ".join(text[max(match.start() - 60, 0) : match.end() + 60].split())
         raise SystemExit(
-            f"GET {url}: the page states {match.group(0)!r} ({around!r}), a copyright, "
+            f"{url}: the page states {match.group(0)!r} ({around!r}), a copyright, "
             "licence or terms of use that ATTRIBUTION does not record.\nRead it by hand, "
             "record it in ATTRIBUTION in scripts/refresh_upstream.py. Nothing was written."
         )
@@ -284,7 +334,7 @@ def discover() -> tuple[Response, Response, str, list[Product]]:
     shell = fetch(APIDOCS_URL)
     _report("(no file)", shell)
     page = shell.body.decode("utf-8")
-    check_attribution(APIDOCS_URL, _html_text(shell.body))
+    check_attribution(APIDOCS_URL, _html_text(page))
     bundles = sorted(set(_BUNDLE.findall(page)))
     if len(bundles) != 1:
         raise _bundle_changed(f"expected one main.<hash>.js, found {bundles}", APIDOCS_URL)
@@ -365,7 +415,7 @@ def fetch_reference(name: str) -> Entry:
 def fetch_attribution(url: str) -> Entry:
     """Fetch a page ``ATTRIBUTION`` reads a statement from; it must still print it."""
     response = fetch(url)
-    check_attribution(url, _html_text(response.body))
+    check_attribution(url, _html_text(response.body.decode("utf-8", "replace")))
     _report("(no file)", response)
     return Entry(None, response, "read for the Attribution above, kept without a file")
 
@@ -473,7 +523,7 @@ def fetch_article(slug: str) -> Entry:
     escaped = title.replace("[", r"\[").replace("]", r"\]")
     header = f"# [{escaped}]({link})\n\nUpstream modified: {modified}\n\n"
     markdown = header + to_markdown(body, link)
-    check_attribution(url, markdown)
+    check_attribution(link, f"{title} {_html_text(body)}")
     path = f"help/{slug}.md"
     note = f"article {link}, WordPress modified {modified} (site time), converted to Markdown"
     merged = _merged_tables(body)
@@ -544,7 +594,9 @@ def render_fetched(
         *_paragraph(
             "Every other page the script reads states none: it stops, before writing, when a",
             "page states a copyright line, a licence or terms of use not listed here, or when",
-            "the page a line is read from no longer prints it. ApiDocs is rendered in the",
+            "the page a line is read from no longer prints it. The two articles that state the",
+            "data's terms are kept whole under `help/` and not searched beyond the lines quoted",
+            "here. ApiDocs is rendered in the",
             "browser, so a plain fetch receives no footer text from it; its bundle is code,",
             "which carries its libraries' licence headers, and is not checked. The",
             "documentation's text is reproduced here as this package's reference (ADR-0003);",
@@ -687,7 +739,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     _log("Reference files")
     entries += [fetch_reference(name) for name in REFERENCE_FILES]
     _log("Attribution")
-    entries += [fetch_attribution(url) for url in dict.fromkeys(s.url for s in ATTRIBUTION)]
+    pages = dict.fromkeys(s.url for s in ATTRIBUTION if s.url not in CHECKED)
+    entries += [fetch_attribution(url) for url in pages]
 
     def render(at: str) -> str:
         return render_fetched(bundle_name, apim_base, products, versions, entries, at)
