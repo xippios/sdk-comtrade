@@ -1,7 +1,7 @@
 {
   "param": "flowCode",
   "endpoint": "files/v1/app/reference/tradeRegimes.json",
-  "fetched": "2026-10-28T19:46:47Z",
+  "fetched": "2026-10-28T22:02:02Z",
   "note": "The ids of tradeRegimes.json with their text (none for a value added from the spec), reconciled with docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description. MIF added: listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_mif.json, HTTP 200). XIF added: listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_xif.json, HTTP 200).",
   "records": [
     {

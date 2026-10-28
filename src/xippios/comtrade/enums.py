@@ -17,7 +17,7 @@ __all__ = [
 
 
 class AggregateBy(StrEnum):
-    """Values of ``aggregateBy`` (fetched 2026-10-23)."""
+    """Values of ``aggregateBy`` (fetched 2026-10-28)."""
 
     CMDCODE = "cmdCode"
     PERIOD = "period"
@@ -29,7 +29,7 @@ class AggregateBy(StrEnum):
 
 
 class BreakdownMode(StrEnum):
-    """Values of ``breakdownMode`` (fetched 2026-10-23)."""
+    """Values of ``breakdownMode`` (fetched 2026-10-28)."""
 
     CLASSIC = "classic"
     PLUS = "plus"
@@ -101,7 +101,7 @@ class FlowCode(StrEnum):
 
 
 class FreqCode(StrEnum):
-    """Values of ``freqCode`` (fetched 2026-10-23)."""
+    """Values of ``freqCode`` (fetched 2026-10-28)."""
 
     A = "A"
     M = "M"
@@ -187,7 +187,7 @@ class QtyUnitCode(StrEnum):
 
 
 class TypeCode(StrEnum):
-    """Values of ``typeCode`` (fetched 2026-10-23)."""
+    """Values of ``typeCode`` (fetched 2026-10-28)."""
 
     C = "C"
     S = "S"

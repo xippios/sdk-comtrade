@@ -1,7 +1,7 @@
 {
   "param": "customsCode",
   "endpoint": "files/v1/app/reference/CustomsCodes.json",
-  "fetched": "2026-10-28T19:46:49Z",
+  "fetched": "2026-10-28T22:02:04Z",
   "note": "The ids of CustomsCodes.json with their text.",
   "records": [
     {

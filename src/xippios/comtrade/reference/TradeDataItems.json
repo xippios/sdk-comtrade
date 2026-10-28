@@ -1,7 +1,7 @@
 {
   "param": "TradeDataItems",
   "endpoint": "files/v1/app/reference/TradeDataItems.json",
-  "fetched": "2026-10-28T19:46:56Z",
+  "fetched": "2026-10-28T22:02:14Z",
   "records": [
     {
       "dataItem": "datasetCode",
