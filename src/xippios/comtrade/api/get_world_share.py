@@ -1,17 +1,20 @@
 """``GET public/v1/getWorldShare/{typeCode}/{freqCode}``: reporters' shares of world trade.
 
-Reference: ``docs/upstream/apidocs/public.json``, path ``/getWorldShare/{typeCode}/{freqCode}``
-under the server ``https://comtradeapi.un.org/public/v1``, operationId
-``66abc37fcbedb74c48662189``, an opaque id, so the wrapper is named after the path
-(conventions §2): "Get the World Share (including estimates)". Path parameters
-``typeCode`` (``C``, ``S``) and ``freqCode`` (``A``, ``M``); query parameters ``period``
-("Period(s): YYYY (annual) or YYYYMM (monthly), comma-separated, or 'recent'") and
-``reporterCode`` ("Reporter code(s): codes separated by comma (,)"), in the spec's order.
-No Help Center article names the operation.
+Reference: ``docs/upstream/apidocs/public.json``, operation ``getWorldShare``
+(operationId ``66abc37fcbedb74c48662189``, opaque, so the module is named from the path,
+conventions §2), under the server ``https://comtradeapi.un.org/public/v1``: "Get the
+World Share (including estimates)". Path parameters ``typeCode`` (``C``, ``S``) and
+``freqCode`` (``A``, ``M``); query parameters ``period`` ("Period(s): YYYY (annual) or
+YYYYMM (monthly), comma-separated, or 'recent'") and ``reporterCode`` ("Reporter code(s):
+codes separated by comma (,)"), in the spec's order. No Help Center article names the
+operation.
 
-Public, keyless: ``public.json``'s ``security`` allows no key, so the call goes through
-the package's one client with ``auth=None`` and sends none; it still takes the client's
-pace. The client's cache keeps the reference files only, never this answer.
+Public, keyless: ``public.json``'s ``security`` is ``[{}, apiKeyHeader, apiKeyQuery]``, a
+key optional, and its ``info`` says "No subscription key required", so the call goes
+through the package's one client with ``auth=None`` and sends none. It spends no daily
+quota but still takes the client's pace and its ``policy``: once upstream has said the
+key's quota is spent, this call is held back too. The client's cache keeps the reference
+files only, never this answer.
 
 Recorded answers (2026-10-28, under ``tests/fixtures/get_world_share/``):
 
@@ -58,7 +61,7 @@ async def get_world_share(
     period: str | None = None,
     reporter_code: str | None = None,
 ) -> WorldShareResponse:
-    """Call ``public/v1/getWorldShare`` (operationId ``66abc37fcbedb74c48662189``).
+    """Call ``public/v1/getWorldShare`` with the parameters as upstream names them.
 
     Args:
         type_code: ``typeCode``, ``"C"`` goods or ``"S"`` services.

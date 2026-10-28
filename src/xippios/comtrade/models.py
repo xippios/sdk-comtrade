@@ -692,9 +692,12 @@ class WorldShare(UpstreamModel):
     the schema under its upstream name in snake_case, all present in every recorded row
     (``tests/fixtures/get_world_share/``, 2026-10-28). ``month`` is 52 on annual rows, as
     on the trade data rows. The four times are printed without a UTC offset and upstream
-    states no zone, so they are naive and no zone is attached; a row with
+    states no zone, so they are naive and no zone is attached; seven fractional digits are
+    cut to microseconds (``2024-02-02T04:52:35.2166667`` reads ``.216666``). A row with
     ``is_available`` false carries ``0001-01-01T00:00:00`` in ``first_released`` and
-    ``last_released`` (47 of the 214 rows for 2023), kept as sent.
+    ``last_released``, upstream's placeholder on unavailable datasets (47 of the 214 rows
+    in ``get_world_share/all_reporters_2023.json``): it is kept as sent, a naive datetime,
+    and never turned into ``None``.
 
     Attributes:
         dataset_desc: The dataset as upstream labels it, e.g. ``"Switzerland CA 2023"``,
@@ -706,8 +709,8 @@ class WorldShare(UpstreamModel):
             The 214 values recorded for 2023 (annual goods, every reporter) sum to 1.0.
         is_available: As upstream sends it; the spec states no meaning.
         data_count: As upstream sends it; 1 on every recorded row.
-        first_released: Naive, no zone stated; ``0001-01-01T00:00:00`` where
-            ``is_available`` is false.
+        first_released: Naive, no zone stated; ``0001-01-01T00:00:00``, upstream's
+            placeholder, where ``is_available`` is false.
         last_released: Naive, no zone stated; as ``first_released``.
         created: Naive, no zone stated.
         updated: Naive, no zone stated.

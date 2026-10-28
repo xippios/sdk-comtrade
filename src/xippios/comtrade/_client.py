@@ -78,7 +78,8 @@ def _quota_reset(text: str) -> float | None:
 def _refusal(payload: dict[str, object]) -> str:
     message = f"UN Comtrade refused the request (HTTP 400): {payload['error']}"
     details = payload.get("details")
-    # data/v1 spells the detail errorMessage, public/v1 ErrorMessage (period_malformed.json).
+    # The detail's message: errorMessage in data/v1's recorded 400s, ErrorMessage in
+    # getWorldShare's one recorded 400 (get_world_share/period_malformed.json).
     notes = [
         str(item.get("errorMessage") or item.get("ErrorMessage"))
         for item in (details if isinstance(details, list) else [])
@@ -96,10 +97,11 @@ def classify(response: httpx.Response) -> XippiosError | None:
       (``components.schemas.ErrorResponse``; "Invalid or missing parameters." in the spec)
       is a caller mistake upstream caught: ``InvalidRequestError`` with upstream's text.
       Observed: ``Maximum number of periods is 12`` (``count_13_periods.json``) and
-      ``Invalid parameter value`` naming ``clCode`` (``count_cl_code_be5.json``). The
-      public operations spell the detail ``ErrorMessage`` (and ``MemberNames``), the data
-      API ``errorMessage``; both are read (``get_world_share/period_malformed.json``,
-      sent without a ``Content-Type``).
+      ``Invalid parameter value`` naming ``clCode`` (``count_cl_code_be5.json``). Of each
+      ``details`` item the message is read, spelt ``errorMessage`` in data/v1's recorded
+      400s and ``ErrorMessage`` in getWorldShare's one recorded 400
+      (``get_world_share/period_malformed.json``, sent without a ``Content-Type``);
+      ``memberNames``/``MemberNames`` is read in neither spelling.
     - HTTP 403 whose body mentions a quota is the daily call quota of the key:
       ``RateLimitError``, with ``retry_after`` read from API Management's standard text
       "Out of call volume quota. Quota will be replenished in HH:MM:SS." The spec's 403
@@ -201,8 +203,9 @@ config = policy.install(
 # without a key and scripts/refresh_upstream.py fetches them without one. api.reference
 # passes auth=None, so a reference refresh never sends the key or spends quota; it shares
 # RATE_LIMIT's pace, and once the quota is spent policy holds it back too. The public
-# operations under public/v1 (getComtradeReleases, getWorldShare), whose security in
-# public.json allows no key, pass auth=None the same way; their answers are not cached.
+# operations under public/v1 (getComtradeReleases, getWorldShare), where public.json's
+# security makes a key optional and its info says "No subscription key required", pass
+# auth=None the same way and share pace and policy alike; their answers are not cached.
 auth = HeaderKeyAuth("Ocp-Apim-Subscription-Key", API_KEY_ENV, source=SOURCE)
 client = AsyncClient(config, auth=auth)
 
