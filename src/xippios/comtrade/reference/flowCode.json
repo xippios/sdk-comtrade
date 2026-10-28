@@ -1,38 +1,48 @@
 {
   "param": "flowCode",
   "endpoint": "files/v1/app/reference/tradeRegimes.json",
-  "fetched": "2026-10-23",
-  "note": "The ids of tradeRegimes.json, reconciled with docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description. MIF added: listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_mif.json, HTTP 200). XIF added: listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_xif.json, HTTP 200).",
+  "fetched": "2026-10-28T19:46:47Z",
+  "note": "The ids of tradeRegimes.json with their text (none for a value added from the spec), reconciled with docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description. MIF added: listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_mif.json, HTTP 200). XIF added: listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_xif.json, HTTP 200).",
   "records": [
     {
-      "flowCode": "M"
+      "flowCode": "M",
+      "text": "Import"
     },
     {
-      "flowCode": "X"
+      "flowCode": "X",
+      "text": "Export"
     },
     {
-      "flowCode": "DX"
+      "flowCode": "DX",
+      "text": "Domestic Export"
     },
     {
-      "flowCode": "FM"
+      "flowCode": "FM",
+      "text": "Foreign Import"
     },
     {
-      "flowCode": "MIP"
+      "flowCode": "MIP",
+      "text": "Import of goods for inward processing"
     },
     {
-      "flowCode": "MOP"
+      "flowCode": "MOP",
+      "text": "Import of goods after outward processing"
     },
     {
-      "flowCode": "RM"
+      "flowCode": "RM",
+      "text": "Re-import"
     },
     {
-      "flowCode": "RX"
+      "flowCode": "RX",
+      "text": "Re-export"
     },
     {
-      "flowCode": "XIP"
+      "flowCode": "XIP",
+      "text": "Export of goods after inward processing"
     },
     {
-      "flowCode": "XOP"
+      "flowCode": "XOP",
+      "text": "Export of goods for outward processing"
     },
     {
       "flowCode": "MIF"

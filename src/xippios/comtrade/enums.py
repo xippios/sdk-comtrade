@@ -36,7 +36,7 @@ class BreakdownMode(StrEnum):
 
 
 class ClCode(StrEnum):
-    """Values of ``clCode`` (fetched 2026-10-23)."""
+    """Values of ``clCode`` (fetched 2026-10-28)."""
 
     B4 = "B4"
     B5 = "B5"
@@ -62,7 +62,7 @@ class ClCode(StrEnum):
 
 
 class CustomsCode(StrEnum):
-    """Values of ``customsCode`` (fetched 2026-10-23)."""
+    """Values of ``customsCode`` (fetched 2026-10-28)."""
 
     C00 = "C00"
     C01 = "C01"
@@ -84,7 +84,7 @@ class CustomsCode(StrEnum):
 
 
 class FlowCode(StrEnum):
-    """Values of ``flowCode`` (fetched 2026-10-23)."""
+    """Values of ``flowCode`` (fetched 2026-10-28)."""
 
     M = "M"
     X = "X"
@@ -108,7 +108,7 @@ class FreqCode(StrEnum):
 
 
 class MosCode(StrEnum):
-    """Values of ``mosCode`` (fetched 2026-10-23)."""
+    """Values of ``mosCode`` (fetched 2026-10-28)."""
 
     _0 = "0"
     MODE_1 = "Mode 1"
@@ -118,7 +118,7 @@ class MosCode(StrEnum):
 
 
 class MotCode(StrEnum):
-    """Values of ``motCode`` (fetched 2026-10-23)."""
+    """Values of ``motCode`` (fetched 2026-10-28)."""
 
     _0 = "0"
     _1000 = "1000"
@@ -141,7 +141,7 @@ class MotCode(StrEnum):
 
 
 class QtyUnitCode(StrEnum):
-    """Values of ``qtyUnitCode`` (fetched 2026-10-23)."""
+    """Values of ``qtyUnitCode`` (fetched 2026-10-28)."""
 
     _1 = "-1"
     _2 = "2"
