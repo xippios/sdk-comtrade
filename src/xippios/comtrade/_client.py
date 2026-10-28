@@ -1,10 +1,11 @@
 """The configured ``xippios.core`` client for UN Comtrade.
 
 One ``AsyncClient`` serves every call. It carries the subscription key for the data API;
-the public reference files go through it with ``auth=None`` per request, so they never
-send the key, and its cache keeps those files, and nothing else, for the life of the
-process (``cache_filter``). Task functions share its rate limiter, and the same instance
-serves the sync facades and the MCP server.
+the public reference files and the public operations under ``public/v1`` go through it
+with ``auth=None`` per request, so they never send the key, and its cache keeps the
+reference files, and nothing else, for the life of the process (``cache_filter``). Task
+functions share its rate limiter, and the same instance serves the sync facades and the
+MCP server.
 
 Limits of a Basic Individual (free) key, ``docs/upstream/help/subscriptions.md``: 1 call
 per second, 500 calls per day, 100,000 records per call. Upstream's own headers agree
@@ -77,10 +78,11 @@ def _quota_reset(text: str) -> float | None:
 def _refusal(payload: dict[str, object]) -> str:
     message = f"UN Comtrade refused the request (HTTP 400): {payload['error']}"
     details = payload.get("details")
+    # data/v1 spells the detail errorMessage, public/v1 ErrorMessage (period_malformed.json).
     notes = [
-        str(item.get("errorMessage", ""))
+        str(item.get("errorMessage") or item.get("ErrorMessage"))
         for item in (details if isinstance(details, list) else [])
-        if isinstance(item, dict) and item.get("errorMessage")
+        if isinstance(item, dict) and (item.get("errorMessage") or item.get("ErrorMessage"))
     ]
     if notes:
         message += " (" + "; ".join(notes) + ")"
@@ -94,15 +96,21 @@ def classify(response: httpx.Response) -> XippiosError | None:
       (``components.schemas.ErrorResponse``; "Invalid or missing parameters." in the spec)
       is a caller mistake upstream caught: ``InvalidRequestError`` with upstream's text.
       Observed: ``Maximum number of periods is 12`` (``count_13_periods.json``) and
-      ``Invalid parameter value`` naming ``clCode`` (``count_cl_code_be5.json``).
+      ``Invalid parameter value`` naming ``clCode`` (``count_cl_code_be5.json``). The
+      public operations spell the detail ``ErrorMessage`` (and ``MemberNames``), the data
+      API ``errorMessage``; both are read (``get_world_share/period_malformed.json``,
+      sent without a ``Content-Type``).
     - HTTP 403 whose body mentions a quota is the daily call quota of the key:
       ``RateLimitError``, with ``retry_after`` read from API Management's standard text
       "Out of call volume quota. Quota will be replenished in HH:MM:SS." The spec's 403
       reads "APIM quota / access denial"; this answer was not observed (never provoked).
     - Everything else falls through to the core mapping: 401 (``invalid_key.json``,
       ``GatewayError`` body) and a 403 "User not allowed" become ``AuthError``, 429
-      ``RateLimitError`` with ``Retry-After``. No HTTP 200 with a non-empty ``error``
-      was observed, so none is mapped.
+      ``RateLimitError`` with ``Retry-After``, a 5xx ``UpstreamError`` with upstream's
+      body, retried: ``public/v1/getWorldShare`` answered ``period=recent`` with HTTP
+      500, ``count`` -1 and ``error`` an object, "Something went wrong. Please try again
+      or contact comtrade@un.org." (``get_world_share/ch_recent.json``). No HTTP 200
+      with a non-empty ``error`` was observed, so none is mapped.
     """
     status = response.status_code
     if status == 400:
@@ -192,7 +200,9 @@ config = policy.install(
 # reference files under files/v1/app/reference/ are public: the Help Center links them
 # without a key and scripts/refresh_upstream.py fetches them without one. api.reference
 # passes auth=None, so a reference refresh never sends the key or spends quota; it shares
-# RATE_LIMIT's pace, and once the quota is spent policy holds it back too.
+# RATE_LIMIT's pace, and once the quota is spent policy holds it back too. The public
+# operations under public/v1 (getComtradeReleases, getWorldShare), whose security in
+# public.json allows no key, pass auth=None the same way; their answers are not cached.
 auth = HeaderKeyAuth("Ocp-Apim-Subscription-Key", API_KEY_ENV, source=SOURCE)
 client = AsyncClient(config, auth=auth)
 
