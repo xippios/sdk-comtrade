@@ -2,7 +2,7 @@
 
 ``/add-endpoint`` and ``/record-fixture`` add them. The checks of this package's own sit
 among them: those on the task docstrings and the adapters' source first, those on the
-packaged lists and the enums with the tests of the list tasks.
+packaged lists and the enums after the checks of the arguments.
 """
 
 import dataclasses
@@ -697,20 +697,55 @@ def test_case_insensitive_codes_pass_unchanged() -> None:
 
 def test_every_list_parameter_is_checked() -> None:
     with pytest.raises(InvalidRequestError) as info:
-        validate_get(
-            "G", "Y", "HS", mot_code="9", customs_code="C16", aggregate_by="cmdcode",
-            breakdown_mode="full",
-        )  # fmt: skip
+        validate_get("G", "Y", "HS", aggregate_by="cmdcode", breakdown_mode="full")
+    assert not isinstance(info.value, UnknownCode)
     message = str(info.value)
     for fragment in [
         "type_code 'G' is not a UN Comtrade typeCode value",
         "freq_code 'Y' is not a UN Comtrade freqCode value",
-        "mot_code '9' is not a UN Comtrade motCode value",
-        "customs_code 'C16' is not a UN Comtrade customsCode value",
         "aggregate_by 'cmdcode' is not a UN Comtrade aggregateBy value; closest: 'cmdCode'",
         "breakdown_mode 'full' is not a UN Comtrade breakdownMode value",
     ]:
         assert fragment in message
+
+
+REFUSED_C16 = (
+    "'C16' is not a customs_code in the packaged customsCode list (fetched 2026-10-23). "
+    "Did you mean 'C15'? Valid values: C00, C01, C02, C03, C04, C05, C06, C07, C08, C09, "
+    "C10, C11, C12, C13, C14, C15, C20. UN Comtrade's answer to a customs or transport code "
+    "it does not have is not recorded, so the package refuses it before the call, as it "
+    "does an unknown area. reference/customsCode.json lists every code. If upstream added "
+    "it since, the packaged list needs a refresh (/refresh-reference-data)."
+)
+"""``UnknownCode``'s message for customs_code C16 (conventions §5)."""
+
+
+def test_an_unknown_customs_or_transport_code_is_an_unknown_code(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Dimension codes of the rows, like the areas: ``UnknownCode`` before any call."""
+    customs = _unknown(respx_mock, customs_code="C00,C16")
+    assert str(customs) == REFUSED_C16
+    assert (customs.param, customs.value, customs.list_name) == (
+        "customs_code",
+        "C16",
+        "customsCode",
+    )
+    assert customs.fetched == PackagedList.load(PACKAGE, "customsCode").fetched
+    transport = _unknown(respx_mock, mot_code="0,9")
+    assert (transport.param, transport.value, transport.list_name) == ("mot_code", "9", "motCode")
+    assert str(transport).startswith(
+        "'9' is not a mot_code in the packaged motCode list (fetched 2026-10-23). "
+        "Did you mean '9900'?"
+    )
+
+
+@pytest.mark.anyio
+async def test_an_unknown_customs_code_over_mcp() -> None:
+    refused = await mcp_call_text(
+        server, "comtrade_get_counts", {**CH_EXPORTS_2023, "customs_code": "C16"}
+    )
+    assert refused == f"error: UnknownCode: {REFUSED_C16}"
 
 
 @pytest.mark.parametrize("name", [*PACKAGED_LISTS, *PACKAGED_TABLES])

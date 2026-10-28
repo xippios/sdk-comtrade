@@ -124,9 +124,9 @@ async def get_counts_async(
     most 100,000 records, so count first and split a larger query. A count of 0 means no
     data matches: an unreported period, a code that is not a reporter, a flow the
     reporter does not record. Every count costs one call of the key's daily quota (500
-    on a free key). Arguments are checked before the call, reporter and partner codes
-    against the packaged tables: an unknown one raises ``UnknownCode``, an
-    ``InvalidRequestError`` naming the packaged list, its fetch date and the closest area
+    on a free key). Arguments are checked before the call, reporter, partner, customs and
+    transport codes against the packaged lists: an unknown one raises ``UnknownCode``, an
+    ``InvalidRequestError`` naming the packaged list, its fetch date and the closest code
     (756 names 757, Switzerland); another mistake raises ``InvalidRequestError`` naming
     the closest valid value.
 
@@ -232,9 +232,9 @@ async def get_data_async(
     Switzerland's 2023 exports to the World); the row with ``partner2_code`` 0,
     ``customs_code`` ``"C00"`` and ``mot_code`` 0 is the total, and pinning those three
     (or ``breakdown_mode="classic"``) returns that row alone. Arguments are checked
-    before any call; an unknown reporter or partner code raises ``UnknownCode``, an
-    ``InvalidRequestError`` naming the packaged list and the closest area, another
-    mistake ``InvalidRequestError`` naming the closest valid value.
+    before any call; an unknown reporter, partner, customs or transport code raises
+    ``UnknownCode``, an ``InvalidRequestError`` naming the packaged list and the closest
+    code, another mistake ``InvalidRequestError`` naming the closest valid value.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
