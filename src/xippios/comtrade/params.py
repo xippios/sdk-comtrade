@@ -26,7 +26,24 @@ from xippios.core import InvalidRequestError, PackagedList, UnknownCode, Upstrea
 
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.errors import MAX_PERIODS
-from xippios.comtrade.models import CountryAreaCodeIso, PartnerArea, Reporter, TradeDataItem
+from xippios.comtrade.models import (
+    AggregateByValue,
+    BreakdownModeValue,
+    ClCodeValue,
+    CodeValue,
+    CountryAreaCodeIso,
+    CustomsCodeValue,
+    FlowCodeValue,
+    FreqCodeValue,
+    MosCodeValue,
+    MotCodeValue,
+    PartnerArea,
+    QtyUnitCodeValue,
+    Reference,
+    Reporter,
+    TradeDataItem,
+    TypeCodeValue,
+)
 
 __all__ = [
     "CL_CODES_FROM_SPEC",
@@ -43,25 +60,27 @@ __all__ = [
 
 PACKAGE = "xippios.comtrade"
 
-PACKAGED_LISTS: tuple[str, ...] = (
-    "typeCode",
-    "freqCode",
-    "clCode",
-    "flowCode",
-    "customsCode",
-    "motCode",
-    "aggregateBy",
-    "breakdownMode",
-    "mosCode",
-    "qtyUnitCode",
-)
-"""Names of the lists that ship inside the package; keep in step with the refresh script."""
+PACKAGED_LISTS: Mapping[str, type[CodeValue]] = {
+    "typeCode": TypeCodeValue,
+    "freqCode": FreqCodeValue,
+    "clCode": ClCodeValue,
+    "flowCode": FlowCodeValue,
+    "customsCode": CustomsCodeValue,
+    "motCode": MotCodeValue,
+    "aggregateBy": AggregateByValue,
+    "breakdownMode": BreakdownModeValue,
+    "mosCode": MosCodeValue,
+    "qtyUnitCode": QtyUnitCodeValue,
+}
+"""Lists that ship as ``reference/<name>.json``, named after the upstream parameter, and the
+model of their records; keep in step with the refresh script."""
 
 PACKAGED_TABLES: Mapping[str, type[UpstreamModel]] = {
     "Reporters": Reporter,
     "partnerAreas": PartnerArea,
     "country_area_code_iso": CountryAreaCodeIso,
     "TradeDataItems": TradeDataItem,
+    "ListofReferences": Reference,
 }
 """Tables that ship as ``reference/<name>.json``, named after the upstream file, and their
 row model; keep in step with the refresh script."""

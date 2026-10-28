@@ -30,16 +30,26 @@ from pydantic import ValidationError as PydanticValidationError
 from xippios.core import UpstreamModel
 
 __all__ = [
+    "AggregateByValue",
+    "BreakdownModeValue",
+    "ClCodeValue",
+    "CodeValue",
     "Commodity",
     "CountryAreaCodeIso",
+    "CustomsCodeValue",
     "DataAvailability",
     "DataAvailabilityResponse",
+    "FlowCodeValue",
+    "FreqCodeValue",
     "LiveUpdateRecord",
     "LiveUpdateResponse",
     "MetadataDataset",
     "MetadataNote",
     "MetadataResponse",
+    "MosCodeValue",
+    "MotCodeValue",
     "PartnerArea",
+    "QtyUnitCodeValue",
     "QuantityUnit",
     "Reference",
     "ReferenceCode",
@@ -49,6 +59,7 @@ __all__ = [
     "TradeDataRecord",
     "TradeDataResponse",
     "TradeFlowRecord",
+    "TypeCodeValue",
 ]
 
 
@@ -254,6 +265,154 @@ class QuantityUnit(UpstreamModel):
     qty_code: int = Field(validation_alias="qtyCode")
     qty_abbr: str = Field(validation_alias="qtyAbbr")
     qty_description: str = Field(validation_alias="qtyDescription")
+
+
+class TypeCodeValue(UpstreamModel):
+    """One value of ``typeCode``, packaged from the spec with the wording it gives the value.
+
+    Attributes:
+        type_code: The value as ``type_code`` takes it, e.g. ``"C"``.
+        text: The spec's wording for it, cut from the parameter's description "Type of
+            trade: C for commodities and S for service", e.g. ``"commodities"``; ``None``
+            where the description gives none.
+    """
+
+    type_code: str = Field(validation_alias="typeCode")
+    text: str | None = None
+
+
+class FreqCodeValue(UpstreamModel):
+    """One value of ``freqCode``, packaged from the spec with the wording it gives the value.
+
+    Attributes:
+        freq_code: The value as ``freq_code`` takes it, e.g. ``"A"``.
+        text: The spec's wording for it, cut from the parameter's description "Trade
+            frequency: A for annual and M for monthly", e.g. ``"annual"``; ``None`` where
+            the description gives none.
+    """
+
+    freq_code: str = Field(validation_alias="freqCode")
+    text: str | None = None
+
+
+class ClCodeValue(UpstreamModel):
+    """One value of ``clCode``, with its entry in ``ListofReferences.json`` where it has one.
+
+    Attributes:
+        cl_code: The classification as ``cl_code`` takes it, e.g. ``"H6"``.
+        variable: The index's ``variable`` for ``cmd:<clCode>``, e.g. ``"Product [HS
+            2022]"``; ``None`` for a value the package takes from the spec (``BE``,
+            ``TM``), which the index does not list.
+        description: The index's ``description``, e.g. "The classification of HS 2022",
+            followed by an en dash and "goods"; ``None`` where ``variable`` is.
+    """
+
+    cl_code: str = Field(validation_alias="clCode")
+    variable: str | None = None
+    description: str | None = None
+
+
+class FlowCodeValue(UpstreamModel):
+    """One value of ``flowCode``, with its ``text`` in ``tradeRegimes.json`` where it has one.
+
+    Attributes:
+        flow_code: The trade flow as ``flow_code`` takes it, e.g. ``"X"``.
+        text: Upstream's label, e.g. ``"Export"``; ``None`` for ``MIF`` and ``XIF``, which
+            the package takes from the spec's ``flowCode`` description, a list of values
+            without wording.
+    """
+
+    flow_code: str = Field(validation_alias="flowCode")
+    text: str | None = None
+
+
+class CustomsCodeValue(UpstreamModel):
+    """One value of ``customsCode``, a row of ``CustomsCodes.json`` under the parameter's name.
+
+    Attributes:
+        customs_code: The customs procedure as ``customs_code`` takes it, e.g. ``"C00"``.
+        text: Upstream's label, e.g. ``"TOTAL customs procedure codes"``.
+    """
+
+    customs_code: str = Field(validation_alias="customsCode")
+    text: str
+
+
+class MotCodeValue(UpstreamModel):
+    """One value of ``motCode``, a row of ``ModeOfTransportCodes.json`` under the parameter's name.
+
+    Attributes:
+        mot_code: The mode of transport as ``mot_code`` takes it, e.g. ``"2100"``.
+        text: Upstream's label, e.g. ``"Sea"``.
+    """
+
+    mot_code: str = Field(validation_alias="motCode")
+    text: str
+
+
+class AggregateByValue(UpstreamModel):
+    """One value of ``aggregateBy``, a name the spec's description of the parameter lists.
+
+    Attributes:
+        aggregate_by: The name as ``aggregate_by`` takes it, e.g. ``"cmdCode"``.
+    """
+
+    aggregate_by: str = Field(validation_alias="aggregateBy")
+
+
+class BreakdownModeValue(UpstreamModel):
+    """One value of ``breakdownMode``, a member of the spec's enum for the parameter.
+
+    Attributes:
+        breakdown_mode: The value as ``breakdown_mode`` takes it, e.g. ``"classic"``.
+    """
+
+    breakdown_mode: str = Field(validation_alias="breakdownMode")
+
+
+class MosCodeValue(UpstreamModel):
+    """One id of ``ModeOfSupply.json`` with its ``text``, under the name ``mosCode``.
+
+    Attributes:
+        mos_code: The file's id, e.g. ``"0"`` or ``"Mode 1"``; ``data/v1/get`` refused
+            ``"Mode 1"`` and accepted ``"0"`` and ``"1"``, so the ids are not proven
+            parameter values.
+        text: Upstream's label, e.g. ``"Cross-border"``.
+    """
+
+    mos_code: str = Field(validation_alias="mosCode")
+    text: str
+
+
+class QtyUnitCodeValue(UpstreamModel):
+    """One unit of ``QuantityUnits.json``: its ``qtyCode`` under the name ``qtyUnitCode``.
+
+    Attributes:
+        qty_unit_code: The code as ``qty_unit_code`` and ``alt_qty_unit_code`` carry it on
+            trade rows, as text, e.g. ``"8"``; ``"-1"`` is no quantity.
+        qty_abbr: Upstream's abbreviation, e.g. ``"kg"``.
+        qty_description: Upstream's description, e.g. ``"Weight in kilograms"``.
+    """
+
+    qty_unit_code: str = Field(validation_alias="qtyUnitCode")
+    qty_abbr: str = Field(validation_alias="qtyAbbr")
+    qty_description: str = Field(validation_alias="qtyDescription")
+
+
+CodeValue = (
+    TypeCodeValue
+    | FreqCodeValue
+    | ClCodeValue
+    | FlowCodeValue
+    | CustomsCodeValue
+    | MotCodeValue
+    | AggregateByValue
+    | BreakdownModeValue
+    | MosCodeValue
+    | QtyUnitCodeValue
+)
+"""A record of one packaged list, as ``list_codes`` returns it; ``params.PACKAGED_LISTS``
+names the model of each list."""
 
 
 class Reporter(UpstreamModel):
