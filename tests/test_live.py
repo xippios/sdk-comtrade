@@ -1,11 +1,12 @@
 """Live smoke tests: skipped unless XIPPIOS_LIVE_TESTS=1 (conventions §10).
 
 Every task function gets one live smoke test here, next to the reachability probe, which
-spends no keyed call. The whole module costs twelve keyed calls: one count, the count
+spends no keyed call. The whole module costs thirteen keyed calls: one count, the count
 plus the data call of ``get_data``, one call each for ``get_data_availability``,
 ``get_metadata`` and ``get_live_update``, one for each of the four slices (the
-commodity series asks for two periods, one call), and one each for the two Tools
-operations, ``get_trade_balance`` and ``get_bilateral_data``. A Basic Individual key
+commodity series asks for two periods, one call), one each for the two Tools
+operations, ``get_trade_balance`` and ``get_bilateral_data``, and one for
+``get_mirror_flows``, the mirror slice over getBilateralData. A Basic Individual key
 allows 500 calls per day. The probe and the list tasks spend none: the probe sends no key, and
 ``list_commodities`` and the checks of the packaged tables fetch the public reference
 files without it (four keyless requests).
@@ -176,3 +177,21 @@ async def test_get_bilateral_data_live() -> None:
     assert isinstance(row.mirror_primary_value, Decimal)
     assert row.primary_value > 0
     assert row.mirror_primary_value > 0
+
+
+async def test_get_mirror_flows_live() -> None:
+    result = await tasks.get_mirror_flows_async("CHE", "USA", "27", "2023", "X")
+    assert result.data.note, "upstream's data-gap note"
+    assert result.data.timestamp_requested is not None
+    assert result.data.timestamp_requested.tzinfo is not None
+    [row] = result.data.data
+    assert (row.reporter_code, row.partner_code, row.cmd_code, row.flow_code) == (
+        757,
+        842,
+        "27",
+        "X",
+    )
+    assert isinstance(row.mirror_primary_value, Decimal)
+    assert row.primary_value > 0
+    assert row.mirror_primary_value > 0
+    assert result.meta.total == 1
