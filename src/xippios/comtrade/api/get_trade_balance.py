@@ -10,8 +10,9 @@ imports) layout." The Help Center describes the matching UI tool, Trade Balance 
 
 - 2023 without ``breakdownMode``: 48 rows, every customs procedure and mode of transport
   (``ch_world_2023_include_desc.json``); with ``classic``: the total row alone, the same
-  row (``ch_world_2023_include_desc_breakdown_mode_classic.json``). Upstream's default is
-  ``plus``, as on ``data/v1/get``. ``includeDesc`` fills the ``*_iso``/``*_desc`` fields.
+  row (``ch_world_2023_include_desc_breakdown_mode_classic.json``). Upstream's default
+  gives every breakdown, not ``classic``'s total row; ``plus``, the spec's other value,
+  was not sent. ``includeDesc`` fills the ``*_iso``/``*_desc`` fields.
 - 1900: HTTP 200, ``count`` 0, no rows (``ch_world_1900_empty.json``).
 - 13 periods: HTTP 400 "Maximum number of periods is 12" (``ch_world_13_periods.json``),
   which ``_client.classify`` maps to ``InvalidRequestError``.
