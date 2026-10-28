@@ -2333,16 +2333,36 @@ async def test_public_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
     assert row["first_released"] == "2024-02-02T04:52:35.216666"
     assert share["meta"]["endpoint"] == "public/v1/getWorldShare"
     assert share["meta"]["published_at"] is None
-    everyone = await mcp_call(
-        server, "comtrade_get_world_share", {"type_code": "C", "freq_code": "A", "period": "2023"}
-    )
-    assert len(everyone["data"]) < 214
-    assert everyone["note"].startswith(f"showing {len(everyone['data'])} of 214 rows")
-    assert everyone["note"].endswith("narrow the query to see the rest")
     refused = await mcp_call_text(
         server, "comtrade_get_world_share", {**CH_WORLD_SHARE_2023, "reporter_code": "756"}
     )
     assert refused == f"error: UnknownCode: {REFUSED_756}"
+
+
+def test_world_share_has_a_cap_of_its_own() -> None:
+    """ADR-0016: one period for every reporter (214 rows, 88.5 KB) reaches an agent whole."""
+    cap = tasks.MCP_CAPS["get_world_share"]
+    assert (cap.max_rows, cap.max_bytes) == (400, 100_000)
+    assert cap.note is not None
+    assert "reporter_code" in cap.note
+    assert "period" in cap.note
+    assert "get_comtrade_releases" not in tasks.MCP_CAPS, "the calendar fits the default cap"
+
+
+@pytest.mark.anyio
+async def test_one_period_for_every_reporter_reaches_an_agent_whole(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """The default cap cut it at 157 rows, dropping the USA (842); the tool's own cap does not."""
+    replay_fixture("get_world_share", "all_reporters_2023", match_params=["period"])
+    text = await mcp_call_text(
+        server, "comtrade_get_world_share", {"type_code": "C", "freq_code": "A", "period": "2023"}
+    )
+    payload = json.loads(text)
+    assert "note" not in payload, "no cap note: nothing was cut"
+    assert len(payload["data"]) == payload["meta"]["total"] == 214
+    assert 842 in {row["reporter_code"] for row in payload["data"]}
+    assert len(text.encode()) <= tasks.MCP_CAPS["get_world_share"].max_bytes
 
 
 def test_public_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
