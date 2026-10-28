@@ -4,7 +4,10 @@ Fetches every list in ``LISTS`` and table in ``TABLES``, reads every list in
 ``SPEC_LISTS``, and only then writes each to ``reference/<name>.json`` with
 ``PackagedList.write`` (conventions §3, ADR-0022): the list's name, the upstream
 operation it came from, the UTC time of the fetch to the second, upstream's records under
-upstream's field names and a ``note`` with its provenance in words. A list's record holds
+upstream's field names and a ``note`` with its provenance in words. The time is the
+``retrieved_at`` the wrapper returns: a file the client's cache answers, as it answers
+``ListofReferences.json`` for the table after the ``clCode`` list fetched it, carries the
+time its entry was stored, when it was fetched (conventions §4). A list's record holds
 the value under the upstream parameter's name and, beside it, the fields upstream gives
 the value a text in (``text``; ``qtyAbbr`` and ``qtyDescription``; ``variable`` and
 ``description``), under upstream's names; a value without one is a record of one field.
@@ -89,50 +92,59 @@ FIXTURES = ROOT / "tests/fixtures/get"
 Records = list[dict[str, str]]
 """A list's records: the value under the parameter's name, upstream's text fields beside it."""
 
-Fetcher = Callable[[], Coroutine[Any, Any, Records]]
-"""An async fetcher of a list's records through ``api/``."""
+Fetcher = Callable[[], Coroutine[Any, Any, tuple[Records, datetime]]]
+"""An async fetcher of a list's records through ``api/``, with the file's ``retrieved_at``."""
 
 
-async def _rows[M: UpstreamModel](file: str, model: type[M]) -> list[M]:
-    """The rows of the reference file ``file`` as ``model``; an unknown key stops the script."""
+async def _rows[M: UpstreamModel](file: str, model: type[M]) -> tuple[list[M], datetime]:
+    """The rows of the reference file ``file`` as ``model`` and when the file was retrieved.
+
+    A key the model does not know stops the script.
+    """
     endpoint = f"{FILES}{file}"
+    answer = await api.reference_rows(file)
     rows: list[M] = []
-    for row in (await api.reference_rows(file)).rows:
+    for row in answer.rows:
         parsed = parse(model, row, source=SOURCE, endpoint=endpoint)
         unknown = sorted(set(row) - set(parsed.dump_upstream()))
         if unknown:
             raise SystemExit(f"{file}: keys {unknown} are not in {model.__name__}")
         rows.append(parsed)
-    return rows
+    return rows, answer.retrieved_at
 
 
-async def _coded(file: str, name: str) -> Records:
+async def _coded(file: str, name: str) -> tuple[Records, datetime]:
     """The ``id`` of each row of ``file`` under the name ``name``, with its ``text``."""
-    return [{name: row.id, "text": row.text} for row in await _rows(file, ReferenceCode)]
+    rows, retrieved_at = await _rows(file, ReferenceCode)
+    return [{name: row.id, "text": row.text} for row in rows], retrieved_at
 
 
-async def _cl_codes() -> Records:
+async def _cl_codes() -> tuple[Records, datetime]:
     prefix = "cmd:"
-    return [
+    references, retrieved_at = await _rows("ListofReferences.json", Reference)
+    records = [
         {
             "clCode": ref.category.removeprefix(prefix),
             "variable": ref.variable,
             "description": ref.description,
         }
-        for ref in await _rows("ListofReferences.json", Reference)
+        for ref in references
         if ref.category.startswith(prefix)
     ]
+    return records, retrieved_at
 
 
-async def _qty_codes() -> Records:
-    return [
+async def _qty_codes() -> tuple[Records, datetime]:
+    units, retrieved_at = await _rows("QuantityUnits.json", QuantityUnit)
+    records = [
         {
             "qtyUnitCode": str(unit.qty_code),
             "qtyAbbr": unit.qty_abbr,
             "qtyDescription": unit.qty_description,
         }
-        for unit in await _rows("QuantityUnits.json", QuantityUnit)
+        for unit in units
     ]
+    return records, retrieved_at
 
 
 LISTS: dict[str, tuple[str, str, Fetcher]] = {
@@ -404,12 +416,11 @@ def _value_list(
 def _list(name: str, spec: dict[str, Any]) -> PackagedList:
     """The reference-file list ``name``, fetched now and reconciled with the spec.
 
-    A value the reconciliation adds keeps its value alone, since the spec gives it no
-    text; one it removes takes its record with it.
+    ``fetched`` is the file's ``retrieved_at``. A value the reconciliation adds keeps its
+    value alone, since the spec gives it no text; one it removes takes its record with it.
     """
     file, what, fetch = LISTS[name]
-    records = sync(fetch)()
-    fetched = datetime.now(UTC)
+    records, fetched = sync(fetch)()
     note = f"{what}."
     if name in SUPPLEMENTS:
         values, exceptions = _reconcile(name, [record[name] for record in records], spec)
@@ -430,12 +441,15 @@ def _spec_list(name: str, spec: dict[str, Any], fetched: datetime) -> PackagedLi
 
 
 def _table(name: str) -> PackagedList:
-    """The table ``name``, fetched now: upstream's rows with the keys upstream sent."""
+    """The table ``name``, fetched now: upstream's rows with the keys upstream sent.
+
+    ``fetched`` is the file's ``retrieved_at``, the time its cache entry was stored where
+    the client's cache answered.
+    """
     file = TABLES[name]
     model = PACKAGED_TABLES[name]
     endpoint = f"{FILES}{file}"
-    rows = sync(api.reference_rows)(file).rows
-    fetched = datetime.now(UTC)
+    rows, fetched = sync(api.reference_rows)(file)
     records: list[dict[str, Any]] = []
     for row in rows:
         dumped = parse(model, row, source=SOURCE, endpoint=endpoint).dump_upstream()
