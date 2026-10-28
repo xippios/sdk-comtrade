@@ -22,7 +22,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any, NamedTuple
 
-from xippios.core import InvalidRequestError, PackagedList, UnknownCode, UpstreamModel
+from xippios.core import InvalidRequestError, PackagedList, UnknownCode, UpstreamModel, closest
 
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.errors import MAX_PERIODS
@@ -53,8 +53,10 @@ __all__ = [
     "SLICE_PINS",
     "classification_files",
     "validate_classification_file",
+    "validate_code_list",
     "validate_datasets",
     "validate_get",
+    "validate_reference_category",
     "validate_slice",
 ]
 
@@ -105,6 +107,13 @@ def _rows[M: UpstreamModel](name: str, model: type[M]) -> list[M]:
 def _allowed(name: str) -> tuple[str, ...]:
     """The values of the packaged list ``name``, in upstream order."""
     return tuple(str(record[name]) for record in PackagedList.load(PACKAGE, name).records)
+
+
+@functools.cache
+def _texts(name: str) -> dict[str, str]:
+    """The values of the packaged list ``name`` that carry upstream's ``text``, to their text."""
+    records = PackagedList.load(PACKAGE, name).records
+    return {str(record[name]): record["text"] for record in records if "text" in record}
 
 
 _AREA = re.compile(r"\d+")
@@ -171,6 +180,21 @@ _UNKNOWN_DIMENSION = (
 """``UnknownCode``'s reason for a member of a ``_DIMENSIONS`` list."""
 
 
+def _closest_texts(member: str, upstream: str) -> list[tuple[str, str]]:
+    """The codes of ``upstream`` close to ``member``, with upstream's text, best first.
+
+    Core's ``closest``, by code and then by text (``"air"`` finds ``1000`` Air); where it
+    finds none, the one most similar code, as for an unknown area (``"9"`` finds
+    ``9900``).
+    """
+    texts = _texts(upstream)
+    near = closest(member, texts)
+    if near:
+        return near
+    code = _closest(member, list(texts))
+    return [(code, texts[code])] if code else []
+
+
 def _check_list(
     argument: str,
     value: str | None,
@@ -195,9 +219,8 @@ def _check_list(
                 member,
                 list_name=upstream,
                 fetched=PackagedList.load(PACKAGE, upstream).fetched,
-                hint=(f"Did you mean {closest!r}? " if closest else "")
-                + f"Valid values: {', '.join(allowed)}.",
-                reason=f"{_UNKNOWN_DIMENSION} reference/{upstream}.json lists every code.",
+                closest=_closest_texts(member, upstream),
+                reason=f"{_UNKNOWN_DIMENSION} list_codes({upstream!r}) lists every code.",
                 source=SOURCE,
             )
         hint = f"; closest: {closest!r}" if closest else ""
@@ -511,6 +534,51 @@ def validate_classification_file(cl_code: str) -> dict[str, Any]:
             source=SOURCE,
         )
     return {"cl_code": cl_code}
+
+
+def validate_code_list(param: str) -> dict[str, Any]:
+    """Check that ``param`` names a packaged list before it is read.
+
+    Returns:
+        ``{"param": param}``, the arguments under the task's parameter names.
+
+    Raises:
+        InvalidRequestError: Naming the closest list and every one the package carries.
+    """
+    if param not in PACKAGED_LISTS:
+        near = _closest(param, list(PACKAGED_LISTS))
+        hint = f"; closest: {near!r}" if near else ""
+        raise InvalidRequestError(
+            f"param {param!r} is not a list the package carries{hint}. "
+            f"Valid values: {', '.join(PACKAGED_LISTS)}.",
+            source=SOURCE,
+        )
+    return {"param": param}
+
+
+def validate_reference_category(category: str | None) -> dict[str, Any]:
+    """Check that ``category`` is a category of the packaged ``ListofReferences.json``.
+
+    Returns:
+        ``{"category": category}``, or ``{}`` for ``None``, which keeps every row.
+
+    Raises:
+        InvalidRequestError: Naming the closest category and every one the index holds.
+    """
+    if category is None:
+        return {}
+    categories = [
+        str(record["category"]) for record in PackagedList.load(PACKAGE, "ListofReferences").records
+    ]
+    if category not in categories:
+        near = _closest(category, categories)
+        hint = f"; closest: {near!r}" if near else ""
+        raise InvalidRequestError(
+            f"category {category!r} is not a category of UN Comtrade's "
+            f"ListofReferences.json{hint}. Valid values: {', '.join(categories)}.",
+            source=SOURCE,
+        )
+    return {"category": category}
 
 
 SLICE_PINS: Mapping[str, Any] = {
