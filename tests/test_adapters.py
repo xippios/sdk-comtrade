@@ -44,29 +44,3 @@ async def test_http_routes_are_the_tasks_with_the_right_methods() -> None:
     for name, fn in TASKS.items():
         scalar_only = all(is_scalar(annotation) for annotation in _parameters(fn).values())
         assert routes[f"/{SOURCE}/{name}"].methods == ({"GET"} if scalar_only else {"POST"}), name
-
-
-async def test_every_task_is_exposed_without_touching_the_adapters() -> None:
-    """Each task reaches MCP and HTTP through tasks.__all__ alone; the adapters are generic."""
-    from pathlib import Path
-
-    import xippios.comtrade as package
-
-    assert set(TASKS) == {
-        "get_bilateral_flows", "get_commodity_series", "get_counts", "get_data",
-        "get_data_availability", "get_live_update", "get_metadata", "get_top_partners",
-        "get_world_trade", "list_commodities", "list_partners", "list_reporters",
-    }  # fmt: skip
-    assert len(TASKS) == 12
-    tools = {tool.name for tool in await server.list_tools()}
-    routes = {route.path: route.methods for route in router.routes if isinstance(route, APIRoute)}
-    package_dir = Path(package.__file__ or "").parent
-    sources = {
-        adapter: (package_dir / adapter).read_text(encoding="utf-8")
-        for adapter in ("mcp.py", "http.py")
-    }
-    for name in TASKS:
-        assert f"comtrade_{name}" in tools, name
-        assert routes[f"/comtrade/{name}"] == {"GET"}, name
-        for adapter, source in sources.items():
-            assert name not in source, f"{adapter} names {name}"

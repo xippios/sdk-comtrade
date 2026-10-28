@@ -117,6 +117,18 @@ def test_every_parameter_is_explained(task: object) -> None:
         assert f"    {name}: " in doc, name
 
 
+def test_the_adapters_name_no_task() -> None:
+    """mcp.py and http.py name no task (ADR-0001); the family check covers registration."""
+    package_dir = Path(tasks.__file__).parent
+    sources = {
+        adapter: (package_dir / adapter).read_text(encoding="utf-8")
+        for adapter in ("mcp.py", "http.py")
+    }
+    for name in tasks.__all__:
+        for adapter, source in sources.items():
+            assert name not in source, f"{adapter} names {name}"
+
+
 # Switzerland (reporter 757 in Reporters.json) exports to the World in 2023, all products.
 CH_EXPORTS_2023: dict[str, Any] = {
     "type_code": "C",
