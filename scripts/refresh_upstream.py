@@ -136,7 +136,8 @@ ATTRIBUTION: tuple[Statement, ...] = (
     Statement(
         "The United Nations copyright UN Comtrade data. UN Comtrade data are provided for "
         "internal use only and may not be re-disseminated in any form without "
-        "UNSD\N{RIGHT SINGLE QUOTATION MARK}s permission.",
+        "UNSD\N{RIGHT SINGLE QUOTATION MARK}s permission. The exemption (e.g., a small "
+        "amount of data) is explained in the section on re-dissemination.",
         'under "Copyright Statement and Citation" in the Policy on Comtrade Data Use',
         POLICY,
         terms_page=True,
