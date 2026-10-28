@@ -1,0 +1,38 @@
+# Nightly live smoke tests (conventions §10): every test marked `live` against the real
+# upstream, on a schedule and on demand, never on a pull request.
+# Rendered by the template (the one workflow that is): the secret it names is the source's
+# key variable, and its start time derives from the slug.
+name: Live
+
+on:
+  schedule:
+    # 05:31 UTC, staggered from the slug (live_schedule in sdk-template's copier.yml)
+    # so that sources sharing a key do not start together.
+    - cron: "31 5 * * *"
+  workflow_dispatch:
+
+# Hardened as every workflow of the family (conventions §13): the actions pinned to the
+# commits ci.yml pins, the checkout keeps no credentials, the token reads only.
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: live
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras --frozen
+      # --tb=short: a failing test's frame arguments, a raw upstream payload among them,
+      # stay out of a log that is public (conventions §10).
+      - run: uv run pytest -m live --tb=short
+        # The key, from the org secret, for this step only: checkout, setup-uv and uv sync
+        # never see it.
+        env:
+          XIPPIOS_LIVE_TESTS: "1"
+          COMTRADE_API_KEY: ${{ secrets.COMTRADE_API_KEY }}

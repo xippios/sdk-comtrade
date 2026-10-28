@@ -1,15 +1,19 @@
 # Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
-_commit: v0.1.5
+_commit: v0.3.0
 _src_path: https://github.com/xippios/sdk-template.git
 api_base_url: https://comtradeapi.un.org
 api_key_env: COMTRADE_API_KEY
 api_key_location: header
 api_key_name: Ocp-Apim-Subscription-Key
 core_git_ref: ''
-domain_topic: international-trade
+core_version: 0.3.0
+gateway: none
+has_files: false
 import_path: comtrade
-needs_write_tools: false
+rate_limit_burst: 1
 rate_limit_per_minute: 40
+rate_limit_provenance: documented
+source_dependencies: '[]'
 source_name: UN Comtrade
 source_slug: comtrade
 upstream_docs_url: https://comtradeplus.un.org/ApiDocs

@@ -1,31 +1,44 @@
 {
   "param": "flowCode",
+  "endpoint": "files/v1/app/reference/tradeRegimes.json",
   "fetched": "2026-10-23",
-  "origin": "https://comtradeapi.un.org/files/v1/app/reference/tradeRegimes.json, reconciled with docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description (see exceptions)",
-  "exceptions": [
+  "note": "The ids of tradeRegimes.json, reconciled with docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description. MIF added: listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_mif.json, HTTP 200). XIF added: listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_xif.json, HTTP 200).",
+  "records": [
     {
-      "value": "MIF",
-      "decision": "added",
-      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_mif.json, HTTP 200)"
+      "flowCode": "M"
     },
     {
-      "value": "XIF",
-      "decision": "added",
-      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter flowCode, description; upstream accepted it (tests/fixtures/get/count_flow_code_xif.json, HTTP 200)"
+      "flowCode": "X"
+    },
+    {
+      "flowCode": "DX"
+    },
+    {
+      "flowCode": "FM"
+    },
+    {
+      "flowCode": "MIP"
+    },
+    {
+      "flowCode": "MOP"
+    },
+    {
+      "flowCode": "RM"
+    },
+    {
+      "flowCode": "RX"
+    },
+    {
+      "flowCode": "XIP"
+    },
+    {
+      "flowCode": "XOP"
+    },
+    {
+      "flowCode": "MIF"
+    },
+    {
+      "flowCode": "XIF"
     }
-  ],
-  "values": [
-    "M",
-    "X",
-    "DX",
-    "FM",
-    "MIP",
-    "MOP",
-    "RM",
-    "RX",
-    "XIP",
-    "XOP",
-    "MIF",
-    "XIF"
   ]
 }

@@ -7,7 +7,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 authors = [{ name = "XIPPIOS GmbH" }]
-keywords = ["sdk", "comtrade", "international-trade", "mcp", "httpx", "pydantic"]
+keywords = ["sdk", "comtrade", "mcp", "httpx", "pydantic"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
@@ -18,13 +18,13 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "xippios-core>=0.1.0",
+  "xippios-core~=0.3.0",
 ]
 
 [project.optional-dependencies]
-mcp = ["xippios-core[mcp]>=0.1.0"]
-http = ["xippios-core[http]>=0.1.0"]
-testing = ["xippios-core[testing]>=0.1.0"]
+mcp = ["xippios-core[mcp]~=0.3.0"]
+http = ["xippios-core[http]~=0.3.0"]
+testing = ["xippios-core[testing]~=0.3.0"]
 
 [project.scripts]
 xippios-comtrade-mcp = "xippios.comtrade.mcp:run"
@@ -36,14 +36,18 @@ Changelog = "https://github.com/xippios/sdk-comtrade/blob/main/CHANGELOG.md"
 Issues = "https://github.com/xippios/sdk-comtrade/issues"
 
 [dependency-groups]
+# ruff is pinned to the rev of the ruff-pre-commit hook in .pre-commit-config.yaml, so a new
+# lock does not drift from the hook; the two move together.
 dev = [
-  "ruff>=0.14",
+  "ruff==0.17.1",
   "mypy>=1.18",
   "pre-commit>=4",
   "pytest>=8",
   "respx>=0.22",
   "anyio>=4",
   "detect-secrets>=1.5",
+  "markdownify==1.2.3",
+  "beautifulsoup4==4.15.0",
 ]
 
 [build-system]
@@ -54,7 +58,9 @@ build-backend = "hatchling.build"
 packages = ["src/xippios"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE"]
+# Anchored: hatch reads gitignore-style patterns, so a bare README.md would match a
+# README.md in any directory. The sdist ships no tests; they live in the repository.
+include = ["/src", "/docs", "/README.md", "/CHANGELOG.md", "/LICENSE"]
 
 [tool.ruff]
 line-length = 100
@@ -87,7 +93,7 @@ quote-style = "double"
 strict = true
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 mypy_path = "src"
 namespace_packages = true
 explicit_package_bases = true
@@ -96,3 +102,7 @@ warn_unreachable = true
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers --import-mode=importlib"
 testpaths = ["tests"]
+# record_property, in a live test say, warns under xunit2 when a run writes --junitxml.
+junit_family = "xunit1"
+# Core's plugin sets it to the placeholder key in every test not marked live (ADR-0013).
+xippios_placeholder_key_envs = ["COMTRADE_API_KEY"]

@@ -1,6 +1,6 @@
 # Conventions §11: ruff, mypy --strict and detect-secrets. Nothing else.
-# Mirrors sdk-core, plus: .copier-answers.yml is excluded from secret detection because
-# it names the key's environment variable (never a key value) and trips the keyword check.
+# .copier-answers.yml is excluded from secret detection: in a generated repository it names
+# the key's environment variable (never a key value) and trips the keyword check.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.1

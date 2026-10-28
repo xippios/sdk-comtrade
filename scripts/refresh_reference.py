@@ -1,10 +1,14 @@
 """Refresh the packaged reference data from upstream (``/refresh-reference-data``).
 
-Writes ``reference/<name>.json`` for every list in ``LISTS`` and ``SPEC_LISTS`` (values,
-fetch date, origin), then regenerates ``enums.py`` with one ``StrEnum`` per list through
-``xippios.core.reference.render_str_enums``. Names are the upstream parameter names.
-Writes ``reference/<name>.csv`` for every table in ``TABLES`` and their origin and fetch
-date to ``reference/tables.json``.
+Fetches every list in ``LISTS`` and table in ``TABLES``, reads every list in
+``SPEC_LISTS``, and only then writes each to ``reference/<name>.json`` with
+``PackagedList.write`` (conventions §3, ADR-0022): the list's name, the upstream
+operation it came from, the UTC time of the fetch to the second, upstream's records under
+upstream's field names and a ``note`` with its provenance in words. A value list is
+records of one field named by the upstream parameter. Then ``enums.py`` is regenerated
+from the packaged files by one ``xippios.core.reference.render_enums`` call, one
+``StrEnum`` per value list, each class naming the day its list was fetched, and formatted
+with ``ruff format`` and ``ruff check --fix``, as it is committed (ADR-0008).
 
 - ``LISTS`` come from UN Comtrade's public reference files, fetched through the layer-1
   wrapper ``api.reference`` (no key needed or sent): the codes of ``tradeRegimes.json``,
@@ -15,66 +19,73 @@ date to ``reference/tables.json``.
   ``Reporters.json``, ``partnerAreas.json``, ``TradeDataItems.json`` and
   ``country_area_code_iso.json``. The last is not in ``ListofReferences.json``; it is the
   table the official ``comtradeapicall`` package (1.3.2, ``convertCountryIso3ToCode``)
-  reads to map ISO alpha-3 codes to UN Comtrade's. Each is written as CSV, one column per
-  upstream key under its upstream name, in the row model's order (``params.PACKAGED_TABLES``);
-  a key the model does not know, or an empty value (which the CSV could not tell from an
-  absent key), stops the script. None of them has nested fields, so none stays JSON.
+  reads to map ISO alpha-3 codes to UN Comtrade's. Each row is parsed with its row model
+  (``params.PACKAGED_TABLES``) and written by ``dump_upstream``, with the keys upstream
+  sent and no other: a key upstream leaves out of a row stays out, and a key the model
+  does not know stops the script.
 - ``SUPPLEMENTS`` reconcile two of those with the spec, where the two disagree. The
   values the spec documents for ``flowCode`` are all added (``MIF`` and ``XIF`` are
   missing from ``tradeRegimes.json``). For ``clCode``, a value of the spec's enum is added
   only when a recorded answer shows upstream accepting it, and any value a recorded
-  answer shows refused is left out. ``EVIDENCE`` names those recordings, and each
-  exception is written into the list's file with its evidence.
+  answer shows refused is left out. ``EVIDENCE`` names those recordings, and the list's
+  ``note`` names each exception, one sentence per value: the decision and the evidence.
 - ``SPEC_LISTS`` have no reference file. They are read from the snapshot of the spec,
   ``docs/upstream/apidocs/comtrade.json``, operation ``get``: the ``typeCode``,
   ``freqCode`` and ``breakdownMode`` enums and the names ``aggregateBy``'s description
-  lists. The fetch date is the snapshot's, from ``docs/upstream/FETCHED.md``.
+  lists. Their ``endpoint`` is the URL path upstream serves the spec at, their
+  ``fetched`` the snapshot's, from ``docs/upstream/FETCHED.md``.
 
-Each enum's docstring carries its list's ``fetched`` date. Run from the repository root;
-no API key is needed. ``render_str_enums`` writes ``__all__`` on one line, so format the
-result with ruff::
+Run from the repository root; no API key is needed::
 
     uv run python scripts/refresh_reference.py
-    uv run ruff format src/xippios/comtrade/enums.py
+
+``--render-only`` regenerates ``enums.py`` from the packaged ``reference/*.json`` alone,
+without a request: after a core release changes the renderer (conventions §15, item 6),
+it changes ``enums.py`` and nothing else.
 """
 
 import argparse
-import csv
-import io
 import json
 import re
-import textwrap
-from collections.abc import Awaitable, Callable, Sequence
-from datetime import UTC, datetime
+import subprocess
+import sys
+from collections.abc import Callable, Coroutine, Sequence
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Any
 
-from xippios.core import UpstreamModel, parse, sync
-from xippios.core.reference import render_str_enums
+from xippios.core import PackagedList, parse, sync
+from xippios.core.reference import render_enums
 
 from xippios.comtrade import api
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.models import QuantityUnit, Reference, ReferenceCode
-from xippios.comtrade.params import PACKAGED_LISTS, PACKAGED_TABLES, TABLES_INDEX
+from xippios.comtrade.params import PACKAGED_LISTS, PACKAGED_TABLES
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_DIR = ROOT / "src/xippios/comtrade"
 REFERENCE = PACKAGE_DIR / "reference"
 ENUMS = PACKAGE_DIR / "enums.py"
+GENERATOR = "scripts/refresh_reference.py"
 SPEC = ROOT / "docs/upstream/apidocs/comtrade.json"
 SPEC_NAME = "apidocs/comtrade.json"
+SPEC_ENDPOINT = "files/v1/app/apim/comtrade.json"
+"""The URL path upstream serves the spec at: ``endpoint`` of the lists read from it."""
 FETCHED = ROOT / "docs/upstream/FETCHED.md"
-FILES = "https://comtradeapi.un.org/files/v1/app/reference/"
+FILES = "files/v1/app/reference/"
 OPERATION = "/get/{typeCode}/{freqCode}/{clCode}"
 FIXTURES = ROOT / "tests/fixtures/get"
 
+Values = Callable[[], Coroutine[Any, Any, list[str]]]
+"""An async fetcher of a list's values through ``api/``."""
+
 
 async def _codes(name: str) -> list[str]:
-    return [entry.id for entry in await api.reference(name, ReferenceCode)]
+    return [entry.id for entry in (await api.reference(name, ReferenceCode)).rows]
 
 
 async def _cl_codes() -> list[str]:
-    references = await api.reference("ListofReferences.json", Reference)
+    references = (await api.reference("ListofReferences.json", Reference)).rows
     prefix = "cmd:"
     return [
         ref.category.removeprefix(prefix) for ref in references if ref.category.startswith(prefix)
@@ -82,32 +93,51 @@ async def _cl_codes() -> list[str]:
 
 
 async def _qty_codes() -> list[str]:
-    return [str(unit.qty_code) for unit in await api.reference("QuantityUnits.json", QuantityUnit)]
+    units = (await api.reference("QuantityUnits.json", QuantityUnit)).rows
+    return [str(unit.qty_code) for unit in units]
 
 
-LISTS: dict[str, tuple[str, Callable[[], Awaitable[list[str]]]]] = {
+LISTS: dict[str, tuple[str, str, Values]] = {
     "clCode": (
-        f"{FILES}ListofReferences.json, the cmd:<clCode> categories",
+        "ListofReferences.json",
+        "The cmd:<clCode> categories of ListofReferences.json",
         _cl_codes,
     ),
-    "flowCode": (f"{FILES}tradeRegimes.json", lambda: _codes("tradeRegimes.json")),
-    "customsCode": (f"{FILES}CustomsCodes.json", lambda: _codes("CustomsCodes.json")),
-    "motCode": (f"{FILES}ModeOfTransportCodes.json", lambda: _codes("ModeOfTransportCodes.json")),
-    "mosCode": (f"{FILES}ModeOfSupply.json", lambda: _codes("ModeOfSupply.json")),
-    "qtyUnitCode": (f"{FILES}QuantityUnits.json, the qtyCode values", _qty_codes),
-}
-"""Lists from reference files: name to (origin, fetcher through ``api/``)."""
-
-NOTES: dict[str, str] = {
+    "flowCode": (
+        "tradeRegimes.json",
+        "The ids of tradeRegimes.json",
+        lambda: _codes("tradeRegimes.json"),
+    ),
+    "customsCode": (
+        "CustomsCodes.json",
+        "The ids of CustomsCodes.json",
+        lambda: _codes("CustomsCodes.json"),
+    ),
+    "motCode": (
+        "ModeOfTransportCodes.json",
+        "The ids of ModeOfTransportCodes.json",
+        lambda: _codes("ModeOfTransportCodes.json"),
+    ),
     "mosCode": (
+        "ModeOfSupply.json",
         "The ids of ModeOfSupply.json, not proven parameter values: data/v1/get, which "
         "takes mosCode though the spec does not list it, refused 'Mode 1' (HTTP 400, "
         "tests/fixtures/get/count_services_eb10_mos_code_mode_1.json) and accepted '0' and "
         "'1' (count_services_eb10_mos_code_0.json, count_services_eb10_mos_code_1.json). "
-        "mosCode is not a parameter of the tasks; trade rows carry it as mos_code."
+        "mosCode is not a parameter of the tasks; trade rows carry it as mos_code",
+        lambda: _codes("ModeOfSupply.json"),
+    ),
+    "qtyUnitCode": (
+        "QuantityUnits.json",
+        "The qtyCode values of QuantityUnits.json, the codes qtyUnitCode and altQtyUnitCode "
+        "carry on trade rows",
+        _qty_codes,
     ),
 }
-"""What a list is and is not, written into its file and its enum's docstring."""
+"""Lists from reference files: name to (the file, what the list is, fetcher through ``api/``).
+
+What the list is opens its packaged file's ``note``.
+"""
 
 TABLES: dict[str, str] = {
     "Reporters": "Reporters.json",
@@ -115,7 +145,15 @@ TABLES: dict[str, str] = {
     "country_area_code_iso": "country_area_code_iso.json",
     "TradeDataItems": "TradeDataItems.json",
 }
-"""Tables from reference files: name of the packaged CSV (``params.PACKAGED_TABLES``) to file."""
+"""Tables from reference files: name of the packaged list (``params.PACKAGED_TABLES``) to file."""
+
+TABLE_NOTES: dict[str, str] = {
+    "country_area_code_iso": (
+        "Not in ListofReferences.json: the table the official comtradeapicall package "
+        "(1.3.2, convertCountryIso3ToCode) reads to map ISO alpha-3 codes to UN Comtrade's."
+    ),
+}
+"""A table's provenance in words, where its file alone does not say it."""
 
 
 def _parameter(spec: dict[str, Any], name: str) -> dict[str, Any]:
@@ -138,15 +176,12 @@ def _aggregate_by(spec: dict[str, Any]) -> list[str]:
 
 
 SPEC_LISTS: dict[str, tuple[str, Callable[[dict[str, Any]], list[str]]]] = {
-    "typeCode": (f"{SPEC_NAME}, get, typeCode enum", lambda spec: _enum(spec, "typeCode")),
-    "freqCode": (f"{SPEC_NAME}, get, freqCode enum", lambda spec: _enum(spec, "freqCode")),
-    "breakdownMode": (
-        f"{SPEC_NAME}, get, breakdownMode enum",
-        lambda spec: _enum(spec, "breakdownMode"),
-    ),
-    "aggregateBy": (f"{SPEC_NAME}, get, aggregateBy description", _aggregate_by),
+    "typeCode": ("the typeCode enum", lambda spec: _enum(spec, "typeCode")),
+    "freqCode": ("the freqCode enum", lambda spec: _enum(spec, "freqCode")),
+    "breakdownMode": ("the breakdownMode enum", lambda spec: _enum(spec, "breakdownMode")),
+    "aggregateBy": ("the names the aggregateBy description lists", _aggregate_by),
 }
-"""Lists from the spec snapshot: name to (origin, reader)."""
+"""Lists from the spec snapshot, operation ``get``: name to (what was read, reader)."""
 
 
 def _flow_codes(spec: dict[str, Any]) -> list[str]:
@@ -231,13 +266,15 @@ def _verdict(name: str, value: str) -> tuple[str, str] | None:
     return outcome, cited
 
 
-def _reconcile(
-    name: str, base: list[str], spec: dict[str, Any]
-) -> tuple[list[str], list[dict[str, str]]]:
-    """``base`` with the spec's extra values added or left out, and refused ones removed."""
+def _reconcile(name: str, base: list[str], spec: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """``base`` with the spec's extra values added or left out, refused ones removed.
+
+    Returns the values and one sentence per exception, ``"<value> <decision>: <evidence>."``,
+    the decision ``added``, ``left out``, ``removed`` or ``kept``.
+    """
     origin, read, add_unexercised = SUPPLEMENTS[name]
     values = list(base)
-    exceptions: list[dict[str, str]] = []
+    exceptions: list[str] = []
     for value in read(spec):
         if value in base:
             continue
@@ -246,13 +283,8 @@ def _reconcile(
         if accepted:
             values.append(value)
         seen = f"upstream {verdict[0]} ({verdict[1]})" if verdict else "not tried upstream"
-        exceptions.append(
-            {
-                "value": value,
-                "decision": "added" if accepted else "left out",
-                "evidence": f"listed in {origin}; {seen}",
-            }
-        )
+        decision = "added" if accepted else "left out"
+        exceptions.append(f"{value} {decision}: listed in {origin}; {seen}.")
     for value in base:
         verdict = _verdict(name, value)
         if verdict is None:
@@ -260,83 +292,131 @@ def _reconcile(
         refused = verdict[0] == "refused it"
         if refused:
             values.remove(value)
+        decision = "removed" if refused else "kept"
         exceptions.append(
-            {
-                "value": value,
-                "decision": "removed" if refused else "kept",
-                "evidence": f"in the reference file; upstream {verdict[0]} ({verdict[1]})",
-            }
+            f"{value} {decision}: in the reference file; upstream {verdict[0]} ({verdict[1]})."
         )
     return values, exceptions
 
 
-def _snapshot_date() -> str:
+def _snapshot_fetched() -> datetime:
+    """When the spec snapshot was fetched, from its row in ``docs/upstream/FETCHED.md``.
+
+    A bare date, as the snapshot of 2026-10-23 records it, reads as 00:00 UTC of that day.
+    """
     match = re.search(
-        rf"^\| {re.escape(SPEC_NAME)} \| \S+ \| (\d{{4}}-\d{{2}}-\d{{2}}) \|",
+        rf"^\| {re.escape(SPEC_NAME)} \| \S+ \| (\d{{4}}-\d{{2}}-\d{{2}}(?:T[0-9:]+Z)?) \|",
         FETCHED.read_text(encoding="utf-8"),
         re.MULTILINE,
     )
     if match is None:
         raise SystemExit(f"{FETCHED} has no row for {SPEC_NAME}")
-    return match.group(1)
+    text = match.group(1)
+    if "T" in text:
+        return datetime.fromisoformat(text).astimezone(UTC)
+    return datetime.combine(date.fromisoformat(text), time(), UTC)
 
 
-def _write(
-    name: str,
-    fetched: str,
-    origin: str,
-    values: list[str],
-    exceptions: list[dict[str, str]] | None = None,
-) -> None:
-    payload: dict[str, Any] = {"param": name, "fetched": fetched, "origin": origin}
-    if name in NOTES:
-        payload["note"] = NOTES[name]
-    if exceptions:
-        payload["exceptions"] = exceptions
-    payload["values"] = values
-    path = REFERENCE / f"{name}.json"
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(f"{path.name}: {len(values)} values from {origin}")  # noqa: T201
-    for exception in exceptions or []:
-        print(f"  {exception['value']}: {exception['decision']}, {exception['evidence']}")  # noqa: T201
+def _value_list(
+    name: str, endpoint: str, fetched: datetime, note: str, values: list[str]
+) -> PackagedList:
+    return PackagedList(
+        param=name,
+        endpoint=endpoint,
+        fetched=fetched,
+        note=note,
+        records=[{name: value} for value in values],
+    )
 
 
-def _columns(model: type[UpstreamModel]) -> list[str]:
-    """The upstream keys of a row model, in field order."""
-    return [
-        field.validation_alias if isinstance(field.validation_alias, str) else name
-        for name, field in model.model_fields.items()
-    ]
+def _list(name: str, spec: dict[str, Any]) -> PackagedList:
+    """The reference-file list ``name``, fetched now and reconciled with the spec."""
+    file, what, fetch = LISTS[name]
+    values = sync(fetch)()
+    fetched = datetime.now(UTC)
+    note = f"{what}."
+    if name in SUPPLEMENTS:
+        values, exceptions = _reconcile(name, values, spec)
+        note = f"{what}, reconciled with {SUPPLEMENTS[name][0]}. {' '.join(exceptions)}"
+    return _value_list(name, f"{FILES}{file}", fetched, note.rstrip(), values)
 
 
-def _cell(value: object) -> str:
-    return value if isinstance(value, str) else json.dumps(value)
+def _spec_list(name: str, spec: dict[str, Any], fetched: datetime) -> PackagedList:
+    """The list ``name`` as the spec snapshot documents it."""
+    what, read = SPEC_LISTS[name]
+    note = (
+        f"Read from docs/upstream/{SPEC_NAME}, the snapshot of {SPEC_ENDPOINT} fetched "
+        f"{fetched:%Y-%m-%d}: operation get, {what}."
+    )
+    return _value_list(name, SPEC_ENDPOINT, fetched, note, read(spec))
 
 
-def _write_table(name: str, file: str, today: str) -> dict[str, Any]:
+def _table(name: str) -> PackagedList:
+    """The table ``name``, fetched now: upstream's rows with the keys upstream sent."""
+    file = TABLES[name]
     model = PACKAGED_TABLES[name]
-    origin = f"{FILES}{file}"
-    rows = sync(api.reference_rows)(file)
-    columns = _columns(model)
+    endpoint = f"{FILES}{file}"
+    rows = sync(api.reference_rows)(file).rows
+    fetched = datetime.now(UTC)
+    records: list[dict[str, Any]] = []
     for row in rows:
-        unknown = sorted(set(row) - set(columns))
+        dumped = parse(model, row, source=SOURCE, endpoint=endpoint).dump_upstream()
+        unknown = sorted(set(row) - set(dumped))
         if unknown:
-            raise SystemExit(f"{file}: columns {unknown} are not in {model.__name__}")
-        if any(value in ("", None) for value in row.values()):
-            raise SystemExit(f"{file}: an empty value cannot be told from an absent key: {row}")
-        parse(model, row, source=SOURCE, endpoint=f"files/v1/app/reference/{file}")
-    buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=columns, lineterminator="\n")
-    writer.writeheader()
-    writer.writerows({key: _cell(value) for key, value in row.items()} for row in rows)
-    path = REFERENCE / f"{name}.csv"
-    path.write_text(buffer.getvalue(), encoding="utf-8")
-    print(f"{path.name}: {len(rows)} rows from {origin}")  # noqa: T201
-    return {"file": path.name, "origin": origin, "fetched": today, "rows": len(rows)}
+            raise SystemExit(f"{file}: keys {unknown} are not in {model.__name__}")
+        records.append({key: value for key, value in dumped.items() if key in row})
+    return PackagedList(
+        param=name, endpoint=endpoint, fetched=fetched, note=TABLE_NOTES.get(name), records=records
+    )
+
+
+def read(name: str) -> PackagedList:
+    """The packaged ``reference/<name>.json``, read from the file as it is now."""
+    path = REFERENCE / f"{name}.json"
+    if not path.is_file():
+        raise SystemExit(f"{path.name} is not packaged yet: run the script without --render-only")
+    return PackagedList.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def render() -> None:
+    """Regenerate ``enums.py`` from the packaged value lists and format it as committed."""
+    lists: dict[str, Sequence[str]] = {}
+    fetched: dict[str, str] = {}
+    # Classes in the order of their names, as enums.py has always listed them.
+    class_names = {name: name[0].upper() + name[1:] for name in PACKAGED_LISTS}
+    for name in sorted(PACKAGED_LISTS, key=class_names.__getitem__):
+        packaged = read(name)
+        lists[name] = [str(record[name]) for record in packaged.records]
+        fetched[name] = f"{packaged.fetched:%Y-%m-%d}"
+    module = render_enums(lists, fetched=fetched, class_names=class_names, generator=GENERATOR)
+    ENUMS.write_text(module, encoding="utf-8")
+    sys.stdout.flush()
+    for command in (["format"], ["check", "--fix"]):
+        run = subprocess.run([sys.executable, "-m", "ruff", *command, str(ENUMS)], cwd=ROOT)
+        if run.returncode:
+            raise SystemExit(f"ruff {' '.join(command)} left {ENUMS.name} failing")
+    print(f"{ENUMS.name}: {len(lists)} enums")  # noqa: T201
+
+
+def refresh() -> None:
+    """Fetch every list and table, then write their files, then regenerate ``enums.py``."""
+    spec = json.loads(SPEC.read_text(encoding="utf-8"))
+    snapshot = _snapshot_fetched()
+    packaged = [
+        *(_list(name, spec) for name in LISTS),
+        *(_spec_list(name, spec, snapshot) for name in SPEC_LISTS),
+        *(_table(name) for name in TABLES),
+    ]
+    REFERENCE.mkdir(exist_ok=True)
+    for fetched in packaged:
+        path = REFERENCE / f"{fetched.param}.json"
+        fetched.write(path)
+        print(f"{path.name}: {len(fetched.records)} records from {fetched.endpoint}")  # noqa: T201
+    render()
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """The command line: no options besides ``--help``, which exits before any fetch."""
+    """The command line: ``--render-only``; ``--help`` exits before any fetch."""
     summary, _, details = (__doc__ or "").partition("\n\n")
     parser = argparse.ArgumentParser(
         prog="refresh_reference.py",
@@ -344,57 +424,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         epilog=details,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument(
+        "--render-only",
+        action="store_true",
+        help="regenerate enums.py from the packaged reference/*.json, without a request",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """Fetch and derive every list and table, write their files and regenerate ``enums.py``."""
-    parse_args(argv)
+    """Refresh from upstream, or with ``--render-only`` regenerate ``enums.py`` alone."""
+    args = parse_args(argv)
     names = [*LISTS, *SPEC_LISTS]
     if sorted(names) != sorted(PACKAGED_LISTS):
         raise SystemExit(f"params.PACKAGED_LISTS {PACKAGED_LISTS} does not match {names}")
     if sorted(TABLES) != sorted(PACKAGED_TABLES):
         raise SystemExit(f"params.PACKAGED_TABLES {list(PACKAGED_TABLES)} does not match {TABLES}")
-    today = datetime.now(UTC).date().isoformat()
-    spec = json.loads(SPEC.read_text(encoding="utf-8"))
-    snapshot = _snapshot_date()
-    REFERENCE.mkdir(exist_ok=True)
-    lists: dict[str, list[str]] = {}
-    dates: dict[str, str] = {}
-    for name, (origin, fetch) in LISTS.items():
-        values = sync(fetch)()
-        exceptions: list[dict[str, str]] = []
-        if name in SUPPLEMENTS:
-            values, exceptions = _reconcile(name, values, spec)
-            origin += f", reconciled with {SUPPLEMENTS[name][0]} (see exceptions)"
-        lists[name], dates[name] = values, today
-        _write(name, today, origin, values, exceptions)
-    for name, (origin, read) in SPEC_LISTS.items():
-        lists[name], dates[name] = read(spec), snapshot
-        _write(name, snapshot, f"docs/upstream/{origin} (snapshot of {snapshot})", lists[name])
-    # Classes in name order, so the generated __all__ is sorted as ruff wants it.
-    class_names = {name: name[0].upper() + name[1:] for name in lists}
-    ordered = {name: lists[name] for name in sorted(lists, key=class_names.__getitem__)}
-    source = render_str_enums(
-        ordered, class_names=class_names, generator="scripts/refresh_reference.py"
-    )
-    for name in ordered:
-        # Each class carries its own list's date, so lists read from the snapshot keep theirs.
-        plain = f'"""Values of ``{name}``."""'
-        if source.count(plain) != 1:
-            raise SystemExit(f"render_str_enums changed its docstrings; cannot date {name}")
-        dated = f"Values of ``{name}`` (fetched {dates[name]})."
-        if name in NOTES:
-            body = textwrap.fill(
-                NOTES[name], width=96, initial_indent="    ", subsequent_indent="    "
-            )
-            dated += f"\n\n{body}\n    "
-        source = source.replace(plain, f'"""{dated}"""')
-    ENUMS.write_text(source, encoding="utf-8")
-    print(f"{ENUMS.name}: {len(ordered)} enums")  # noqa: T201
-    index = {name: _write_table(name, file, today) for name, file in TABLES.items()}
-    (REFERENCE / TABLES_INDEX).write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
-    print(f"{TABLES_INDEX}: {len(index)} tables")  # noqa: T201
+    if args.render_only:
+        render()
+    else:
+        refresh()
 
 
 if __name__ == "__main__":

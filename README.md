@@ -43,9 +43,11 @@ Every argument is checked before the call: coded ones (`type_code`, `cl_code`,
 `flow_code`, `customs_code`, `mot_code`, `aggregate_by`, `breakdown_mode`) against
 the lists packaged from upstream's reference files and spec (`xippios.comtrade.enums`),
 `reporter_code` against the packaged copy of upstream's `Reporters.json`
-(`reference/Reporters.csv`) and `partner_code` and `partner2_code` against that of
-`partnerAreas.json`, the others by shape; a mistake raises
-`InvalidRequestError` naming the closest valid value (`756` names `757`, Switzerland).
+(`reference/Reporters.json`) and `partner_code` and `partner2_code` against that of
+`partnerAreas.json`, the others by shape. An unknown area, customs or transport code
+raises `UnknownCode`, an `InvalidRequestError` naming the packaged list, its fetch date
+and the closest code (`756` names `757`, Switzerland); any other mistake raises
+`InvalidRequestError` naming the closest valid value.
 
 ```python
 from xippios.comtrade import list_commodities, list_partners, list_reporters
@@ -94,7 +96,9 @@ result without a second call, and a count above 100,000 raises `QueryTooLarge` w
 count before anything is fetched, because upstream would cut the answer at 100,000 rows
 without saying so. A free key allows 1 call per second and 500 calls per day, and
 `countOnly` calls count; the client spaces calls 1.5 s apart (upstream's gateway refuses
-some calls spaced exactly 1 s apart), the daily quota is yours to track.
+some calls spaced exactly 1 s apart) and counts no calls, so the daily quota is yours to
+track: once upstream answers that it is spent, the client sends nothing more until the
+time upstream names and raises `RateLimitError` instead.
 
 ## MCP
 
@@ -111,11 +115,12 @@ some calls spaced exactly 1 s apart), the daily quota is yours to track.
 ```
 
 Tools are read-only and named `comtrade_<verb>_<noun>`. Results are capped at
-200 rows or 64 KB with a note on how to narrow the query. Unfiltered,
-`comtrade_list_reporters`, `comtrade_list_partners` and `comtrade_list_commodities` show
-the first rows of their table only (200 of 255 reporters, in upstream's alphabetical
-order), so they take `search`: `{"search": "switz"}` returns 757 Switzerland. `--http`
-serves streamable HTTP instead of stdio.
+200 rows or 64 KB with a note on how to narrow the query; `comtrade_list_reporters` and
+`comtrade_list_partners` have a cap of their own, 400 rows or 100 KB, so their whole
+tables reach the agent. `comtrade_list_commodities` has the same cap, but a
+classification is larger (8,262 HS codes), so its note says to search. All three take
+`search`: `{"search": "switz"}` returns 757 Switzerland. `--http` serves streamable HTTP
+instead of stdio.
 
 ## Status
 

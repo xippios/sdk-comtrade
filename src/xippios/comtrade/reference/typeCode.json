@@ -1,9 +1,14 @@
 {
   "param": "typeCode",
+  "endpoint": "files/v1/app/apim/comtrade.json",
   "fetched": "2026-10-23",
-  "origin": "docs/upstream/apidocs/comtrade.json, get, typeCode enum (snapshot of 2026-10-23)",
-  "values": [
-    "C",
-    "S"
+  "note": "Read from docs/upstream/apidocs/comtrade.json, the snapshot of files/v1/app/apim/comtrade.json fetched 2026-10-23: operation get, the typeCode enum.",
+  "records": [
+    {
+      "typeCode": "C"
+    },
+    {
+      "typeCode": "S"
+    }
   ]
 }

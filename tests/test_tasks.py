@@ -1,12 +1,16 @@
-"""Structural checks every task must satisfy. Per-task tests with recorded fixtures go below."""
+"""Replay tests on recorded fixtures, at least one per task (conventions §10).
+
+``/add-endpoint`` and ``/record-fixture`` add them. The checks of this package's own sit
+among them: those on the task docstrings and the adapters' source first, those on the
+packaged lists and the enums after the checks of the arguments.
+"""
 
 import dataclasses
 import inspect
 import json
-import os
 import re
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -19,14 +23,29 @@ from xippios.core import (
     AuthError,
     InvalidRequestError,
     NotFoundError,
+    PackagedList,
     RateLimitError,
+    ResultCap,
     RetryPolicy,
+    UnknownCode,
     UpstreamError,
+    UpstreamModel,
 )
 from xippios.core.http import status_for
-from xippios.core.testing import assert_projection, load_fixture, mcp_call
+from xippios.core.testing import (
+    CLOCK_SLACK,
+    ReplayFixture,
+    assert_projection,
+    assert_time_between,
+    load_fixture,
+    mcp_call,
+    mcp_call_text,
+    recorded_query,
+    response_from_fixture,
+    sent_query,
+)
 
-from xippios.comtrade import __version__, api, enums, tasks
+from xippios.comtrade import api, enums, tasks
 from xippios.comtrade._client import (
     API_KEY_ENV,
     BASE_URL,
@@ -36,6 +55,7 @@ from xippios.comtrade._client import (
     auth,
     classify,
     config,
+    policy,
 )
 from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.mcp import server
@@ -52,62 +72,42 @@ from xippios.comtrade.models import (
     TradeFlowRecord,
 )
 from xippios.comtrade.params import (
+    CL_CODES_FROM_SPEC,
     MAX_SERIES_PERIODS,
+    PACKAGE,
     PACKAGED_LISTS,
     PACKAGED_TABLES,
     classification_files,
-    packaged_table,
-    packaged_table_info,
-    packaged_values,
     validate_get,
     validate_slice,
 )
 
-SHELL_KEY = os.environ.get(API_KEY_ENV)
-"""The key the shell held when the tests were collected, before any fixture; never printed."""
-
 TASKS = [getattr(tasks, name) for name in tasks.__all__]
-
-Replay = Callable[[str], respx.Route]
-Recorded = Callable[[str], dict[str, str]]
-ReplayFixture = Callable[[str, str], respx.Route]
-ReplayQuery = Callable[[str], respx.Route]
 
 UPSTREAM = Path(__file__).resolve().parents[1] / "docs" / "upstream"
 
+GET = Path(__file__).resolve().parent / "fixtures" / "get"
+"""The recorded ``data/v1/get`` answers."""
 
-def test_package_has_a_version() -> None:
-    assert __version__
+COUNT_ONLY = ["countOnly"]
+"""``match_params`` of a count fixture: a count and a data call share one path.
 
+A route cannot require ``countOnly`` to be absent, so a test mounts the count fixture
+first; a data request, which the count route does not match, reaches the data fixture
+mounted after it (``xippios.core.testing.replay.mount_fixture``).
+"""
 
-def test_replay_tests_send_the_placeholder_key(placeholder_api_key: str | None) -> None:
-    """A request sent outside a live test carries the placeholder, never the shell's key.
+BY_AREAS = ["reporterCode", "partnerCode", "period", "cmdCode", "flowCode"]
+"""``match_params`` of a bilateral slice fixture: the resolved areas, periods, product, flow."""
 
-    Every assertion is on a boolean, so a failure says where the key went, never the key.
-    """
-    assert placeholder_api_key is not None
-    env_holds_placeholder = os.environ[API_KEY_ENV] == placeholder_api_key
-    assert env_holds_placeholder, f"{API_KEY_ENV} does not hold the placeholder"
-    sent = next(auth.sync_auth_flow(httpx.Request("GET", BASE_URL)))
-    carried = sent.headers.get(auth.header, "")
-    where = f"the {auth.header} header"
-    sends_placeholder = carried == placeholder_api_key
-    assert sends_placeholder, f"{where} does not carry the placeholder"
-    if SHELL_KEY and placeholder_api_key != SHELL_KEY:
-        outgoing = [str(sent.url), *sent.headers.values(), carried]
-        leaked = any(SHELL_KEY in part for part in outgoing)
-        assert not leaked, f"the key in {API_KEY_ENV} went out with the request"
+BY_PERIODS = ["reporterCode", "period"]
+"""``match_params`` of a commodity series fixture: one per chunk of 12 periods."""
 
+BY_PARTNER = ["partnerCode", "period", "cmdCode", "flowCode"]
+"""``match_params`` of the world trade fixture, which names no reporter."""
 
-@pytest.mark.parametrize("task", TASKS, ids=tasks.__all__)
-def test_task_is_a_sync_facade_with_an_agent_docstring(task: object) -> None:
-    assert callable(task)
-    assert hasattr(task, "async_fn"), "write the async function and derive the sync one with sync()"
-    doc = inspect.getdoc(task) or ""
-    assert doc, "task functions need a docstring: agents read it"
-    assert doc.splitlines()[0].endswith("."), "the first line is one sentence"
-    if inspect.signature(task).parameters:
-        assert "Args:" in doc, "explain every parameter under Args: with valid-value examples"
+BY_REPORTER = ["reporterCode", "period", "cmdCode", "flowCode"]
+"""``match_params`` of the every-partner fixture, which names no partner."""
 
 
 @pytest.mark.parametrize("task", TASKS, ids=tasks.__all__)
@@ -115,6 +115,18 @@ def test_every_parameter_is_explained(task: object) -> None:
     doc = inspect.getdoc(task) or ""
     for name in inspect.signature(task).parameters:  # type: ignore[arg-type]
         assert f"    {name}: " in doc, name
+
+
+def test_the_adapters_name_no_task() -> None:
+    """mcp.py and http.py name no task (ADR-0001); the family check covers registration."""
+    package_dir = Path(tasks.__file__).parent
+    sources = {
+        adapter: (package_dir / adapter).read_text(encoding="utf-8")
+        for adapter in ("mcp.py", "http.py")
+    }
+    for name in tasks.__all__:
+        for adapter, source in sources.items():
+            assert name not in source, f"{adapter} names {name}"
 
 
 # Switzerland (reporter 757 in Reporters.json) exports to the World in 2023, all products.
@@ -130,10 +142,8 @@ CH_EXPORTS_2023: dict[str, Any] = {
 }
 
 
-def test_get_counts_sends_the_recorded_count_request(
-    replay_get: Replay, recorded_params: Recorded
-) -> None:
-    route = replay_get("count_ch_exports_2023")
+def test_get_counts_sends_the_recorded_count_request(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
     result = tasks.get_counts(**CH_EXPORTS_2023)
     assert result.data == 32
     assert result.meta.source == "comtrade"
@@ -142,21 +152,21 @@ def test_get_counts_sends_the_recorded_count_request(
     assert result.meta.published_at is None
     sent = route.calls.last.request
     assert sent.url.path == "/data/v1/get/C/A/HS"
-    assert dict(sent.url.params) == recorded_params("count_ch_exports_2023")
+    assert sent_query(route) == recorded_query(load_fixture(GET / "count_ch_exports_2023.json"))
     assert sent.headers["Ocp-Apim-Subscription-Key"] == "placeholder-for-fixture-replay"
 
 
 def test_get_data_counts_first_then_fetches(
-    replay_get: Replay, recorded_params: Recorded, respx_mock: respx.MockRouter
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
-    counted = replay_get("count_ch_exports_2023")
-    fetched = replay_get("ch_exports_2023")
+    counted = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
+    fetched = replay_fixture("get", "ch_exports_2023")
     result = tasks.get_data(**CH_EXPORTS_2023)
     assert counted.call_count == 1
     assert fetched.call_count == 1
     order = [call.request.url.params.get("countOnly") for call in respx_mock.calls]
     assert order == ["true", None]
-    assert dict(fetched.calls.last.request.url.params) == recorded_params("ch_exports_2023")
+    assert sent_query(fetched) == recorded_query(load_fixture(GET / "ch_exports_2023.json"))
     assert result.meta.endpoint == "data/v1/get"
     assert result.meta.request == CH_EXPORTS_2023
     assert result.meta.published_at is None
@@ -191,21 +201,21 @@ def test_get_data_counts_first_then_fetches(
 
 
 def test_get_data_returns_empty_after_one_call_when_nothing_matches(
-    replay_get: Replay, respx_mock: respx.MockRouter
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
-    replay_get("count_zero_ch_1900")
+    counted = replay_fixture("get", "count_zero_ch_1900", match_params=COUNT_ONLY)
     result = tasks.get_data(**{**CH_EXPORTS_2023, "period": "1900"})
     assert result.data == []
     assert result.meta.request["period"] == "1900"
-    assert len(respx_mock.calls) == 1
-    assert respx_mock.calls.last.request.url.params["countOnly"] == "true"
+    assert len(respx_mock.calls) == counted.call_count == 1
+    assert sent_query(counted)["countOnly"] == "true"
 
 
 def test_get_data_refuses_over_the_limit_before_fetching(
-    replay_get: Replay, respx_mock: respx.MockRouter
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
-    replay_get("count_over_limit")
-    fetched = replay_get("over_limit_max_records")
+    counted = replay_fixture("get", "count_over_limit", match_params=COUNT_ONLY)
+    fetched = replay_fixture("get", "over_limit_max_records")
     with pytest.raises(QueryTooLarge) as info:
         tasks.get_data(
             "C", "A", "HS", partner_code="0", period="2022", cmd_code="AG4", flow_code="M"
@@ -217,8 +227,8 @@ def test_get_data_refuses_over_the_limit_before_fetching(
     assert "5,006,385" in message
     assert "Split by period (max 12 per call), then by reporter" in message
     assert not fetched.called
-    assert len(respx_mock.calls) == 1
-    assert "reporterCode" not in respx_mock.calls.last.request.url.params
+    assert len(respx_mock.calls) == counted.call_count == 1
+    assert "reporterCode" not in sent_query(counted)
 
 
 def test_query_too_large_is_an_invalid_request_for_http_too() -> None:
@@ -227,9 +237,11 @@ def test_query_too_large_is_an_invalid_request_for_http_too() -> None:
 
 
 @pytest.mark.anyio
-async def test_a_code_that_is_not_a_reporter_counts_zero_upstream(replay_get: Replay) -> None:
+async def test_a_code_that_is_not_a_reporter_counts_zero_upstream(
+    replay_fixture: ReplayFixture,
+) -> None:
     """Layer 1: 756 is Switzerland's ISO numeric code, not a reporter; upstream counts 0."""
-    replay_get("count_not_a_reporter_756")
+    replay_fixture("get", "count_not_a_reporter_756", match_params=COUNT_ONLY)
     response = await api.get_count_only(
         "C", "A", "HS", reporter_code="756", period="2023", partner_code="0", cmd_code="TOTAL",
         flow_code="X",
@@ -237,65 +249,89 @@ async def test_a_code_that_is_not_a_reporter_counts_zero_upstream(replay_get: Re
     assert (response.count, response.error) == (0, "")
 
 
+REFUSED_756 = (
+    "'756' is not a reporter_code in the packaged Reporters list (fetched 2026-10-23). "
+    "Did you mean 757 (Switzerland)? UN Comtrade answers a code it does not have with count "
+    "0, so the package refuses it before the call. list_reporters lists every code. If "
+    "upstream added it since, the packaged list needs a refresh (/refresh-reference-data)."
+)
+"""``UnknownCode``'s message for reporter 756 (conventions §5): core's text, comtrade's hint."""
+
+
+def _unknown(respx_mock: respx.MockRouter, **overrides: str) -> UnknownCode:
+    with pytest.raises(UnknownCode) as info:
+        tasks.get_data(**{**CH_EXPORTS_2023, **overrides})
+    assert not respx_mock.calls, "refused before any call"
+    assert isinstance(info.value, InvalidRequestError)
+    return info.value
+
+
 def test_a_code_that_is_not_a_reporter_is_refused_naming_the_reporter(
     respx_mock: respx.MockRouter,
 ) -> None:
     """The task refuses 756 before the call: Reporters.json has Switzerland as 757."""
-    message = _refused(respx_mock, reporter_code="757,756")
-    assert (
-        "reporter_code '756' is not a UN Comtrade reporter code (Reporters.json); "
-        "closest: '757' (Switzerland); list_reporters lists every code" in message
+    refused = _unknown(respx_mock, reporter_code="757,756")
+    assert str(refused) == REFUSED_756
+    assert (refused.param, refused.value, refused.list_name) == (
+        "reporter_code",
+        "756",
+        "Reporters",
     )
-    assert "'757' is not" not in message
+    assert refused.fetched == PackagedList.load(PACKAGE, "Reporters").fetched
+    assert refused.closest == (("757", "Switzerland"),)
+    assert refused.source == "comtrade"
 
 
 def test_unknown_partner_codes_are_refused(respx_mock: respx.MockRouter) -> None:
-    message = _refused(respx_mock, partner_code="0,9999", partner2_code="97")
-    assert "partner_code '9999' is not a UN Comtrade partner code (partnerAreas.json)" in message
-    assert "list_partners lists every code" in message
-    assert "partner_code '0'" not in message
-    assert (
-        "partner2_code '97' is not a UN Comtrade partner code (partnerAreas.json); "
-        "'97' (European Union) is a reporter code only" in message
+    unknown = _unknown(respx_mock, partner_code="0,9999")
+    assert (unknown.param, unknown.value, unknown.list_name) == (
+        "partner_code",
+        "9999",
+        "partnerAreas",
     )
+    assert str(unknown).startswith(
+        "'9999' is not a partner_code in the packaged partnerAreas list (fetched 2026-10-23)."
+    )
+    assert "list_partners lists every code" in str(unknown)
+    reporter_only = _unknown(respx_mock, partner2_code="97")
+    assert (reporter_only.param, reporter_only.closest) == ("partner2_code", ())
+    assert "'97' (European Union) is a reporter code only." in str(reporter_only)
 
 
 def test_world_is_a_partner_not_a_reporter(respx_mock: respx.MockRouter) -> None:
-    message = _refused(respx_mock, reporter_code="0")
-    assert "reporter_code '0' is not a UN Comtrade reporter code" in message
-    assert "'0' (World) is a partner code only" in message
+    refused = _unknown(respx_mock, reporter_code="0")
+    assert str(refused).startswith("'0' is not a reporter_code in the packaged Reporters list")
+    assert "'0' (World) is a partner code only." in str(refused)
 
 
 def test_every_member_of_an_area_list_is_checked() -> None:
+    """Each member of a list is checked; the first one the table lacks is refused."""
     checked = validate_get(
         "C", "A", "HS", reporter_code="757,842,276,156", partner_code="0,276,756",
         partner2_code="0",
     )  # fmt: skip
     assert checked["reporter_code"] == "757,842,276,156"
     assert checked["partner_code"] == "0,276,756"
-    with pytest.raises(InvalidRequestError) as info:
+    with pytest.raises(UnknownCode) as info:
         validate_get("C", "A", "HS", reporter_code="757,999,842,1000")
-    message = str(info.value)
-    assert "reporter_code '999' is not" in message
-    assert "reporter_code '1000' is not" in message
+    assert info.value.value == "999"
+    assert "'1000'" not in str(info.value)
 
 
 @pytest.mark.anyio
-async def test_unknown_reporter_is_an_empty_answer_upstream(
-    replay_get: Replay, recorded_params: Recorded
-) -> None:
+async def test_unknown_reporter_is_an_empty_answer_upstream(replay_fixture: ReplayFixture) -> None:
     """Layer 1: reporterCode 999 answers HTTP 200 with count 0 and no rows, not an error."""
-    route = replay_get("unknown_reporter")
+    route = replay_fixture("get", "unknown_reporter")
     response = await api.get(
         "C", "A", "HS", reporter_code="999", period="2023", partner_code="0", cmd_code="TOTAL",
         flow_code="X",
     )  # fmt: skip
     assert (response.count, response.data, response.error) == (0, [], "")
-    assert dict(route.calls.last.request.url.params) == recorded_params("unknown_reporter")
+    assert sent_query(route) == recorded_query(load_fixture(GET / "unknown_reporter.json"))
 
 
-def test_invalid_key_is_an_auth_error(replay_get: Replay) -> None:
-    replay_get("invalid_key")
+def test_invalid_key_is_an_auth_error(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get", "invalid_key", match_params=COUNT_ONLY)
     with pytest.raises(AuthError) as info:
         tasks.get_counts(**CH_EXPORTS_2023)
     assert info.value.status == 401
@@ -303,21 +339,21 @@ def test_invalid_key_is_an_auth_error(replay_get: Replay) -> None:
 
 
 @pytest.mark.anyio
-async def test_max_records_caps_the_rows(replay_get: Replay, recorded_params: Recorded) -> None:
-    route = replay_get("over_limit_max_records")
+async def test_max_records_caps_the_rows(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get", "over_limit_max_records")
     response = await api.get(
         "C", "A", "HS", period="2022", partner_code="0", cmd_code="AG4", flow_code="M",
         max_records=5,
     )  # fmt: skip
     assert response.count == 5
     assert len(response.data) == 5
-    assert route.calls.last.request.url.params["maxRecords"] == "5"
-    assert dict(route.calls.last.request.url.params) == recorded_params("over_limit_max_records")
+    assert sent_query(route)["maxRecords"] == "5"
+    assert sent_query(route) == recorded_query(load_fixture(GET / "over_limit_max_records.json"))
 
 
 @pytest.mark.anyio
-async def test_wildcard_product_codes_are_counted_upstream(replay_get: Replay) -> None:
-    replay_get("count_cmd_code_wildcard")
+async def test_wildcard_product_codes_are_counted_upstream(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get", "count_cmd_code_wildcard", match_params=COUNT_ONLY)
     response = await api.get_count_only(
         "C", "A", "HS", reporter_code="757", period="2023", partner_code="0", cmd_code="27??",
         flow_code="X",
@@ -325,15 +361,15 @@ async def test_wildcard_product_codes_are_counted_upstream(replay_get: Replay) -
     assert response.count == 113
 
 
-def test_wildcards_pass_validation(replay_get: Replay) -> None:
-    replay_get("count_cmd_code_wildcard")
+def test_wildcards_pass_validation(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get", "count_cmd_code_wildcard", match_params=COUNT_ONLY)
     assert tasks.get_counts(**{**CH_EXPORTS_2023, "cmd_code": "27??"}).data == 113
 
 
 @pytest.mark.anyio
-async def test_upstream_period_limit_is_an_invalid_request(replay_get: Replay) -> None:
+async def test_upstream_period_limit_is_an_invalid_request(replay_fixture: ReplayFixture) -> None:
     """Layer 1, past the task's own check: upstream refuses a 13th period with HTTP 400."""
-    replay_get("count_13_periods")
+    replay_fixture("get", "count_13_periods", match_params=COUNT_ONLY)
     with pytest.raises(InvalidRequestError, match="Maximum number of periods is 12"):
         await api.get_count_only(
             "C", "A", "HS", reporter_code="757", period=",".join(map(str, range(2010, 2023))),
@@ -342,9 +378,11 @@ async def test_upstream_period_limit_is_an_invalid_request(replay_get: Replay) -
 
 
 @pytest.mark.anyio
-async def test_upstream_parameter_refusal_names_the_parameter(replay_get: Replay) -> None:
+async def test_upstream_parameter_refusal_names_the_parameter(
+    replay_fixture: ReplayFixture,
+) -> None:
     """``BE5`` is in the spec's clCode enum, but upstream refuses it (HTTP 400)."""
-    replay_get("count_cl_code_be5")
+    replay_fixture("get", "count_cl_code_be5", match_params=COUNT_ONLY)
     with pytest.raises(InvalidRequestError) as info:
         await api.get_count_only("C", "A", "BE5", reporter_code="757", period="2023")
     assert "Invalid parameter value" in str(info.value)
@@ -352,9 +390,9 @@ async def test_upstream_parameter_refusal_names_the_parameter(replay_get: Replay
 
 
 @pytest.mark.anyio
-async def test_mif_is_accepted_upstream(replay_get: Replay) -> None:
+async def test_mif_is_accepted_upstream(replay_fixture: ReplayFixture) -> None:
     """The spec lists MIF, tradeRegimes.json does not; upstream answers 200, so it is packaged."""
-    replay_get("count_flow_code_mif")
+    replay_fixture("get", "count_flow_code_mif", match_params=COUNT_ONLY)
     response = await api.get_count_only(
         "C", "A", "HS", reporter_code="757", period="2023", partner_code="0", cmd_code="TOTAL",
         flow_code="MIF",
@@ -373,23 +411,21 @@ TOTAL_ROW = ("C00", 0, 0)
 """customs_code, mot_code, partner2_code of the total row."""
 
 
-def test_flow_code_xif_is_accepted_upstream(replay_get: Replay, recorded_params: Recorded) -> None:
-    route = replay_get("count_flow_code_xif")
+def test_flow_code_xif_is_accepted_upstream(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get", "count_flow_code_xif", match_params=COUNT_ONLY)
     assert tasks.get_counts(**{**CH_EXPORTS_2023, "flow_code": "XIF"}).data == 0
-    assert dict(route.calls.last.request.url.params) == recorded_params("count_flow_code_xif")
+    assert sent_query(route) == recorded_query(load_fixture(GET / "count_flow_code_xif.json"))
 
 
-def test_breakdown_mode_classic_returns_the_total_row_only(
-    replay_get: Replay, recorded_params: Recorded
-) -> None:
-    counted = replay_get("count_breakdown_mode_classic")
-    fetched = replay_get("ch_exports_2023_breakdown_mode_classic")
+def test_breakdown_mode_classic_returns_the_total_row_only(replay_fixture: ReplayFixture) -> None:
+    counted = replay_fixture("get", "count_breakdown_mode_classic", match_params=COUNT_ONLY)
+    fetched = replay_fixture("get", "ch_exports_2023_breakdown_mode_classic")
     result = tasks.get_data(**CH_EXPORTS_2023, breakdown_mode="classic")
-    assert dict(counted.calls.last.request.url.params) == recorded_params(
-        "count_breakdown_mode_classic"
+    assert sent_query(counted) == recorded_query(
+        load_fixture(GET / "count_breakdown_mode_classic.json")
     )
-    assert dict(fetched.calls.last.request.url.params) == recorded_params(
-        "ch_exports_2023_breakdown_mode_classic"
+    assert sent_query(fetched) == recorded_query(
+        load_fixture(GET / "ch_exports_2023_breakdown_mode_classic.json")
     )
     [row] = result.data
     assert (row.customs_code, row.mot_code, row.partner2_code) == TOTAL_ROW
@@ -397,14 +433,14 @@ def test_breakdown_mode_classic_returns_the_total_row_only(
 
 
 def test_breakdown_mode_plus_is_upstreams_default(
-    replay_get: Replay, recorded_params: Recorded, fixtures_dir: Path
+    replay_fixture: ReplayFixture, fixtures_dir: Path
 ) -> None:
     """``plus`` counts 32 like the omitted parameter, and returns the same rows."""
-    replay_get("count_breakdown_mode_plus")
-    fetched = replay_get("ch_exports_2023_breakdown_mode_plus")
+    replay_fixture("get", "count_breakdown_mode_plus", match_params=COUNT_ONLY)
+    fetched = replay_fixture("get", "ch_exports_2023_breakdown_mode_plus")
     result = tasks.get_data(**CH_EXPORTS_2023, breakdown_mode="plus")
-    assert dict(fetched.calls.last.request.url.params) == recorded_params(
-        "ch_exports_2023_breakdown_mode_plus"
+    assert sent_query(fetched) == recorded_query(
+        load_fixture(GET / "ch_exports_2023_breakdown_mode_plus.json")
     )
     assert len(result.data) == 32
     plus = _rows(fixtures_dir, "ch_exports_2023_breakdown_mode_plus")
@@ -412,13 +448,13 @@ def test_breakdown_mode_plus_is_upstreams_default(
 
 
 def test_pinning_the_totals_returns_one_row(
-    replay_get: Replay, recorded_params: Recorded, fixtures_dir: Path
+    replay_fixture: ReplayFixture, fixtures_dir: Path
 ) -> None:
     """partner2Code 0, customsCode C00 and motCode 0: one row, the same as ``classic``."""
-    replay_get("count_ch_exports_2023_totals")
-    fetched = replay_get("ch_exports_2023_totals")
+    replay_fixture("get", "count_ch_exports_2023_totals", match_params=COUNT_ONLY)
+    fetched = replay_fixture("get", "ch_exports_2023_totals")
     result = tasks.get_data(**CH_EXPORTS_2023, partner2_code="0", customs_code="C00", mot_code="0")
-    assert dict(fetched.calls.last.request.url.params) == recorded_params("ch_exports_2023_totals")
+    assert sent_query(fetched) == recorded_query(load_fixture(GET / "ch_exports_2023_totals.json"))
     [row] = result.data
     assert (row.customs_code, row.mot_code, row.partner2_code) == TOTAL_ROW
     assert _rows(fixtures_dir, "ch_exports_2023_totals") == _rows(
@@ -427,9 +463,9 @@ def test_pinning_the_totals_returns_one_row(
 
 
 def test_partner2_code_0_counts_what_omitting_it_counts(
-    replay_get: Replay, fixtures_dir: Path
+    replay_fixture: ReplayFixture, fixtures_dir: Path
 ) -> None:
-    replay_get("count_partner2_code_0")
+    replay_fixture("get", "count_partner2_code_0", match_params=COUNT_ONLY)
     assert tasks.get_counts(**CH_EXPORTS_2023, partner2_code="0").data == 32
     assert {row["partner2Code"] for row in _rows(fixtures_dir, "ch_exports_2023")} == {0}
 
@@ -437,8 +473,8 @@ def test_partner2_code_0_counts_what_omitting_it_counts(
 AG2 = {**CH_EXPORTS_2023, "cmd_code": "AG2"}
 
 
-def test_ag2_counts_every_chapter_and_breakdown(replay_get: Replay) -> None:
-    replay_get("count_ch_exports_2023_ag2")
+def test_ag2_counts_every_chapter_and_breakdown(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get", "count_ch_exports_2023_ag2", match_params=COUNT_ONLY)
     assert tasks.get_counts(**AG2).data == 1338
 
 
@@ -450,15 +486,15 @@ def test_ag2_counts_every_chapter_and_breakdown(replay_get: Replay) -> None:
     ],
 )
 def test_aggregate_by_collapses_the_named_parameters_into_minus_2(
-    replay_get: Replay, recorded_params: Recorded, aggregate_by: str, case: str, partner_code: int
+    replay_fixture: ReplayFixture, aggregate_by: str, case: str, partner_code: int
 ) -> None:
     """Over the 1,338 AG2 records: one row per remaining breakdown; the count matches."""
-    replay_get(f"count_{case}")
-    fetched = replay_get(f"ch_exports_2023_ag2_{case}")
+    replay_fixture("get", f"count_{case}", match_params=COUNT_ONLY)
+    fetched = replay_fixture("get", f"ch_exports_2023_ag2_{case}")
     assert tasks.get_counts(**AG2, aggregate_by=aggregate_by).data == 32
     result = tasks.get_data(**AG2, aggregate_by=aggregate_by)
-    assert dict(fetched.calls.last.request.url.params) == recorded_params(
-        f"ch_exports_2023_ag2_{case}"
+    assert sent_query(fetched) == recorded_query(
+        load_fixture(GET / f"ch_exports_2023_ag2_{case}.json")
     )
     assert len(result.data) == 32
     assert {row.cmd_code for row in result.data} == {"-2"}
@@ -475,16 +511,14 @@ def test_aggregate_by_collapses_the_named_parameters_into_minus_2(
 
 
 @pytest.mark.anyio
-async def test_include_desc_fills_the_descriptions(
-    replay_get: Replay, recorded_params: Recorded
-) -> None:
-    route = replay_get("ch_exports_2023_include_desc")
+async def test_include_desc_fills_the_descriptions(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get", "ch_exports_2023_include_desc")
     response = await api.get(
         "C", "A", "HS", reporter_code="757", period="2023", partner_code="0", cmd_code="TOTAL",
         flow_code="X", include_desc=True,
     )  # fmt: skip
-    assert dict(route.calls.last.request.url.params) == recorded_params(
-        "ch_exports_2023_include_desc"
+    assert sent_query(route) == recorded_query(
+        load_fixture(GET / "ch_exports_2023_include_desc.json")
     )
     total = next(
         row for row in response.data
@@ -505,10 +539,10 @@ async def test_include_desc_fills_the_descriptions(
     [("999999", "count_cmd_code_999999", 10), ("999998", "count_cmd_code_absent", 0)],
 )
 def test_product_codes_upstream_does_not_have_count_zero(
-    replay_get: Replay, cmd_code: str, case: str, count: int
+    replay_fixture: ReplayFixture, cmd_code: str, case: str, count: int
 ) -> None:
     """999999 is HS's "Commodities not specified according to kind"; 999998 is not in HS.json."""
-    replay_get(case)
+    replay_fixture("get", case, match_params=COUNT_ONLY)
     assert tasks.get_counts(**{**CH_EXPORTS_2023, "cmd_code": cmd_code}).data == count
 
 
@@ -521,10 +555,10 @@ def test_product_codes_upstream_does_not_have_count_zero(
     ],
 )
 async def test_upstream_refuses_malformed_values_naming_the_field(
-    replay_get: Replay, case: str, overrides: dict[str, str], field: str
+    replay_fixture: ReplayFixture, case: str, overrides: dict[str, str], field: str
 ) -> None:
     """Layer 1, past the task's own checks (which refuse both before any call)."""
-    replay_get(case)
+    replay_fixture("get", case, match_params=COUNT_ONLY)
     query: dict[str, Any] = {
         "reporter_code": "757", "period": "2023", "partner_code": "0", "cmd_code": "TOTAL",
         "flow_code": "X", **overrides,
@@ -551,18 +585,18 @@ SERVICES_2023 = {**CH_EXPORTS_2023, "type_code": "S", "cl_code": "EB10", "cmd_co
     ],
 )
 def test_services_take_their_files_total_code_not_total(
-    replay_get: Replay, cl_code: str, cmd_code: str, case: str, count: int
+    replay_fixture: ReplayFixture, cl_code: str, cmd_code: str, case: str, count: int
 ) -> None:
     """EB10 counts its one row under 200 and none under TOTAL; combined EB counts none."""
-    route = replay_get(case)
+    route = replay_fixture("get", case, match_params=COUNT_ONLY)
     query = {**SERVICES_2023, "cl_code": cl_code, "cmd_code": cmd_code}
     assert tasks.get_counts(**query).data == count
     assert route.calls.last.request.url.path == f"/data/v1/get/S/A/{cl_code}"
 
 
-def test_services_rows(replay_get: Replay) -> None:
-    replay_get("count_cl_code_eb10")
-    replay_get("services_ch_exports_2023_eb10")
+def test_services_rows(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get", "count_cl_code_eb10", match_params=COUNT_ONLY)
+    replay_fixture("get", "services_ch_exports_2023_eb10")
     [row] = tasks.get_data(**SERVICES_2023).data
     assert (row.type_code, row.classification_code, row.cmd_code) == ("S", "EB10", "200")
     assert (row.mos_code, row.customs_code, row.mot_code, row.partner2_code) == ("0", "C00", 0, 0)
@@ -584,11 +618,10 @@ def test_mos_code_is_accepted_upstream_but_not_a_parameter_here(fixtures_dir: Pa
         "eb10_mos_code_mode_1": (400, None), "eb_mos_code_0": (200, 0),
     }  # fmt: skip
     assert "mos_code" not in inspect.signature(tasks.get_data).parameters
-    mos_code = packaged_values("mosCode")
-    assert mos_code is not None
+    mos_code = PackagedList.load(PACKAGE, "mosCode")
     assert mos_code.note is not None
     assert mos_code.note.startswith("The ids of ModeOfSupply.json, not proven parameter values")
-    assert "not proven parameter values" in (enums.MosCode.__doc__ or "")
+    assert enums.MosCode.__doc__ == "Values of ``mosCode`` (fetched 2026-10-23)."
 
 
 def _refused(respx_mock: respx.MockRouter, **overrides: str) -> str:
@@ -610,8 +643,8 @@ def test_unknown_flow_code_names_the_closest_value(respx_mock: respx.MockRouter)
     assert "Valid values: M, X, DX, FM, MIP, MOP, RM, RX, XIP, XOP, MIF, XIF" in message
 
 
-def test_flow_codes_the_spec_adds_pass_validation(replay_get: Replay) -> None:
-    replay_get("count_flow_code_mif")
+def test_flow_codes_the_spec_adds_pass_validation(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get", "count_flow_code_mif", match_params=COUNT_ONLY)
     assert tasks.get_counts(**{**CH_EXPORTS_2023, "flow_code": "MIF"}).data == 0
     assert validate_get("C", "A", "HS", flow_code="XIF,mif")["flow_code"] == "XIF,mif"
 
@@ -664,31 +697,97 @@ def test_case_insensitive_codes_pass_unchanged() -> None:
 
 def test_every_list_parameter_is_checked() -> None:
     with pytest.raises(InvalidRequestError) as info:
-        validate_get(
-            "G", "Y", "HS", mot_code="9", customs_code="C16", aggregate_by="cmdcode",
-            breakdown_mode="full",
-        )  # fmt: skip
+        validate_get("G", "Y", "HS", aggregate_by="cmdcode", breakdown_mode="full")
+    assert not isinstance(info.value, UnknownCode)
     message = str(info.value)
     for fragment in [
         "type_code 'G' is not a UN Comtrade typeCode value",
         "freq_code 'Y' is not a UN Comtrade freqCode value",
-        "mot_code '9' is not a UN Comtrade motCode value",
-        "customs_code 'C16' is not a UN Comtrade customsCode value",
         "aggregate_by 'cmdcode' is not a UN Comtrade aggregateBy value; closest: 'cmdCode'",
         "breakdown_mode 'full' is not a UN Comtrade breakdownMode value",
     ]:
         assert fragment in message
 
 
+REFUSED_C16 = (
+    "'C16' is not a customs_code in the packaged customsCode list (fetched 2026-10-23). "
+    "Did you mean 'C15'? Valid values: C00, C01, C02, C03, C04, C05, C06, C07, C08, C09, "
+    "C10, C11, C12, C13, C14, C15, C20. UN Comtrade's answer to a customs or transport code "
+    "it does not have is not recorded, so the package refuses it before the call, as it "
+    "does an unknown area. reference/customsCode.json lists every code. If upstream added "
+    "it since, the packaged list needs a refresh (/refresh-reference-data)."
+)
+"""``UnknownCode``'s message for customs_code C16 (conventions §5)."""
+
+
+def test_an_unknown_customs_or_transport_code_is_an_unknown_code(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Dimension codes of the rows, like the areas: ``UnknownCode`` before any call."""
+    customs = _unknown(respx_mock, customs_code="C00,C16")
+    assert str(customs) == REFUSED_C16
+    assert (customs.param, customs.value, customs.list_name) == (
+        "customs_code",
+        "C16",
+        "customsCode",
+    )
+    assert customs.fetched == PackagedList.load(PACKAGE, "customsCode").fetched
+    transport = _unknown(respx_mock, mot_code="0,9")
+    assert (transport.param, transport.value, transport.list_name) == ("mot_code", "9", "motCode")
+    assert str(transport).startswith(
+        "'9' is not a mot_code in the packaged motCode list (fetched 2026-10-23). "
+        "Did you mean '9900'?"
+    )
+
+
+@pytest.mark.anyio
+async def test_an_unknown_customs_code_over_mcp() -> None:
+    refused = await mcp_call_text(
+        server, "comtrade_get_counts", {**CH_EXPORTS_2023, "customs_code": "C16"}
+    )
+    assert refused == f"error: UnknownCode: {REFUSED_C16}"
+
+
+@pytest.mark.parametrize("name", [*PACKAGED_LISTS, *PACKAGED_TABLES])
+def test_every_packaged_list_is_upstreams_records_with_their_provenance(name: str) -> None:
+    """Structure, not counts: each refresh changes the sizes and writes the full fetch time."""
+    packaged = PackagedList.load(PACKAGE, name)
+    assert packaged.param == name
+    assert packaged.endpoint.startswith(("files/v1/app/reference/", "files/v1/app/apim/"))
+    assert packaged.fetched.tzinfo is UTC
+    assert packaged.fetched.date() == date(2026, 10, 23)
+    assert packaged.records
+    if name in PACKAGED_LISTS:
+        assert all(list(record) == [name] for record in packaged.records), name
+        assert all(isinstance(record[name], str) for record in packaged.records), name
+    else:
+        model = PACKAGED_TABLES[name]
+        for row, record in zip(
+            packaged.parse(model, source="comtrade"), packaged.records, strict=True
+        ):
+            dumped = row.dump_upstream()
+            assert set(record) <= set(dumped), "every key is a column of the row model"
+            assert {key: dumped[key] for key in record} == record, "with the model's types"
+        assert packaged.endpoint == f"files/v1/app/reference/{name}.json"
+
+
+def test_the_spec_lists_name_the_operation_they_were_read_from() -> None:
+    for name in ["typeCode", "freqCode", "breakdownMode", "aggregateBy"]:
+        packaged = PackagedList.load(PACKAGE, name)
+        assert packaged.endpoint == "files/v1/app/apim/comtrade.json", name
+        assert packaged.note is not None
+        assert packaged.note.startswith(
+            "Read from docs/upstream/apidocs/comtrade.json, the snapshot of "
+            "files/v1/app/apim/comtrade.json fetched 2026-10-23: operation get, the "
+        ), name
+
+
 def test_enums_match_the_packaged_lists() -> None:
     for name in PACKAGED_LISTS:
         cls = getattr(enums, name[0].upper() + name[1:])
-        packaged = packaged_values(name)
-        assert packaged is not None
-        assert packaged.param == name
-        assert packaged.origin
-        assert [member.value for member in cls] == packaged.values, name
-    assert packaged_values("Reporters") is None
+        packaged = PackagedList.load(PACKAGE, name)
+        assert [member.value for member in cls] == [r[name] for r in packaged.records], name
+        assert cls.__doc__ == f"Values of ``{name}`` (fetched {packaged.fetched:%Y-%m-%d}).", name
     assert enums.FlowCode.X.value == "X"
     assert enums.MotCode._0.value == "0"
     assert enums.ClCode.EB10S.value == "EB10S"
@@ -700,59 +799,71 @@ def test_enums_match_the_packaged_lists() -> None:
     assert len(enums.QtyUnitCode) == 41
 
 
+EXCEPTION = re.compile(r"(?:^|\. )([A-Z0-9]+) (added|left out|removed|kept): (.+?\))(?=\.(?: |$))")
+"""One exception sentence of a reconciled list's ``note``: value, decision, evidence."""
+
+
+def _exceptions(name: str) -> dict[str, tuple[str, str]]:
+    note = PackagedList.load(PACKAGE, name).note or ""
+    return {value: (decision, evidence) for value, decision, evidence in EXCEPTION.findall(note)}
+
+
 def test_list_exceptions_rest_on_recorded_answers(fixtures_dir: Path) -> None:
     """Every clCode value rests on a recorded count; flowCode's spec additions too.
 
-    clCode is ListofReferences plus what upstream accepted, minus what it refused. H6
-    answered HTTP 500 to all five tries (two reporters, two cmdCodes) and stays, unsettled.
+    clCode is ListofReferences plus what upstream accepted, minus what it refused, each
+    exception a sentence of the list's note. H6 answered HTTP 500 to all five tries (two
+    reporters, two cmdCodes) and stays, unsettled.
     """
-    cl_code = packaged_values("clCode")
-    assert cl_code is not None
-    decisions = {item.value: item.decision for item in cl_code.exceptions}
+    cl_code = _exceptions("clCode")
+    values = [record["clCode"] for record in PackagedList.load(PACKAGE, "clCode").records]
+    decisions = {value: decision for value, (decision, _) in cl_code.items()}
     assert decisions == {
         "BE": "added", "BE5": "left out", "TM": "added",
-        **{value: "kept" for value in cl_code.values if value not in {"BE", "TM"}},
+        **{value: "kept" for value in values if value not in {"BE", "TM"}},
     }  # fmt: skip
-    assert set(cl_code.values) == set(decisions) - {"BE5"}
-    assert "BE5" not in cl_code.values
-    flow_code = packaged_values("flowCode")
-    assert flow_code is not None
-    assert {item.value: item.decision for item in flow_code.exceptions} == {
+    assert set(values) == set(decisions) - {"BE5"}
+    assert "BE5" not in values
+    flow_code = _exceptions("flowCode")
+    assert {value: decision for value, (decision, _) in flow_code.items()} == {
         "MIF": "added",
         "XIF": "added",
     }
     cited = re.compile(r"tests/fixtures/get/(\S+?\.json), HTTP (\d+)")
-    for item in [*cl_code.exceptions, *flow_code.exceptions]:
-        recorded = cited.findall(item.evidence)
-        assert recorded, item.value
+    for value, (decision, evidence) in [*cl_code.items(), *flow_code.items()]:
+        recorded = cited.findall(evidence)
+        assert recorded, value
         statuses = set()
         for name, status in recorded:
             fixture = load_fixture(fixtures_dir / "get" / name)
             assert fixture.response.status == int(status), name
             statuses.add(fixture.response.status)
-        if "accepted it" in item.evidence:
-            assert 200 in statuses, item.value
-            assert item.decision in {"added", "kept"}, item.value
-        elif "refused it" in item.evidence:
-            assert statuses == {400}, item.value
-            assert item.decision in {"left out", "removed"}, item.value
+        if "accepted it" in evidence:
+            assert 200 in statuses, value
+            assert decision in {"added", "kept"}, value
+        elif "refused it" in evidence:
+            assert statuses == {400}, value
+            assert decision in {"left out", "removed"}, value
         else:
-            assert (item.value, statuses) == ("H6", {500})
-    h6 = next(item for item in cl_code.exceptions if item.value == "H6")
-    assert len(cited.findall(h6.evidence)) == 5
+            assert (value, statuses) == ("H6", {500})
+    assert len(cited.findall(cl_code["H6"][1])) == 5
+    added = {value for value, (decision, _) in cl_code.items() if decision == "added"}
+    assert set(CL_CODES_FROM_SPEC) == added, "classification_files drops exactly these"
 
 
 @pytest.mark.anyio
-async def test_spec_cl_codes_upstream_accepts(replay_get: Replay) -> None:
-    replay_get("count_cl_code_tm")
+async def test_spec_cl_codes_upstream_accepts(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get", "count_cl_code_tm", match_params=COUNT_ONLY)
     assert (await api.get_count_only("C", "A", "TM", reporter_code="757")).count == 1
     assert validate_get("C", "A", "BE", cmd_code="TOTAL")["cl_code"] == "BE"
 
 
 @pytest.mark.anyio
-async def test_a_server_error_is_retried_and_each_retry_is_a_call(replay_get: Replay) -> None:
+async def test_a_server_error_is_retried_and_each_retry_is_a_call(
+    replay_fixture: ReplayFixture,
+) -> None:
     """Upstream answered a count on H6 with HTTP 500; core retries it, every attempt a call."""
-    route = replay_get("count_cl_code_h6")
+    route = replay_fixture("get", "count_cl_code_h6", match_params=COUNT_ONLY)
     with pytest.raises(UpstreamError) as info:
         await api.get_count_only("C", "A", "H6", reporter_code="757", period="2023")
     assert info.value.status == 500
@@ -760,8 +871,8 @@ async def test_a_server_error_is_retried_and_each_retry_is_a_call(replay_get: Re
     assert route.call_count == config.retry.max_attempts == 4
 
 
-def test_enum_members_are_accepted_as_arguments(replay_get: Replay) -> None:
-    route = replay_get("count_ch_exports_2023")
+def test_enum_members_are_accepted_as_arguments(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
     result = tasks.get_counts(
         enums.TypeCode.C,
         enums.FreqCode.A,
@@ -773,14 +884,14 @@ def test_enum_members_are_accepted_as_arguments(replay_get: Replay) -> None:
         flow_code=enums.FlowCode.X,
     )
     assert result.data == 32
-    assert route.calls.last.request.url.params["flowCode"] == "X"
+    assert sent_query(route)["flowCode"] == "X"
 
 
 def test_replay_never_sends_the_key_from_the_shell(
-    replay_get: Replay, monkeypatch: pytest.MonkeyPatch
+    replay_fixture: ReplayFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(API_KEY_ENV, "dummy-value-from-the-shell")
-    route = replay_get("count_ch_exports_2023")
+    route = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
     tasks.get_counts(**CH_EXPORTS_2023)
     sent = route.calls.last.request.headers["Ocp-Apim-Subscription-Key"]
     assert sent == "placeholder-for-fixture-replay"
@@ -792,10 +903,10 @@ async def test_reference_files_are_fetched_without_the_key(respx_mock: respx.Moc
     route = respx_mock.get(
         "https://comtradeapi.un.org/files/v1/app/reference/tradeRegimes.json"
     ).mock(return_value=httpx.Response(200, json={"results": [{"id": "X", "text": "Export"}]}))
-    rows = await api.reference("tradeRegimes.json", ReferenceCode)
+    rows = (await api.reference("tradeRegimes.json", ReferenceCode)).rows
     assert [row.id for row in rows] == ["X"]
     assert "Ocp-Apim-Subscription-Key" not in route.calls.last.request.headers
-    assert "subscription-key" not in route.calls.last.request.url.params
+    assert "subscription-key" not in sent_query(route)
 
 
 def test_calls_are_spaced_one_and_a_half_seconds_apart() -> None:
@@ -805,9 +916,11 @@ def test_calls_are_spaced_one_and_a_half_seconds_apart() -> None:
 
 
 @pytest.mark.anyio
-async def test_upstreams_rate_limit_answer_is_a_rate_limit_error(replay_get: Replay) -> None:
+async def test_upstreams_rate_limit_answer_is_a_rate_limit_error(
+    replay_fixture: ReplayFixture,
+) -> None:
     """Recorded when calls were spaced exactly 1.0 s apart; core retries it after 1 s."""
-    route = replay_get("count_rate_limited")
+    route = replay_fixture("get", "count_rate_limited", match_params=COUNT_ONLY)
     once = AsyncClient(dataclasses.replace(config, retry=RetryPolicy(max_attempts=1)), auth=auth)
     with pytest.raises(RateLimitError) as info:
         await once.get_json(
@@ -860,10 +973,104 @@ def test_classify_leaves_other_answers_to_the_core_mapping() -> None:
     assert classify(_response(400, "not an ErrorResponse")) is None
 
 
+QUOTA_SPENT = {
+    "statusCode": 403,
+    "message": "Out of call volume quota. Quota will be replenished in 05:12:34.",
+}
+"""API Management's standard quota answer; not observed (never provoked)."""
+
+
+PACE_REFUSED = {"statusCode": 429, "message": "Rate limit is exceeded. Try again in 7 seconds."}
+"""Upstream's pace refusal with 7 for the recorded 1; sent here without ``Retry-After``."""
+
+
+def test_the_policy_reads_the_quota_and_pace_answers_and_no_other() -> None:
+    """The policy's ``spent`` hook: the 403's replenish time, a 429's seconds, nothing else."""
+    assert policy.spent is not None
+    assert (policy.limit_header, policy.remaining_header, policy.window) == (None, None, 86_400.0)
+    assert policy.spent(_response(403, QUOTA_SPENT)) == 5 * 3600 + 12 * 60 + 34
+    assert policy.spent(_response(403, {"error": "User not allowed"})) is None
+    assert policy.spent(_response(200, {"message": "replenished in 01:00:00"})) is None
+    recorded = response_from_fixture(load_fixture(GET / "count_rate_limited.json"))
+    assert recorded.headers["Retry-After"] == "1"
+    assert policy.spent(recorded) is None, "Retry-After rules"
+    assert policy.spent(_response(429, PACE_REFUSED)) == 7.0
+    assert policy.spent(_response(429, {"statusCode": 429})) == 1.0, "never the day-long window"
+    assert config.observe == policy.observe
+    assert config.before_request == policy.before_request
+
+
+@pytest.mark.rate_limited
+def test_a_spent_daily_quota_refuses_the_next_call_before_sending(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """After the quota answer the next call is refused without a request (ADR-0010).
+
+    Constructed route, not a fixture: the answer was never observed, and never provoked.
+    Marked ``rate_limited``, since the plugin turns the policy's pause off otherwise.
+    """
+    route = respx_mock.get(f"{BASE_URL}/data/v1/get/C/A/HS").mock(
+        return_value=httpx.Response(403, json=QUOTA_SPENT)
+    )
+    with pytest.raises(RateLimitError) as answered:
+        tasks.get_counts(**CH_EXPORTS_2023)
+    assert answered.value.retry_after == 5 * 3600 + 12 * 60 + 34
+    snapshot = policy.snapshot()
+    assert snapshot is not None
+    assert snapshot.remaining == 0
+    with pytest.raises(RateLimitError) as refused:
+        tasks.get_counts(**CH_EXPORTS_2023)
+    assert "nothing was sent for GET /data/v1/get/C/A/HS" in str(refused.value)
+    assert refused.value.retry_after is not None
+    assert 5 * 3600 < refused.value.retry_after <= 5 * 3600 + 12 * 60 + 34
+    assert route.call_count == 1
+
+
+@pytest.mark.rate_limited
 @pytest.mark.anyio
-async def test_mcp_tool_call_end_to_end(replay_get: Replay) -> None:
-    replay_get("count_ch_exports_2023")
-    replay_get("ch_exports_2023")
+async def test_a_pace_refusal_without_retry_after_holds_calls_back_seconds_not_a_day(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A 429 without ``Retry-After`` marks the quota spent for its body's seconds.
+
+    Constructed route, not a fixture: the recorded 429 carries ``Retry-After: 1``; without
+    it, ``QuotaPolicy`` would hold calls back for ``window``, a day, unless ``spent`` names
+    the time.
+    """
+    respx_mock.get(f"{BASE_URL}/data/v1/get/C/A/H1").mock(
+        return_value=httpx.Response(429, json=PACE_REFUSED)
+    )
+    once = AsyncClient(dataclasses.replace(config, retry=RetryPolicy(max_attempts=1)), auth=auth)
+    before = datetime.now(UTC)
+    with pytest.raises(RateLimitError):
+        await once.get_json(
+            "/data/v1/get/C/A/H1", params={"reporterCode": "757", "countOnly": "true"}
+        )
+    after = datetime.now(UTC)
+    snapshot = policy.snapshot()
+    assert snapshot is not None
+    assert snapshot.remaining == 0
+    assert snapshot.resumes_at is not None
+    assert snapshot.resumes_at - snapshot.observed_at == timedelta(seconds=7)
+    assert_time_between(snapshot.observed_at, before, after)
+
+
+def test_the_list_tasks_have_caps_of_their_own() -> None:
+    """ADR-0016: the two tables whole, a classification with a note that says to search."""
+    tables = ResultCap(max_rows=400, max_bytes=100_000)
+    assert tasks.MCP_CAPS["list_reporters"] == tasks.MCP_CAPS["list_partners"] == tables
+    commodities = tasks.MCP_CAPS["list_commodities"]
+    assert (commodities.max_rows, commodities.max_bytes) == (400, 100_000)
+    assert commodities.note is not None
+    assert "search" in commodities.note
+    assert set(tasks.MCP_CAPS) <= set(tasks.__all__)
+    assert not tasks.BULK_TASKS
+
+
+@pytest.mark.anyio
+async def test_mcp_tool_call_end_to_end(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
+    replay_fixture("get", "ch_exports_2023")
     payload = await mcp_call(server, "comtrade_get_data", CH_EXPORTS_2023)
     assert len(payload["data"]) == 32
     total = next(
@@ -882,14 +1089,14 @@ async def test_mcp_tool_call_end_to_end(replay_get: Replay) -> None:
         await mcp_call(server, "comtrade_get_counts", {**CH_EXPORTS_2023, "flow_code": "XX"})
 
 
-def test_http_route_end_to_end(replay_get: Replay) -> None:
+def test_http_route_end_to_end(replay_fixture: ReplayFixture) -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     from xippios.comtrade.http import router
 
-    replay_get("count_ch_exports_2023")
-    replay_get("ch_exports_2023")
+    replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
+    replay_fixture("get", "ch_exports_2023")
     app = FastAPI()
     app.include_router(router)
     with TestClient(app) as http:
@@ -907,24 +1114,14 @@ def test_http_route_end_to_end(replay_get: Replay) -> None:
 # Reference lists: reporters and partners are packaged, commodities fetched keyless.
 
 
-@pytest.mark.parametrize("name", list(PACKAGED_TABLES))
-def test_packaged_tables_match_their_provenance(name: str) -> None:
-    info = packaged_table_info(name)
-    assert info is not None
-    assert info.file == f"{name}.csv"
-    assert info.origin == f"https://comtradeapi.un.org/files/v1/app/reference/{name}.json"
-    assert len(packaged_table(name, PACKAGED_TABLES[name])) == info.rows
-    assert packaged_table_info("Frequency") is None
-    with pytest.raises(KeyError):
-        packaged_table(name, Commodity)
-
-
 def test_list_reporters_returns_the_packaged_table(respx_mock: respx.MockRouter) -> None:
     result = tasks.list_reporters()
     assert not respx_mock.calls, "packaged: no upstream call"
     assert len(result.data) == 255
     assert result.meta.endpoint == "files/v1/app/reference/Reporters.json"
-    assert result.meta.vintage == "2026-10-23"
+    assert result.meta.retrieved_at == PackagedList.load(PACKAGE, "Reporters").fetched
+    assert result.meta.retrieved_at == datetime(2026, 10, 23, tzinfo=UTC)
+    assert result.meta.vintage is None
     assert result.meta.published_at is None
     assert result.meta.request == {}
     by_code = {row.reporter_code: row for row in result.data}
@@ -953,7 +1150,8 @@ def test_list_partners_returns_the_packaged_table(respx_mock: respx.MockRouter) 
     assert not respx_mock.calls, "packaged: no upstream call"
     assert len(result.data) == 310
     assert result.meta.endpoint == "files/v1/app/reference/partnerAreas.json"
-    assert result.meta.vintage == "2026-10-23"
+    assert result.meta.retrieved_at == PackagedList.load(PACKAGE, "partnerAreas").fetched
+    assert result.meta.vintage is None
     assert result.meta.published_at is None
     by_code = {row.partner_code: row for row in result.data}
     world = by_code[0]
@@ -964,23 +1162,27 @@ def test_list_partners_returns_the_packaged_table(respx_mock: respx.MockRouter) 
     assert by_code[756].partner_note is None
 
 
+def _table[M: UpstreamModel](name: str, model: type[M]) -> list[M]:
+    return PackagedList.load(PACKAGE, name).parse(model, source="comtrade")
+
+
 def test_reporters_and_partners_share_one_code_space() -> None:
     """A code in both tables is the same area; World and others are partners only."""
-    reporters = {row.reporter_code: row for row in packaged_table("Reporters", Reporter)}
-    partners = {row.partner_code: row for row in packaged_table("partnerAreas", PartnerArea)}
+    reporters = {row.reporter_code: row for row in _table("Reporters", Reporter)}
+    partners = {row.partner_code: row for row in _table("partnerAreas", PartnerArea)}
     assert set(reporters) - set(partners) == {97, 975}
     assert len(set(partners) - set(reporters)) == 57
     assert {0, 756, 899} <= set(partners) - set(reporters)
     for code in set(reporters) & set(partners):
         assert reporters[code].reporter_code_iso_alpha3 == partners[code].partner_code_iso_alpha3
-    iso = {row.country_area_code: row.iso3 for row in packaged_table(
+    iso = {row.country_area_code: row.iso3 for row in _table(
         "country_area_code_iso", CountryAreaCodeIso)}  # fmt: skip
     assert set(iso) == set(reporters) | set(partners)
     assert (iso[756], iso[757], iso[0]) == ("CHE", "CHE", "W00")
 
 
 def test_trade_data_items_describe_the_record_columns() -> None:
-    items = {row.data_item: row for row in packaged_table("TradeDataItems", TradeDataItem)}
+    items = {row.data_item: row for row in _table("TradeDataItems", TradeDataItem)}
     assert len(items) == 50
     primary = items["primaryValue"]
     assert primary.description.startswith("Primary trade values")
@@ -1001,10 +1203,13 @@ def test_list_commodities_fetches_the_file_without_the_key(
     replay_fixture: ReplayFixture,
 ) -> None:
     route = replay_fixture("reference", "b4")
+    before = datetime.now(UTC)
     result = tasks.list_commodities("B4")
+    after = datetime.now(UTC)
     assert len(result.data) == 30
     assert result.meta.endpoint == "files/v1/app/reference/B4.json"
     assert result.meta.request == {"cl_code": "B4"}
+    assert_time_between(result.meta.retrieved_at, before, after)
     assert result.meta.published_at is None
     assert result.meta.vintage is None
     total = result.data[0]
@@ -1024,6 +1229,42 @@ def test_list_commodities_keeps_the_file_for_the_process(replay_fixture: ReplayF
     second = tasks.list_commodities("B4")
     assert route.call_count == 1
     assert second.data == first.data
+    stored, read = second.meta.retrieved_at, first.meta.retrieved_at
+    assert read - CLOCK_SLACK <= stored <= read + CLOCK_SLACK, "stored as it was read"
+
+
+def test_a_cached_reference_file_was_retrieved_when_it_was_stored(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """On a cache hit ``retrieved_at`` is the time the entry was stored (ADR-0015, decision 5).
+
+    The plugin empties every ``MemoryCache`` around an offline test, so the first call
+    fills it here; every later call answers from it with the one stored time, not its own.
+    """
+    route = replay_fixture("reference", "b4")
+    before = datetime.now(UTC)
+    first = tasks.list_commodities("B4")
+    after = datetime.now(UTC)
+    second = tasks.list_commodities("B4")
+    third = tasks.list_commodities("B4", search="food")
+    assert route.call_count == 1, "answered from the cache"
+    assert second.meta.retrieved_at == third.meta.retrieved_at, "the stored time, not now"
+    for answer in (first, second):
+        assert_time_between(answer.meta.retrieved_at, before, after)
+
+
+def test_the_cache_keeps_the_reference_files_and_nothing_else(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """One client: ``cache_filter`` admits the public reference files only (ADR-0015)."""
+    keeps = config.cache_filter
+    assert keeps is not None
+    assert keeps(httpx.Request("GET", f"{BASE_URL}/files/v1/app/reference/HS.json"))
+    assert not keeps(httpx.Request("GET", f"{BASE_URL}/data/v1/get/C/A/HS"))
+    route = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
+    tasks.get_counts(**CH_EXPORTS_2023)
+    tasks.get_counts(**CH_EXPORTS_2023)
+    assert route.call_count == 2, "a data call is never answered from the cache"
 
 
 def test_services_classifications_have_no_leaf_or_level(replay_fixture: ReplayFixture) -> None:
@@ -1081,17 +1322,19 @@ async def test_list_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
     }  # fmt: skip
     assert payload["meta"]["endpoint"] == "files/v1/app/reference/B4.json"
     assert payload["meta"]["request"] == {"cl_code": "B4"}
-    # The MCP result cap (200 rows) cuts both tables, in upstream's alphabetical order:
-    # Switzerland (757) and USA (842) are past it. Python and HTTP results are whole.
+    # MCP_CAPS: both tables reach an agent whole, Switzerland (757) and the USA (842) among
+    # them, which the default cap of 200 rows cut off in upstream's alphabetical order.
     reporters = await mcp_call(server, "comtrade_list_reporters", {})
-    assert reporters["meta"]["vintage"] == "2026-10-23"
-    assert len(reporters["data"]) == 200
-    assert reporters["note"].startswith("showing 200 of 255 rows")
+    assert reporters["meta"]["retrieved_at"] == "2026-10-23T00:00:00Z"
+    assert reporters["meta"]["vintage"] is None
+    assert len(reporters["data"]) == 255
+    assert "note" not in reporters
     assert reporters["data"][0]["text"] == "Afghanistan"
     assert reporters["data"][0]["entry_effective_date"] == "1900-01-01T00:00:00"
-    assert not {757, 842} & {row["reporter_code"] for row in reporters["data"]}
+    assert {757, 842} <= {row["reporter_code"] for row in reporters["data"]}
     partners = await mcp_call(server, "comtrade_list_partners", {})
-    assert partners["note"].startswith("showing 200 of 310 rows")
+    assert len(partners["data"]) == 310
+    assert "note" not in partners
     assert partners["data"][0]["partner_code"] == 4
     with pytest.raises(AssertionError, match=r"InvalidRequestError.*no classification file"):
         await mcp_call(server, "comtrade_list_commodities", {"cl_code": "TM"})
@@ -1112,22 +1355,13 @@ def test_list_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
         assert len(answer.json()["data"]) == 30
         reporters = http.get("/comtrade/list_reporters").json()
         assert len(reporters["data"]) == 255, "HTTP results are not capped"
-        assert http.get("/comtrade/list_partners").json()["meta"]["vintage"] == "2026-10-23"
+        partners = http.get("/comtrade/list_partners").json()["meta"]
+        assert (partners["retrieved_at"], partners["vintage"]) == ("2026-10-23T00:00:00Z", None)
         refused = http.get("/comtrade/list_commodities", params={"cl_code": "BE"})
         assert refused.status_code == 422
 
 
 # Datasets: getDa, getMetadata, getLiveUpdate. One call each, no count first.
-
-
-def _sent(route: respx.Route) -> dict[str, str]:
-    return dict(route.calls.last.request.url.params)
-
-
-def _recorded(fixtures_dir: Path, endpoint: str, case: str) -> dict[str, str]:
-    return dict(
-        httpx.URL(load_fixture(fixtures_dir / endpoint / f"{case}.json").request.url).params
-    )
 
 
 def test_get_data_availability_for_one_reporter_and_period(
@@ -1136,7 +1370,9 @@ def test_get_data_availability_for_one_reporter_and_period(
     route = replay_fixture("get_da", "ch_2023")
     result = tasks.get_data_availability("C", "A", "HS", reporter_code="757", period="2023")
     assert route.calls.last.request.url.path == "/data/v1/getDa/C/A/HS"
-    assert _sent(route) == _recorded(fixtures_dir, "get_da", "ch_2023")
+    assert sent_query(route) == recorded_query(
+        load_fixture(fixtures_dir / "get_da" / "ch_2023.json")
+    )
     assert result.meta.endpoint == "data/v1/getDa"
     assert result.meta.request == {
         "type_code": "C", "freq_code": "A", "cl_code": "HS", "reporter_code": "757",
@@ -1178,7 +1414,9 @@ def test_get_data_availability_by_publication_date(
         "C", "A", "HS", reporter_code="757", published_date_from="2024-01-01",
         published_date_to="2024-12-31",
     )  # fmt: skip
-    assert _sent(route) == _recorded(fixtures_dir, "get_da", "ch_published_2024")
+    assert sent_query(route) == recorded_query(
+        load_fixture(fixtures_dir / "get_da" / "ch_published_2024.json")
+    )
     released = [
         (row.period, row.first_released.year, row.last_released.year) for row in result.data
     ]
@@ -1198,22 +1436,24 @@ def test_get_data_availability_takes_more_than_12_periods(
 def test_dataset_arguments_are_checked_before_the_call(respx_mock: respx.MockRouter) -> None:
     with pytest.raises(InvalidRequestError) as info:
         tasks.get_data_availability(
-            "C", "A", "EBSDMX", reporter_code="756", period="2023-01",
+            "C", "A", "EBSDMX", reporter_code="757", period="2023-01",
             published_date_from="2024/01/01", published_date_to="2024-02-30",
         )  # fmt: skip
-    assert not respx_mock.calls
+    assert not isinstance(info.value, UnknownCode)
     message = str(info.value)
     for fragment in [
         "cl_code 'EBSDMX' is not a UN Comtrade clCode value",
-        "reporter_code '756' is not a UN Comtrade reporter code (Reporters.json); "
-        "closest: '757' (Switzerland)",
         "period '2023-01' is neither a year",
         "published_date_from '2024/01/01' is not a day as YYYY-MM-DD",
         "published_date_to '2024-02-30' is not a day as YYYY-MM-DD",
     ]:
         assert fragment in message
-    with pytest.raises(InvalidRequestError, match="reporter_code '0' is not"):
+    with pytest.raises(UnknownCode) as unknown:
+        tasks.get_data_availability("C", "A", "HS", reporter_code="756", period="2023")
+    assert str(unknown.value) == REFUSED_756
+    with pytest.raises(UnknownCode, match="'0' is not a reporter_code in the packaged Reporters"):
         tasks.get_metadata("C", "A", "HS", reporter_code="0")
+    assert not respx_mock.calls
 
 
 @pytest.mark.anyio
@@ -1230,8 +1470,10 @@ def test_get_metadata_for_one_reporter_and_period(
     route = replay_fixture("get_metadata", "ch_2023")
     result = tasks.get_metadata("C", "A", "HS", reporter_code="757", period="2023")
     assert route.calls.last.request.url.path == "/data/v1/getMetadata/C/A/HS"
-    assert _sent(route) == {"reporterCode": "757", "period": "2023"}
-    assert _sent(route) == _recorded(fixtures_dir, "get_metadata", "ch_2023")
+    assert sent_query(route) == {"reporterCode": "757", "period": "2023"}
+    assert sent_query(route) == recorded_query(
+        load_fixture(fixtures_dir / "get_metadata" / "ch_2023.json")
+    )
     assert result.meta.endpoint == "data/v1/getMetadata"
     assert result.meta.request["reporter_code"] == "757"
     assert result.meta.published_at is None
@@ -1264,7 +1506,7 @@ def test_get_metadata_without_a_period_answers_every_period(
     """reporterCode is honoured: only Switzerland's datasets come back."""
     route = replay_fixture("get_metadata", "ch_all_periods")
     result = tasks.get_metadata("C", "A", "HS", reporter_code="757")
-    assert _sent(route) == {"reporterCode": "757"}
+    assert sent_query(route) == {"reporterCode": "757"}
     assert len(result.data) == 38
     assert {dataset.reporter_code for dataset in result.data} == {757}
     assert min(dataset.period for dataset in result.data) == 1988
@@ -1287,7 +1529,7 @@ def test_get_live_update(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("get_live_update", "latest")
     result = tasks.get_live_update()
     assert route.calls.last.request.url.path == "/data/v1/getLiveUpdate"
-    assert not route.calls.last.request.url.params
+    assert not sent_query(route)
     assert result.meta.endpoint == "data/v1/getLiveUpdate"
     assert result.meta.request == {}
     assert result.meta.published_at is None
@@ -1378,8 +1620,10 @@ async def test_dataset_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
     assert len(live["data"]) == 50
     assert live["data"][0]["started_at"] == "2026-10-22T21:27:39Z"
     assert live["data"][0]["last_updated"] == "2026-10-22"
-    with pytest.raises(AssertionError, match=r"InvalidRequestError.*closest: '757'"):
-        await mcp_call(server, "comtrade_get_data_availability", {**query, "reporter_code": "756"})
+    refused = await mcp_call_text(
+        server, "comtrade_get_data_availability", {**query, "reporter_code": "756"}
+    )
+    assert refused == f"error: UnknownCode: {REFUSED_756}"
 
 
 def test_dataset_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
@@ -1424,9 +1668,9 @@ def _records(fixtures_dir: Path, case: str) -> list[TradeDataRecord]:
     return [TradeDataRecord.model_validate(row) for row in _rows(fixtures_dir, case)]
 
 
-def test_bilateral_flows_resolve_iso3_codes_before_the_call(replay_query: ReplayQuery) -> None:
+def test_bilateral_flows_resolve_iso3_codes_before_the_call(replay_fixture: ReplayFixture) -> None:
     """The fixture answers 757 and 842 only; CHE and USA reach it resolved, without a count."""
-    route = replay_query("bilateral_ch_us_2022_2023")
+    route = replay_fixture("get", "bilateral_ch_us_2022_2023", match_params=BY_AREAS)
     by_iso3 = tasks.get_bilateral_flows("CHE", "USA", "TOTAL,27", "2022,2023", "X")
     by_code = tasks.get_bilateral_flows("757", "842", "TOTAL,27", "2022,2023", "X")
     assert route.call_count == 2
@@ -1435,9 +1679,9 @@ def test_bilateral_flows_resolve_iso3_codes_before_the_call(replay_query: Replay
 
 
 def test_bilateral_flows_project_the_total_rows(
-    replay_query: ReplayQuery, fixtures_dir: Path
+    replay_fixture: ReplayFixture, fixtures_dir: Path
 ) -> None:
-    route = replay_query("bilateral_ch_us_2022_2023")
+    route = replay_fixture("get", "bilateral_ch_us_2022_2023", match_params=BY_AREAS)
     result = tasks.get_bilateral_flows("757", "842", "TOTAL,27", "2022,2023", "X")
     assert route.calls.last.request.url.path == "/data/v1/get/C/A/HS"
     assert result.meta.endpoint == "data/v1/get"
@@ -1472,9 +1716,9 @@ def test_bilateral_flows_project_the_total_rows(
     assert not pinned & set(TradeFlowRecord.model_fields), "pinned totals are not carried"
 
 
-def test_monthly_periods_ask_for_monthly_data(replay_query: ReplayQuery) -> None:
+def test_monthly_periods_ask_for_monthly_data(replay_fixture: ReplayFixture) -> None:
     """YYYYMM periods go to freqCode M; the format, not an argument, sets the frequency."""
-    route = replay_query("bilateral_ch_us_202301_202302")
+    route = replay_fixture("get", "bilateral_ch_us_202301_202302", match_params=BY_AREAS)
     result = tasks.get_bilateral_flows("CHE", "USA", "TOTAL", "202301,202302", "X")
     assert route.calls.last.request.url.path == "/data/v1/get/C/M/HS"
     assert result.meta.request["freq_code"] == "M"
@@ -1484,10 +1728,10 @@ def test_monthly_periods_ask_for_monthly_data(replay_query: ReplayQuery) -> None
 
 
 def test_commodity_series_sends_14_periods_in_two_calls_in_order(
-    replay_query: ReplayQuery, respx_mock: respx.MockRouter
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
-    first = replay_query("series_ch_27_2010_2021")
-    second = replay_query("series_ch_27_2022_2023")
+    first = replay_fixture("get", "series_ch_27_2010_2021", match_params=BY_PERIODS)
+    second = replay_fixture("get", "series_ch_27_2022_2023", match_params=BY_PERIODS)
     result = tasks.get_commodity_series("CHE", "27", "X", SERIES)
     assert (first.call_count, second.call_count) == (1, 1)
     sent = [call.request.url.params["period"] for call in respx_mock.calls]
@@ -1510,11 +1754,11 @@ def test_commodity_series_sends_14_periods_in_two_calls_in_order(
 
 
 def test_world_trade_has_one_row_per_reporter_largest_first(
-    replay_query: ReplayQuery, fixtures_dir: Path
+    replay_fixture: ReplayFixture, fixtures_dir: Path
 ) -> None:
-    route = replay_query("world_27_2023_imports")
+    route = replay_fixture("get", "world_27_2023_imports", match_params=BY_PARTNER)
     result = tasks.get_world_trade("27", "2023", "M")
-    assert "reporterCode" not in route.calls.last.request.url.params
+    assert "reporterCode" not in sent_query(route)
     assert "reporter_code" not in result.meta.request
     assert result.meta.request["partner_code"] == "0"
     assert len(result.data) == len({row.reporter_code for row in result.data}) == 167
@@ -1528,10 +1772,12 @@ def test_world_trade_has_one_row_per_reporter_largest_first(
     assert upstream[:3] == [8, 20, 24], "upstream sends them by code; the task sorts by value"
 
 
-def test_top_partners_drop_world_and_keep_n(replay_query: ReplayQuery, fixtures_dir: Path) -> None:
-    route = replay_query("partners_ch_total_2023")
+def test_top_partners_drop_world_and_keep_n(
+    replay_fixture: ReplayFixture, fixtures_dir: Path
+) -> None:
+    route = replay_fixture("get", "partners_ch_total_2023", match_params=BY_REPORTER)
     result = tasks.get_top_partners("CHE", "TOTAL", "2023", "X", 5)
-    assert "partnerCode" not in route.calls.last.request.url.params
+    assert "partnerCode" not in sent_query(route)
     every_partner = {
         key: value for key, value in BILATERAL_REQUEST.items() if key != "partner_code"
     }
@@ -1586,28 +1832,6 @@ def _slice_refused(respx_mock: respx.MockRouter, call: Callable[[], object]) -> 
             "periods '2023,202301' mixes years (2023) and months (202301)",
         ),
         (
-            lambda: tasks.get_bilateral_flows("CHF", "USA", "TOTAL", "2023", "X"),
-            "reporter 'CHF' is neither a UN Comtrade reporter code nor the ISO alpha-3 code of "
-            "one (Reporters.json); closest: 'CHN' (156, China)",
-        ),
-        (
-            lambda: tasks.get_top_partners("Switzerland", "TOTAL", "2023", "X", 5),
-            "closest: 'CHE' (757, Switzerland)",
-        ),
-        (
-            lambda: tasks.get_bilateral_flows("CHE", "US", "TOTAL", "2023", "X"),
-            "partner 'US' is neither a UN Comtrade partner code nor the ISO alpha-3 code of one "
-            "(partnerAreas.json); closest: 'USA' (842, USA)",
-        ),
-        (
-            lambda: tasks.get_bilateral_flows("756", "USA", "TOTAL", "2023", "X"),
-            "reporter '756' is not a UN Comtrade reporter code (Reporters.json); closest: '757'",
-        ),
-        (
-            lambda: tasks.get_bilateral_flows("W00", "USA", "TOTAL", "2023", "X"),
-            "reporter 'W00' (0, World) is a partner area only",
-        ),
-        (
             lambda: tasks.get_bilateral_flows("CHE", "USA", "TOTAL", SERIES[:-5], "X"),
             "periods has 13 values; UN Comtrade takes at most 12 per call",
         ),
@@ -1656,6 +1880,52 @@ def test_slice_arguments_are_refused_before_any_call(
     assert expected in _slice_refused(respx_mock, call)
 
 
+@pytest.mark.parametrize(
+    ("call", "param", "value", "expected"),
+    [
+        (
+            lambda: tasks.get_bilateral_flows("CHF", "USA", "TOTAL", "2023", "X"),
+            "reporter", "CHF",
+            "'CHF' is not a reporter in the packaged Reporters list (fetched 2026-10-23). "
+            "Did you mean 156 (China)?",
+        ),
+        (
+            lambda: tasks.get_top_partners("Switzerland", "TOTAL", "2023", "X", 5),
+            "reporter", "Switzerland", "Did you mean 757 (Switzerland)?",
+        ),
+        (
+            lambda: tasks.get_bilateral_flows("CHE", "US", "TOTAL", "2023", "X"),
+            "partner", "US",
+            "'US' is not a partner in the packaged partnerAreas list (fetched 2026-10-23). "
+            "Did you mean 842 (USA)?",
+        ),
+        (
+            lambda: tasks.get_bilateral_flows("756", "USA", "TOTAL", "2023", "X"),
+            "reporter", "756",
+            "'756' is not a reporter in the packaged Reporters list (fetched 2026-10-23). "
+            "Did you mean 757 (Switzerland)?",
+        ),
+        (
+            lambda: tasks.get_bilateral_flows("W00", "USA", "TOTAL", "2023", "X"),
+            "reporter", "W00", "'W00' (0, World) is a partner area only.",
+        ),
+    ],
+)  # fmt: skip
+def test_a_slice_area_the_packaged_tables_lack_is_an_unknown_code(
+    respx_mock: respx.MockRouter,
+    call: Callable[[], object],
+    param: str,
+    value: str,
+    expected: str,
+) -> None:
+    """As a code or an ISO alpha-3 code: ``UnknownCode`` before any call (conventions §5)."""
+    with pytest.raises(UnknownCode) as info:
+        call()
+    assert not respx_mock.calls
+    assert (info.value.param, info.value.value) == (param, value)
+    assert expected in str(info.value)
+
+
 def test_a_series_takes_at_most_120_periods(respx_mock: respx.MockRouter) -> None:
     """Ten calls of 12 against 500 a day: 121 periods are refused before the first call."""
     message = _slice_refused(
@@ -1691,7 +1961,10 @@ def test_the_list_tasks_search_code_iso3_and_text(respx_mock: respx.MockRouter) 
     by_iso3 = tasks.list_reporters(search="che")
     assert [row.reporter_code for row in by_iso3.data] == [690, 757], "Seychelles by its name"
     assert by_iso3.meta.request == {"search": "che"}
-    assert by_iso3.meta.vintage == "2026-10-23"
+    assert (by_iso3.meta.retrieved_at, by_iso3.meta.vintage) == (
+        datetime(2026, 10, 23, tzinfo=UTC),
+        None,
+    )
     germany = tasks.list_reporters(search="GERMANY").data
     assert sorted(row.reporter_code for row in germany) == [276, 278, 280]
     world = tasks.list_partners(search="W00")
@@ -1718,29 +1991,29 @@ def test_list_commodities_searches_the_fetched_file(replay_fixture: ReplayFixtur
 
 
 @pytest.mark.anyio
-async def test_slice_tools_end_to_end(replay_query: ReplayQuery) -> None:
-    replay_query("bilateral_ch_us_2022_2023")
+async def test_slice_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get", "bilateral_ch_us_2022_2023", match_params=BY_AREAS)
     arguments = {"reporter": "CHE", "partner": "USA", "commodities": "TOTAL,27",
                  "periods": "2022,2023", "flow": "X"}  # fmt: skip
     bilateral = await mcp_call(server, "comtrade_get_bilateral_flows", arguments)
     assert [row["cmd_code"] for row in bilateral["data"]] == ["27", "TOTAL", "27", "TOTAL"]
     assert bilateral["data"][3]["primary_value"] == 62852531481.607
     assert bilateral["meta"]["request"] == BILATERAL_REQUEST
-    replay_query("series_ch_27_2010_2021")
-    replay_query("series_ch_27_2022_2023")
+    replay_fixture("get", "series_ch_27_2010_2021", match_params=BY_PERIODS)
+    replay_fixture("get", "series_ch_27_2022_2023", match_params=BY_PERIODS)
     series = await mcp_call(
         server,
         "comtrade_get_commodity_series",
         {"reporter": "757", "commodity": "27", "flow": "X", "periods": SERIES},
     )
     assert [row["period"] for row in series["data"]] == SERIES.split(",")
-    replay_query("world_27_2023_imports")
+    replay_fixture("get", "world_27_2023_imports", match_params=BY_PARTNER)
     world = await mcp_call(
         server, "comtrade_get_world_trade", {"commodity": "27", "period": "2023", "flow": "M"}
     )
     assert world["note"].startswith("showing 104 of 167 rows"), "64 KB: the largest come first"
     assert world["data"][0]["reporter_code"] == 156
-    replay_query("partners_ch_total_2023")
+    replay_fixture("get", "partners_ch_total_2023", match_params=BY_REPORTER)
     top = await mcp_call(
         server,
         "comtrade_get_top_partners",
@@ -1772,13 +2045,13 @@ def test_list_search_route_end_to_end() -> None:
         assert answer["meta"]["request"] == {"search": "world"}
 
 
-def test_slice_route_end_to_end(replay_query: ReplayQuery) -> None:
+def test_slice_route_end_to_end(replay_fixture: ReplayFixture) -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     from xippios.comtrade.http import router
 
-    route = replay_query("bilateral_ch_us_2022_2023")
+    route = replay_fixture("get", "bilateral_ch_us_2022_2023", match_params=BY_AREAS)
     app = FastAPI()
     app.include_router(router)
     query = {"reporter": "CHE", "partner": "USA", "commodities": "TOTAL,27",
@@ -1793,5 +2066,5 @@ def test_slice_route_end_to_end(replay_query: ReplayQuery) -> None:
         assert route.call_count == 1
         refused = http.get("/comtrade/get_bilateral_flows", params={**query, "partner": "US"})
         assert refused.status_code == 422
-        assert "closest: 'USA' (842, USA)" in refused.json()["detail"]
+        assert "Did you mean 842 (USA)?" in refused.json()["detail"]
         assert route.call_count == 1, "refused before any call"

@@ -1,25 +1,62 @@
 {
   "param": "motCode",
+  "endpoint": "files/v1/app/reference/ModeOfTransportCodes.json",
   "fetched": "2026-10-23",
-  "origin": "https://comtradeapi.un.org/files/v1/app/reference/ModeOfTransportCodes.json",
-  "values": [
-    "0",
-    "1000",
-    "2000",
-    "2100",
-    "2200",
-    "2900",
-    "3000",
-    "3100",
-    "3200",
-    "3900",
-    "9000",
-    "9100",
-    "9110",
-    "9120",
-    "9190",
-    "9200",
-    "9300",
-    "9900"
+  "note": "The ids of ModeOfTransportCodes.json.",
+  "records": [
+    {
+      "motCode": "0"
+    },
+    {
+      "motCode": "1000"
+    },
+    {
+      "motCode": "2000"
+    },
+    {
+      "motCode": "2100"
+    },
+    {
+      "motCode": "2200"
+    },
+    {
+      "motCode": "2900"
+    },
+    {
+      "motCode": "3000"
+    },
+    {
+      "motCode": "3100"
+    },
+    {
+      "motCode": "3200"
+    },
+    {
+      "motCode": "3900"
+    },
+    {
+      "motCode": "9000"
+    },
+    {
+      "motCode": "9100"
+    },
+    {
+      "motCode": "9110"
+    },
+    {
+      "motCode": "9120"
+    },
+    {
+      "motCode": "9190"
+    },
+    {
+      "motCode": "9200"
+    },
+    {
+      "motCode": "9300"
+    },
+    {
+      "motCode": "9900"
+    }
   ]
 }
