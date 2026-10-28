@@ -1,7 +1,8 @@
 """Replay tests on recorded fixtures, at least one per task (conventions §10).
 
-``/add-endpoint`` and ``/record-fixture`` add them; the checks of this package's own, on
-the task docstrings, the adapters' source and the packaged lists, come first.
+``/add-endpoint`` and ``/record-fixture`` add them. The checks of this package's own sit
+among them: those on the task docstrings and the adapters' source first, those on the
+packaged lists and the enums with the tests of the list tasks.
 """
 
 import dataclasses
@@ -29,9 +30,9 @@ from xippios.core import (
     UpstreamError,
     UpstreamModel,
 )
-from xippios.core.client.cache import CachedResponse, cache_key
 from xippios.core.http import status_for
 from xippios.core.testing import (
+    CLOCK_SLACK,
     ReplayFixture,
     assert_projection,
     assert_time_between,
@@ -1165,33 +1166,28 @@ def test_list_commodities_keeps_the_file_for_the_process(replay_fixture: ReplayF
     second = tasks.list_commodities("B4")
     assert route.call_count == 1
     assert second.data == first.data
-    assert second.meta.retrieved_at <= first.meta.retrieved_at, "stored before it was read"
+    stored, read = second.meta.retrieved_at, first.meta.retrieved_at
+    assert read - CLOCK_SLACK <= stored <= read + CLOCK_SLACK, "stored as it was read"
 
 
 def test_a_cached_reference_file_was_retrieved_when_it_was_stored(
-    respx_mock: respx.MockRouter, fixtures_dir: Path
+    replay_fixture: ReplayFixture,
 ) -> None:
     """On a cache hit ``retrieved_at`` is the time the entry was stored (ADR-0015, decision 5).
 
-    The plugin empties every ``MemoryCache`` around an offline test, so the test fills it:
-    the recorded ``B4.json``, stored at a time no call could have taken.
+    The plugin empties every ``MemoryCache`` around an offline test, so the first call
+    fills it here; every later call answers from it with the one stored time, not its own.
     """
-    stored = datetime(2026, 10, 23, 8, 0, tzinfo=UTC)
-    recorded = load_fixture(fixtures_dir / "reference" / "b4.json").response
-    assert config.cache is not None
-    config.cache.set(
-        cache_key("GET", httpx.URL(f"{BASE_URL}/files/v1/app/reference/B4.json")),
-        CachedResponse(
-            status=recorded.status,
-            headers=tuple(recorded.headers),
-            content=recorded.body.encode(),
-            stored_at=stored.timestamp(),
-        ),
-    )
-    result = tasks.list_commodities("B4")
-    assert not respx_mock.calls, "answered from the cache"
-    assert result.meta.retrieved_at == stored
-    assert len(result.data) == 30
+    route = replay_fixture("reference", "b4")
+    before = datetime.now(UTC)
+    first = tasks.list_commodities("B4")
+    after = datetime.now(UTC)
+    second = tasks.list_commodities("B4")
+    third = tasks.list_commodities("B4", search="food")
+    assert route.call_count == 1, "answered from the cache"
+    assert second.meta.retrieved_at == third.meta.retrieved_at, "the stored time, not now"
+    for answer in (first, second):
+        assert_time_between(answer.meta.retrieved_at, before, after)
 
 
 def test_the_cache_keeps_the_reference_files_and_nothing_else(
