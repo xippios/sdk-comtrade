@@ -13,7 +13,9 @@ against them, and the free-form ones by shape, before anything is sent (ADR-0007
 ``validate_trade_balance`` and ``validate_bilateral_data`` for the Tools operations
 ``tools/v1/getTradeBalance`` and ``tools/v1/getBilateralData``; ``validate_slice``
 resolves and checks the arguments of the task-shaped slices (an area as a code or ISO
-alpha-3, periods of one format) into a ``data/v1/get`` request with ``SLICE_PINS``.
+alpha-3, periods of one format) into a ``data/v1/get`` request with ``SLICE_PINS``, and
+``validate_mirror_flows`` those of the mirror slice into a ``tools/v1/getBilateralData``
+request.
 """
 
 import difflib
@@ -41,6 +43,7 @@ __all__ = [
     "validate_classification_file",
     "validate_datasets",
     "validate_get",
+    "validate_mirror_flows",
     "validate_slice",
     "validate_trade_balance",
 ]
@@ -438,19 +441,21 @@ def _check_bounded(
         problems.append(_UNBOUNDED.format(task=task))
 
 
-def _check_tools_flow(value: str | None, problems: list[str]) -> None:
+def _check_tools_flow(
+    value: str | None, problems: list[str], *, argument: str = "flow_code"
+) -> None:
     if value is None or value in TOOLS_FLOW_CODES:
         return
     if "," in value:
         problems.append(
-            f"flow_code {value!r} must be one flow, 'M' or 'X': getBilateralData refuses "
+            f"{argument} {value!r} must be one flow, 'M' or 'X': getBilateralData refuses "
             "several in one call (HTTP 400), so call it once per flow"
         )
         return
     closest = _closest(value, TOOLS_FLOW_CODES)
     hint = f"; closest: {closest!r}" if closest else ""
     problems.append(
-        f"flow_code {value!r} is not a flowCode getBilateralData takes{hint}. "
+        f"{argument} {value!r} is not a flowCode getBilateralData takes{hint}. "
         f"Valid values: {', '.join(TOOLS_FLOW_CODES)}"
     )
 
@@ -815,9 +820,14 @@ def _resolve_area(argument: str, value: str | None, kind: str, problems: list[st
 
 
 def _slice_periods(
-    argument: str, value: str, problems: list[str], *, at_most: int
+    argument: str, value: str, problems: list[str], *, at_most: int, too_many: str | None = None
 ) -> tuple[str | None, list[str]]:
-    """Periods of one format: the ``freqCode`` they imply (``A`` or ``M``) and the members."""
+    """Periods of one format: the ``freqCode`` they imply (``A`` or ``M``) and the members.
+
+    ``too_many`` replaces the refusal's text after the count when more than ``at_most``
+    periods are given and ``at_most`` is ``MAX_PERIODS`` or less; the default names
+    upstream's 12 per call.
+    """
     members = _members(argument, value, problems)
     if not members:
         return None, []
@@ -855,8 +865,12 @@ def _slice_periods(
         )
     elif len(members) > at_most:
         problems.append(
-            f"{argument} has {len(members)} values; UN Comtrade takes at most {at_most} per "
-            "call (get_commodity_series splits longer series)"
+            f"{argument} has {len(members)} values; "
+            + (
+                too_many
+                or f"UN Comtrade takes at most {at_most} per call (get_commodity_series "
+                "splits longer series)"
+            )
         )
     return ("A" if lengths == {4} else "M"), members
 
@@ -973,3 +987,74 @@ def validate_slice(
         "flow_code": flow,
     }
     return {name: arguments[name] for name in _SLICE_ORDER if arguments[name] is not None}
+
+
+_MIRROR_TOO_MANY = (
+    f"get_mirror_flows takes at most {MAX_PERIODS} per call, the bound of the slices; split "
+    "the periods (get_bilateral_data takes more)"
+)
+"""The refusal of a 13th period: the package's slice bound, not upstream's.
+
+``tools/v1/getBilateralData`` answered 13 periods with 13 rows
+(``tests/fixtures/get_bilateral_data/ch_us_exports_13_periods.json``); the mirror slice
+keeps the 12 of the other slices (0.2.0 briefing, D91), which ``get_bilateral_data``
+does not.
+"""
+
+
+def validate_mirror_flows(
+    cl_code: str,
+    flow: str,
+    *,
+    reporter: str,
+    partner: str,
+    commodities: str,
+    periods: str,
+) -> dict[str, Any]:
+    """Resolve and check ``get_mirror_flows``' arguments into a ``getBilateralData`` request.
+
+    ``validate_slice``'s resolution and checks: ``reporter`` and ``partner`` one area each,
+    as UN Comtrade's code or an ISO alpha-3 code; ``commodities`` product codes that each
+    name one code; ``periods`` of one format, at most ``MAX_PERIODS``, the format setting
+    ``freqCode``. ``flow`` is one of ``TOOLS_FLOW_CODES``, the flows getBilateralData
+    takes, one per call. The request is ``tools/v1/getBilateralData``'s, for goods
+    (``typeCode`` C, as the other slices pin it), without ``SLICE_PINS``' breakdowns, which
+    the operation does not take (it answers in classic mode), and without ``includeDesc``,
+    which filled no description when recorded
+    (``tests/fixtures/get_bilateral_data/ch_us_exports_2023_include_desc.json`` against
+    ``ch_us_exports_2023.json``). Nothing is sent.
+
+    Returns:
+        The ``get_bilateral_data`` arguments in ``validate_bilateral_data``'s order: the
+        resolved codes, ``freq_code`` from the periods, ``period``, ``cmd_code`` and
+        ``flow_code`` as given.
+
+    Raises:
+        UnknownCode: A ``reporter`` or ``partner`` the packaged table lacks, as a code or
+            an ISO alpha-3 code, naming the packaged list, its fetch date and the closest
+            area (conventions §5); it ends the checks.
+        InvalidRequestError: Naming every problem found, with the closest valid value
+            where there is one.
+    """
+    problems: list[str] = []
+    _check_list("cl_code", cl_code, "clCode", problems)
+    _check_tools_flow(flow, problems, argument="flow")
+    reporter_code = _resolve_area("reporter", reporter, "reporter", problems)
+    partner_code = _resolve_area("partner", partner, "partner", problems)
+    family = cl_code if cl_code in _allowed("clCode") else "HS"
+    _slice_commodities("commodities", commodities, family, problems, one=False)
+    freq_code, _ = _slice_periods(
+        "periods", periods, problems, at_most=MAX_PERIODS, too_many=_MIRROR_TOO_MANY
+    )
+    if problems:
+        raise InvalidRequestError("; ".join(problems) + ".", source=SOURCE)
+    return {
+        "type_code": "C",
+        "freq_code": freq_code,
+        "cl_code": cl_code,
+        "reporter_code": reporter_code,
+        "period": periods,
+        "partner_code": partner_code,
+        "cmd_code": commodities,
+        "flow_code": flow,
+    }
