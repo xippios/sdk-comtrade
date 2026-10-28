@@ -2326,7 +2326,7 @@ def test_get_bilateral_data_puts_the_mirror_beside_the_reported_figures(
     assert result.meta.total == 1
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
     body = _tools_body("get_bilateral_data", "ch_us_exports_2023_include_desc")
-    assert isinstance(result.data, BilateralData), "the one task whose result is not a list"
+    assert isinstance(result.data, BilateralData), "not a list: the note travels with the rows"
     assert_projection(result.data, BilateralDataResponse.model_validate(body))
     assert result.data.timestamp_requested == datetime(2026, 10, 28, 16, 14, 25, 593000, tzinfo=UTC)
     assert result.data.note == body["note"]

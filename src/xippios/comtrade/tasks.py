@@ -561,11 +561,12 @@ async def get_bilateral_data_async(
 
     Upstream's ``getBilateralData``, which its spec marks "EXPERIMENTAL - USE SPARINGLY":
     one keyed call, "basic trade data joined with mirror partner data", useful to analyse
-    bilateral trade asymmetries. It is the one task whose result is not a list: ``data`` is
-    a ``BilateralData`` holding upstream's ``note``, its ``timestamp_requested`` and the
-    rows, ``data.data``, because the note qualifies the mirror values. It counts the
-    partners with a data gap and gives their share of world trade without naming them ("a
-    data gap for 2 partner(s) ... approximately 0.015% of the accumulated world's share").
+    bilateral trade asymmetries. Its result is not a list, nor is ``get_mirror_flows``':
+    ``data`` is a ``BilateralData`` holding upstream's ``note``, its
+    ``timestamp_requested`` and the rows, ``data.data``, because the note qualifies the
+    mirror values. It counts the partners with a data gap and gives their share of world
+    trade without naming them ("a data gap for 2 partner(s) ... approximately 0.015% of the
+    accumulated world's share").
     Each row, a ``BilateralDataRecord``, is one reporter, partner, product code, flow and
     period at the total of every breakdown (``customs_code`` ``"C00"``, ``mot_code`` 0): the
     reporter's figures (``primary_value``, ``qty``, ``net_wgt``, ...) beside the mirror
