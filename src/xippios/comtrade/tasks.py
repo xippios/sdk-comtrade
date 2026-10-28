@@ -1,13 +1,6 @@
-"""Task-shaped functions for UN Comtrade.
+"""Task functions, the public API: the adapters serve ``__all__`` (conventions §2).
 
-The public API (ADR-0001, layer 2). A task composes endpoint wrappers from ``api/``,
-resolves pagination and reference lookups, and returns ``Result[T]`` with full
-``ResultMeta``. Write the async version, derive the sync one with ``xippios.core.sync``,
-and list the sync name in ``__all__``: the MCP server and the HTTP router register
-exactly what is named there.
-
-Docstrings are read by agents: one sentence first, then ``Args:`` with examples of
-valid values for every parameter. ``/add-endpoint`` walks through the whole recipe.
+``/add-endpoint`` adds them.
 
 ``meta.endpoint`` is the operation as the Help Center names it (``data/v1/get``), or the
 reference file a list comes from (``files/v1/app/reference/Reporters.json``), and
@@ -565,11 +558,10 @@ async def get_world_trade_async(
     (``partner2Code`` 0, ``customsCode`` C00, ``motCode`` 0, ``breakdownMode`` classic),
     with descriptions (``includeDesc``): one row per reporter that reported the period
     (167 for 2023 imports of HS chapter 27 when recorded), sorted by ``primary_value``,
-    largest first. Bounded by
-    construction at one row per reporter (255 in the packaged ``Reporters.json``), so
-    there is no count call. Arguments are checked before the call; a mistake raises
-    ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds the
-    ``get_data`` arguments that were sent.
+    largest first. Bounded by construction at one row per reporter (255 in the packaged
+    ``Reporters.json``), so there is no count call. Arguments are checked before the
+    call; a mistake raises ``InvalidRequestError`` naming the closest valid value.
+    ``meta.request`` holds the ``get_data`` arguments that were sent.
 
     Args:
         commodity: One product code of ``cl_code``: ``"TOTAL"`` all goods, an HS chapter
