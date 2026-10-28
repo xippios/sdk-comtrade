@@ -24,8 +24,8 @@ every product file as served, so the snapshot covers all of them. It writes:
 
 Everything is fetched before anything is written, one request at a time, each URL retried
 at most once; files a previous snapshot had and this one does not are removed. The same
-upstream on the same day gives the same bytes on disk. No key is needed or read. Run from
-the repository root::
+upstream gives the same bytes on disk, ``FETCHED.md``'s ``Fetched`` time aside. No key is
+needed or read. Run from the repository root::
 
     uv run scripts/refresh_upstream.py
 """
@@ -368,9 +368,12 @@ def render_fetched(
     products: list[Product],
     versions: list[str],
     entries: list[Entry],
-    day: str,
+    fetched: str,
 ) -> str:
-    """The whole of ``FETCHED.md``; ``versions`` holds each product's ``openapi`` value."""
+    """The whole of ``FETCHED.md``; ``versions`` holds each product's ``openapi`` value.
+
+    ``fetched`` is the UTC time the run started, ``2026-10-24T09:15:00Z`` (conventions §3).
+    """
     found = ", ".join(sorted(set(versions)))
     lines = [
         "# Upstream documentation snapshot \N{EM DASH} UN Comtrade",
@@ -416,14 +419,15 @@ def render_fetched(
         "",
         "## Files",
         "",
-        "Fetched is the local calendar date of the run. Upstream modified is the HTTP",
-        "`Last-Modified` (UTC), with the `ETag` for the ApiDocs files, and the WordPress",
-        "`modified` field (site time) for Help Center articles.",
+        "Fetched is the UTC time the run started, in ISO 8601 with an explicit Z, the same",
+        "for every row. Upstream modified is the HTTP `Last-Modified` (UTC), with the `ETag`",
+        "for the ApiDocs files, and the WordPress `modified` field (site time) for Help",
+        "Center articles.",
         "",
         "| File | URL | Fetched | Upstream modified |",
         "| --- | --- | --- | --- |",
     ]
-    lines += [f"| {e.path} | {e.url} | {day} | {_cell(e.upstream_modified)} |" for e in entries]
+    lines += [f"| {e.path} | {e.url} | {fetched} | {_cell(e.upstream_modified)} |" for e in entries]
     return "\n".join(lines) + "\n"
 
 
@@ -449,7 +453,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Refresh docs/upstream/ from UN Comtrade.")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="snapshot directory")
     out: Path = parser.parse_args().out
-    day = datetime.now().astimezone().date().isoformat()  # the run's local calendar date
+    fetched = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")  # the UTC time the run started
 
     _log(f"ApiDocs: {APIDOCS_URL}")
     bundle, apim_base, products = discover()
@@ -465,7 +469,7 @@ def main() -> None:
     entries += [fetch_article(slug) for slug in HELP_SLUGS]
     _log("Reference files")
     entries += [fetch_reference(name) for name in REFERENCE_FILES]
-    fetched_md = render_fetched(bundle, apim_base, products, versions, entries, day)
+    fetched_md = render_fetched(bundle, apim_base, products, versions, entries, fetched)
     write_snapshot(out, entries, fetched_md)
     _log(f"Wrote {len(entries)} files and FETCHED.md under {out}")
 
