@@ -14,9 +14,10 @@ adds ``n``.
 ``meta.published_at`` stays ``None`` on every task. Data rows carry no publication date,
 and where upstream does publish release dates it publishes one per reporter and period
 (``getDa``, ``getMetadata``, ``getLiveUpdate``); a single value for a whole result would
-be a guess. The lists packaged with this version (``list_reporters``, ``list_partners``)
-carry the time the package fetched them as ``meta.retrieved_at``, and ``meta.vintage``
-stays ``None``: upstream gives the files no release identifier (ADR-0022, rule 1).
+be a guess. The lists packaged with this version (``list_reporters``, ``list_partners``,
+``list_codes``, ``list_classifications``) carry the time the package fetched them as
+``meta.retrieved_at``, and ``meta.vintage`` stays ``None``: upstream gives the files no
+release identifier (ADR-0022, rule 1).
 """
 
 from collections.abc import Mapping

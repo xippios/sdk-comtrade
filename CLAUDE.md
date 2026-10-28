@@ -99,7 +99,7 @@ call, without `search` and without a cap of their own: the largest list has 41 r
 unknown `customs_code` or `mot_code` names the closest codes with their text (core's
 `closest` by code and by text, else the most similar code).
 
-`MCP_CAPS` in `tasks.py` gives the three list tasks result caps of their own (ADR-0016):
+`MCP_CAPS` in `tasks.py` gives three list tasks result caps of their own (ADR-0016):
 400 rows or 100 KB, so `list_reporters` (255 rows, 69 KB) and `list_partners` (310,
 83 KB) reach an agent whole, past Switzerland and the USA, where the default cap of 200
 rows cut them in upstream's alphabetical order. A classification does not fit (8,262 HS
