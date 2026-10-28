@@ -61,7 +61,9 @@ from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.mcp import server
 from xippios.comtrade.models import (
     Commodity,
+    ComtradeRelease,
     CountryAreaCodeIso,
+    DataAvailability,
     LiveUpdateRecord,
     MetadataDataset,
     PartnerArea,
@@ -70,6 +72,7 @@ from xippios.comtrade.models import (
     TradeDataItem,
     TradeDataRecord,
     TradeFlowRecord,
+    WorldShare,
 )
 from xippios.comtrade.params import (
     CL_CODES_FROM_SPEC,
@@ -77,9 +80,11 @@ from xippios.comtrade.params import (
     PACKAGE,
     PACKAGED_LISTS,
     PACKAGED_TABLES,
+    RECENT,
     classification_files,
     validate_get,
     validate_slice,
+    validate_world_share,
 )
 
 TASKS = [getattr(tasks, name) for name in tasks.__all__]
@@ -2068,3 +2073,297 @@ def test_slice_route_end_to_end(replay_fixture: ReplayFixture) -> None:
         assert refused.status_code == 422
         assert "Did you mean 842 (USA)?" in refused.json()["detail"]
         assert route.call_count == 1, "refused before any call"
+
+
+# Public operations: getComtradeReleases and getWorldShare. Keyless (auth=None), uncached.
+
+BY_WORLD_SHARE = ["period", "reporterCode"]
+"""``match_params`` of a world share fixture for one reporter: several share one path."""
+
+CH_WORLD_SHARE_2023: dict[str, Any] = {
+    "type_code": "C",
+    "freq_code": "A",
+    "period": "2023",
+    "reporter_code": "757",
+}
+"""Switzerland's share of world goods trade in 2023, ``get_world_share/ch_2023.json``."""
+
+KEY_HEADER = "Ocp-Apim-Subscription-Key"
+
+
+def _raw_rows(fixtures_dir: Path, endpoint: str, case: str) -> list[dict[str, Any]]:
+    body = load_fixture(fixtures_dir / endpoint / f"{case}.json").response.body
+    rows: list[dict[str, Any]] = json.loads(body)["data"]
+    return rows
+
+
+def test_get_comtrade_releases(replay_fixture: ReplayFixture, fixtures_dir: Path) -> None:
+    route = replay_fixture("get_comtrade_releases", "calendar")
+    result = tasks.get_comtrade_releases()
+    assert route.calls.last.request.url.path == "/public/v1/getComtradeReleases"
+    assert not sent_query(route)
+    assert KEY_HEADER not in route.calls.last.request.headers
+    assert result.meta.endpoint == "public/v1/getComtradeReleases"
+    assert result.meta.request == {}
+    assert result.meta.total == len(result.data) == 38
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    raw = _raw_rows(fixtures_dir, "get_comtrade_releases", "calendar")
+    for row, upstream in zip(result.data, raw, strict=True):
+        assert_projection(row, ComtradeRelease.model_validate(upstream))
+    newest = result.data[0]
+    assert (newest.reporter_code, newest.flag_code, newest.nr) == (51, "AM", "N")
+    assert newest.dataset_desc == "Armenia CM 202607"
+    assert newest.date_release == datetime(2026, 10, 28)
+    assert newest.date_release.tzinfo is None
+    released = [row.date_release for row in result.data]
+    assert released == sorted(released, reverse=True), "newest first"
+    assert (released[-1], released[0]) == (datetime(2026, 10, 22), datetime(2026, 10, 28))
+    assert all((day.hour, day.minute, day.second) == (0, 0, 0) for day in released)
+    assert {row.nr for row in result.data} == {"N", "R"}
+    switzerland = [row.dataset_desc for row in result.data if row.reporter_code == 757]
+    assert switzerland == ["Switzerland CM 202601", "Switzerland CM 202602"]
+    assert {row.flag_code for row in result.data if row.reporter_code == 757} == {"CH"}
+
+
+def test_public_answers_are_never_cached(replay_fixture: ReplayFixture) -> None:
+    """The cache keeps the reference files only: a calendar always comes from upstream."""
+    releases = replay_fixture("get_comtrade_releases", "calendar")
+    share = replay_fixture("get_world_share", "ch_2023", match_params=BY_WORLD_SHARE)
+    for _ in range(2):
+        tasks.get_comtrade_releases()
+        tasks.get_world_share(**CH_WORLD_SHARE_2023)
+    assert (releases.call_count, share.call_count) == (2, 2)
+
+
+def test_the_public_operations_send_no_key(replay_fixture: ReplayFixture) -> None:
+    """auth=None: a keyed call sends the placeholder, these send no key at all."""
+    releases = replay_fixture("get_comtrade_releases", "calendar")
+    share = replay_fixture("get_world_share", "ch_2023", match_params=BY_WORLD_SHARE)
+    tasks.get_comtrade_releases()
+    tasks.get_world_share(**CH_WORLD_SHARE_2023)
+    for route in (releases, share):
+        assert KEY_HEADER not in route.calls.last.request.headers
+        assert "subscription-key" not in sent_query(route)
+
+
+def test_get_world_share_for_one_reporter_and_period(
+    replay_fixture: ReplayFixture, fixtures_dir: Path
+) -> None:
+    route = replay_fixture("get_world_share", "ch_2023", match_params=BY_WORLD_SHARE)
+    result = tasks.get_world_share("C", "A", period="2023", reporter_code="757")
+    assert route.calls.last.request.url.path == "/public/v1/getWorldShare/C/A"
+    assert sent_query(route) == recorded_query(
+        load_fixture(fixtures_dir / "get_world_share" / "ch_2023.json")
+    )
+    assert KEY_HEADER not in route.calls.last.request.headers
+    assert result.meta.endpoint == "public/v1/getWorldShare"
+    assert result.meta.request == CH_WORLD_SHARE_2023
+    assert result.meta.total == 1
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    [row] = result.data
+    [upstream] = _raw_rows(fixtures_dir, "get_world_share", "ch_2023")
+    assert_projection(row, WorldShare.model_validate(upstream))
+    assert (row.type_code, row.freq_code, row.period, row.year, row.month) == (
+        "C", "A", 2023, 2023, 52,
+    )  # fmt: skip
+    assert (row.reporter_code, row.reporter_iso, row.reporter_desc) == (757, "CHE", "Switzerland")
+    assert row.dataset_desc == "Switzerland CA 2023"
+    assert isinstance(row.world_share, Decimal)
+    assert row.world_share == Decimal("0.01651852126450239")
+    assert (row.is_available, row.data_count) == (True, 1)
+    assert row.first_released == datetime(2024, 2, 2, 4, 52, 35, 216666)
+    assert row.last_released == datetime(2024, 6, 7, 17, 13, 50, 536666)
+    assert row.created == datetime(2024, 5, 13, 21, 12, 45, 566666)
+    assert row.updated == datetime(2026, 7, 28, 18, 4, 8, 320000)
+    times = (row.first_released, row.last_released, row.created, row.updated)
+    assert all(time.tzinfo is None for time in times), "no zone stated, none attached"
+
+
+def test_world_shares_release_times_are_get_das(fixtures_dir: Path) -> None:
+    """Recorded five days apart, getWorldShare and getDa give Switzerland 2023 the same times."""
+    [share] = _raw_rows(fixtures_dir, "get_world_share", "ch_2023")
+    [dataset] = _raw_rows(fixtures_dir, "get_da", "ch_2023")
+    row, availability = WorldShare.model_validate(share), DataAvailability.model_validate(dataset)
+    assert (row.first_released, row.last_released) == (
+        availability.first_released, availability.last_released,
+    )  # fmt: skip
+
+
+def test_world_share_for_every_reporter(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get_world_share", "all_reporters_2023", match_params=["period"])
+    result = tasks.get_world_share("C", "A", period="2023")
+    assert sent_query(route) == {"period": "2023"}
+    assert result.meta.request == {"type_code": "C", "freq_code": "A", "period": "2023"}
+    assert result.meta.total == len(result.data) == 214
+    assert len({row.reporter_code for row in result.data}) == 214
+    shares = [row.world_share for row in result.data if row.world_share is not None]
+    assert len(shares) == 214
+    assert abs(sum(shares, Decimal(0)) - 1) < Decimal("1e-12"), "one period's shares sum to 1"
+    missing = [row for row in result.data if not row.is_available]
+    assert len(missing) == 47
+    assert all(row.first_released == row.last_released == datetime(1, 1, 1) for row in missing)
+    assert all(row.first_released.year > 1 for row in result.data if row.is_available)
+    assert [row.is_available for row in result.data] == [True] * 167 + [False] * 47
+
+
+def test_world_share_for_every_period(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get_world_share", "ch_every_period", match_params=["reporterCode"])
+    result = tasks.get_world_share("C", "A", reporter_code="757")
+    assert sent_query(route) == {"reporterCode": "757"}
+    assert [row.period for row in result.data] == list(range(1962, 2026))
+    assert {row.reporter_code for row in result.data} == {757}
+    assert result.meta.total == 64
+
+
+def test_monthly_world_share(replay_fixture: ReplayFixture, fixtures_dir: Path) -> None:
+    route = replay_fixture("get_world_share", "ch_202301", match_params=BY_WORLD_SHARE)
+    result = tasks.get_world_share("C", "M", period="202301", reporter_code="757")
+    assert route.calls.last.request.url.path == "/public/v1/getWorldShare/C/M"
+    assert sent_query(route) == recorded_query(
+        load_fixture(fixtures_dir / "get_world_share" / "ch_202301.json")
+    )
+    [row] = result.data
+    assert (row.freq_code, row.period, row.year, row.month) == ("M", 202301, 2023, 1)
+    assert row.dataset_desc == "Switzerland CM 2023-01"
+
+
+def test_a_period_nobody_reported_has_no_world_share(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get_world_share", "ch_1900_empty", match_params=BY_WORLD_SHARE)
+    result = tasks.get_world_share("C", "A", period="1900", reporter_code="757")
+    assert result.data == []
+    assert result.meta.total == 0
+
+
+@pytest.mark.anyio
+async def test_recent_is_answered_with_a_server_error(replay_fixture: ReplayFixture) -> None:
+    """The spec lists 'recent'; upstream answered HTTP 500 to all three tries (2026-10-28)."""
+    route = replay_fixture("get_world_share", "ch_recent", match_params=BY_WORLD_SHARE)
+    with pytest.raises(UpstreamError) as info:
+        await tasks.get_world_share_async("C", "A", period=RECENT, reporter_code="757")
+    assert info.value.status == 500
+    assert "Something went wrong" in str(info.value)
+    assert route.call_count == config.retry.max_attempts == 4
+    assert sent_query(route) == {"period": "recent", "reporterCode": "757"}
+    everyone = replay_fixture("get_world_share", "all_reporters_recent", match_params=["period"])
+    with pytest.raises(UpstreamError, match="Something went wrong"):
+        await tasks.get_world_share_async("C", "A", period=RECENT)
+    assert sent_query(everyone) == {"period": "recent"}
+
+
+@pytest.mark.anyio
+async def test_get_world_share_refuses_a_malformed_period_upstream(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Layer 1: upstream's 400 spells its detail ErrorMessage; the refusal names the field."""
+    replay_fixture("get_world_share", "period_malformed")
+    with pytest.raises(InvalidRequestError, match=r"\(The field period is invalid\)"):
+        await api.get_world_share("C", "A", period="2023-01", reporter_code="757")
+
+
+def test_classify_reads_both_spellings_of_the_refusals_detail(fixtures_dir: Path) -> None:
+    public = load_fixture(fixtures_dir / "get_world_share" / "period_malformed.json")
+    data = load_fixture(fixtures_dir / "get" / "count_period_malformed.json")
+    refusals = [classify(response_from_fixture(fixture)) for fixture in (public, data)]
+    assert all(isinstance(refusal, InvalidRequestError) for refusal in refusals)
+    expected = (
+        "UN Comtrade refused the request (HTTP 400): Invalid parameter value "
+        "(The field period is invalid)"
+    )
+    assert [str(refusal) for refusal in refusals] == [expected, expected]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "fragment"),
+    [
+        (
+            {"period": "2023-01"},
+            "period '2023-01' is neither a year (YYYY, e.g. '2023') nor a month (YYYYMM, "
+            "e.g. '202305'), nor 'recent' alone",
+        ),
+        ({"period": "Recent"}, "period 'Recent' is neither a year"),
+        ({"period": "recent,2023"}, "period 'recent' is neither a year"),
+        ({"period": "202313"}, "period '202313' is neither a year"),
+        ({"period": "2022, 2023"}, "must be values separated by commas, without spaces"),
+        ({"type_code": "X"}, "type_code 'X' is not a UN Comtrade typeCode value"),
+        ({"freq_code": "Q"}, "freq_code 'Q' is not a UN Comtrade freqCode value"),
+        ({"reporter_code": "CHE"}, "reporter_code 'CHE' is not a numeric UN Comtrade area code"),
+    ],
+)
+def test_world_share_arguments_are_checked_before_the_call(
+    respx_mock: respx.MockRouter, arguments: dict[str, str], fragment: str
+) -> None:
+    query = {"type_code": "C", "freq_code": "A", **arguments}
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.get_world_share(**query)
+    assert not isinstance(info.value, UnknownCode)
+    assert fragment in str(info.value)
+    assert not respx_mock.calls
+
+
+def test_an_unknown_reporter_is_refused_before_the_world_share_call(
+    respx_mock: respx.MockRouter,
+) -> None:
+    with pytest.raises(UnknownCode) as info:
+        tasks.get_world_share("C", "A", period="2023", reporter_code="757,756")
+    assert str(info.value) == REFUSED_756
+    assert not respx_mock.calls
+
+
+def test_world_share_takes_any_number_of_periods_and_recent_alone() -> None:
+    years = ",".join(str(year) for year in range(2000, 2024))
+    assert validate_world_share("C", "A", period=years)["period"] == years
+    assert validate_world_share("C", "A", period=RECENT, reporter_code="757,842") == {
+        "type_code": "C", "freq_code": "A", "period": "recent", "reporter_code": "757,842",
+    }  # fmt: skip
+    assert validate_world_share("S", "M") == {"type_code": "S", "freq_code": "M"}
+
+
+@pytest.mark.anyio
+async def test_public_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get_comtrade_releases", "calendar")
+    replay_fixture("get_world_share", "ch_2023", match_params=BY_WORLD_SHARE)
+    replay_fixture("get_world_share", "all_reporters_2023", match_params=["period"])
+    releases = await mcp_call(server, "comtrade_get_comtrade_releases", {})
+    assert len(releases["data"]) == releases["meta"]["total"] == 38
+    assert releases["data"][0]["date_release"] == "2026-10-28T00:00:00"
+    assert "note" not in releases, "the calendar fits the default cap"
+    share = await mcp_call(server, "comtrade_get_world_share", CH_WORLD_SHARE_2023)
+    [row] = share["data"]
+    assert row["world_share"] == 0.01651852126450239
+    assert row["first_released"] == "2024-02-02T04:52:35.216666"
+    assert share["meta"]["endpoint"] == "public/v1/getWorldShare"
+    assert share["meta"]["published_at"] is None
+    everyone = await mcp_call(
+        server, "comtrade_get_world_share", {"type_code": "C", "freq_code": "A", "period": "2023"}
+    )
+    assert len(everyone["data"]) < 214
+    assert everyone["note"].startswith(f"showing {len(everyone['data'])} of 214 rows")
+    assert everyone["note"].endswith("narrow the query to see the rest")
+    refused = await mcp_call_text(
+        server, "comtrade_get_world_share", {**CH_WORLD_SHARE_2023, "reporter_code": "756"}
+    )
+    assert refused == f"error: UnknownCode: {REFUSED_756}"
+
+
+def test_public_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    replay_fixture("get_comtrade_releases", "calendar")
+    replay_fixture("get_world_share", "ch_2023", match_params=BY_WORLD_SHARE)
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as http:
+        releases = http.get("/comtrade/get_comtrade_releases")
+        assert releases.status_code == 200
+        assert releases.json()["meta"]["total"] == 38
+        share = http.get("/comtrade/get_world_share", params=CH_WORLD_SHARE_2023)
+        assert share.status_code == 200
+        assert share.json()["data"][0]["world_share"] == 0.01651852126450239
+        assert share.json()["data"][0]["updated"] == "2026-07-28T18:04:08.320000"
+        refused = http.get(
+            "/comtrade/get_world_share", params={**CH_WORLD_SHARE_2023, "period": "2023-01"}
+        )
+        assert refused.status_code == 422
