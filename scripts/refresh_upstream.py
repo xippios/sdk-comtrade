@@ -141,6 +141,8 @@ _STATEMENT = re.compile(
     r"\N{COPYRIGHT SIGN}|copyright|licen[cs]e|terms of (?:use|service)|public domain",
     re.IGNORECASE,
 )
+_RENDER_ID = re.compile(r"data-wp-key=")
+"""WordPress's lightbox image block, whose ``data-wp-key`` id is new on every render."""
 _FETCHED = re.compile(r"^\| [^|]+ \| \S+ \| (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z) \|", re.M)
 
 
@@ -167,12 +169,17 @@ class Product:
 
 @dataclass(frozen=True)
 class Entry:
-    """One row of ``FETCHED.md``: a response, the file it is kept as, if any, and a note."""
+    """One row of ``FETCHED.md``: a response, the file it is kept as, if any, and a note.
+
+    ``stable`` is ``False`` for a body that changes on every request: its row records no
+    size, sha256 or validators.
+    """
 
     path: str | None
     response: Response
     note: str
     content: bytes | None = None
+    stable: bool = True
 
 
 class _RetryableError(Exception):
@@ -472,8 +479,14 @@ def fetch_article(slug: str) -> Entry:
     merged = _merged_tables(body)
     if merged:
         note += f"; {merged} table{'s' if merged > 1 else ''} with merged cells kept as HTML"
+    stable = _RENDER_ID.search(body) is None
+    if not stable:
+        note += (
+            "; the body carries a WordPress image id (data-wp-key) that is new on every "
+            "request, so no size or sha256"
+        )
     _log(f"  {path}: HTTP {response.status}, {len(markdown)} characters, modified {modified}")
-    return Entry(path, response, note, markdown.encode("utf-8"))
+    return Entry(path, response, note, markdown.encode("utf-8"), stable)
 
 
 def _cell(value: str) -> str:
@@ -487,16 +500,16 @@ def _paragraph(*sentences: str) -> list[str]:
 
 
 def _row(entry: Entry, fetched: str) -> str:
-    response = entry.response
+    response, kept = entry.response, entry.stable
     cells = [
         entry.path or "(no file)",
         response.url,
         fetched,
         str(response.status),
-        str(len(response.body)),
-        hashlib.sha256(response.body).hexdigest(),
-        response.etag or "-",
-        _iso_http_date(response.last_modified),
+        str(len(response.body)) if kept else "-",
+        hashlib.sha256(response.body).hexdigest() if kept else "-",
+        (response.etag or "-") if kept else "-",
+        _iso_http_date(response.last_modified) if kept else "-",
         entry.note,
     ]
     return "| " + " | ".join(_cell(cell) for cell in cells) + " |"
@@ -580,7 +593,9 @@ def render_fetched(
             "a Help Center article the REST API's JSON, whose `content` the Markdown file is",
             "converted from, the article's WordPress `modified` field (site time) being in",
             "its note. ETag is as sent, Last-Modified the HTTP header in UTC, `-` where not",
-            "sent. A page read without a file is `(no file)`. Requests go one at a time,",
+            "sent; a body that changes on every request records none of the four, and its",
+            "note says why. A page read without a file is `(no file)`. Requests go one at a",
+            "time,",
             f"{PAUSE:g} s apart, each retried at most once after a network error or a 5xx,",
             f"identified as `{USER_AGENT}`; no API key is sent or read.",
         ),
