@@ -12,7 +12,8 @@ imports) layout." The Help Center describes the matching UI tool, Trade Balance 
   (``ch_world_2023_include_desc.json``); with ``classic``: the total row alone, the same
   row (``ch_world_2023_include_desc_breakdown_mode_classic.json``). Upstream's default
   gives every breakdown, not ``classic``'s total row; ``plus``, the spec's other value,
-  was not sent. ``includeDesc`` fills the ``*_iso``/``*_desc`` fields.
+  was not sent. With ``includeDesc`` the ``*_iso``/``*_desc`` fields are filled; no
+  answer with rows was recorded without it.
 - 1900: HTTP 200, ``count`` 0, no rows (``ch_world_1900_empty.json``).
 - 13 periods: HTTP 400 "Maximum number of periods is 12" (``ch_world_13_periods.json``),
   which ``_client.classify`` maps to ``InvalidRequestError``.

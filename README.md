@@ -108,10 +108,10 @@ row.primary_value, row.mirror_primary_value  # exports to the USA; the USA's imp
 ```
 
 Both need `reporter_code` or `partner_code`, and `cmd_code`, since upstream offers no
-count to check a query's size first. A partner that has not reported gives a mirror of
-0, not a sign of no trade, so `get_bilateral_data` returns upstream's `note` on such data
-gaps, and its `timestamp_requested`, with the rows: its `data` is one `BilateralData`,
-not a list.
+count to check a query's size first. A mirror of 0 is no sign of no trade: the mirror
+depends on whether the partner reported. So `get_bilateral_data` returns upstream's
+`note`, which counts the partners with a data gap without naming them, and its
+`timestamp_requested`, with the rows: its `data` is one `BilateralData`, not a list.
 
 `get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
 result without a second call, and a count above 100,000 raises `QueryTooLarge` with the
@@ -163,7 +163,7 @@ instead of stdio.
 | `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(search=None)` | `comtrade_list_partners` | alpha |
 | `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
 
-The first twelve came with 0.1.0, the first release; `get_trade_balance` and
+The other twelve came with 0.1.0, the first release; `get_trade_balance` and
 `get_bilateral_data` are not released yet. Alpha: the public surface may change
 in a minor version before 1.0; `CHANGELOG.md` lists every change.
 

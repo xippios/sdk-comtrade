@@ -131,15 +131,17 @@ getTradeBalance answers `count` 0 and a placeholder for a query of 48 rows, getB
 ignores it; so the tasks count nothing first and require `reporter_code` or `partner_code`,
 and `cmd_code`. getTradeBalance without `breakdownMode` answers every breakdown (48 rows
 with the World in 2023), `classic` the total row; it refuses a 13th period. getBilateralData
-takes 13 periods and one `flowCode`, `M` or `X` (`M,X`: HTTP 400, its details spelt
-`ErrorMessage`, which `classify` reads), fills no description with `includeDesc`, and
+takes 13 periods and one `flowCode` (only `X` was recorded, `M` is the spec's other
+value; `M,X`: HTTP 400, its detail's message spelt `ErrorMessage`, which `classify`
+reads), fills no description with `includeDesc`, and
 answers in classic mode (`customsCode` C00, `motCode` 0). Its mirror columns are, per the
 Help Center, the partners' reported imports for a reporter's exports, and "depend on the
-availability of other reporters rather than no-trade": Afghanistan, which has not
-reported 2023, gives a mirror of 0. `primaryValueDisc` equals (mirror − value) / value in
+availability of other reporters rather than no-trade": for Switzerland's 2023 exports
+Afghanistan's mirror is 0, and it is inferred, not stated, to be one of the two partners
+the note counts with a data gap (DPRK alone: 1, the USA alone: none). `primaryValueDisc` equals (mirror − value) / value in
 every recorded row and `mirror2*` is empty or 0; upstream states neither meaning. Its
-envelope's `timestampRequested` is UTC per the spec and its `note` names data gaps, in
-wording that varies; the task returns both with the rows as one `BilateralData`
+envelope's `timestampRequested` is UTC per the spec and its `note` counts the partners
+with a data gap and their share of world trade, naming none, in wording that varies; the task returns both with the rows as one `BilateralData`
 (`note`, `timestamp_requested`, `data`), the one task whose result is not a list, so the
 note that qualifies the mirror values reaches the agent (Johannes, 2026-10-28). Over MCP,
 core's result cap cuts only a top-level list: an answer above 64 KB (about 40 rows)

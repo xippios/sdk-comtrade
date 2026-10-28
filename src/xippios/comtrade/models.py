@@ -239,7 +239,8 @@ class TradeBalanceRecord(UpstreamModel):
     the same query (``tests/fixtures/get/ch_exports_2023.json``).
 
     The other fields read as on ``TradeDataRecord``: the ``*_iso`` and ``*_desc`` fields,
-    ``aggr_level`` and ``is_leaf`` are filled with ``includeDesc``, ``ref_month`` is 52 on
+    ``aggr_level`` and ``is_leaf`` are filled with ``includeDesc`` (no answer with rows
+    was recorded without it), ``ref_month`` is 52 on
     annual rows, ``customs_code`` ``"C00"`` and ``mot_code`` 0 are the totals. Every field
     the schema lists, under its upstream name in snake_case; all 53 are present in every
     recorded row, so every field is required.
@@ -328,10 +329,13 @@ class BilateralDataRecord(UpstreamModel):
     codes). The Help Center (``un-comtrade-tools.md``, "Bilateral Data Comparison") calls
     the mirror of a reporter's exports "the import data reported by" its partners and
     warns that "the outcome of the mirror data depends on the availability of other
-    reporters rather than no-trade": a partner that has not reported gives a mirror of 0,
-    which is no evidence of no trade (Afghanistan, Switzerland's 2023 exports,
-    ``mirror_primary_value`` 0 and the mirror quantities ``None``, beside a ``note``
-    naming a data gap, ``tests/fixtures/get_bilateral_data/ch_us_kp_af_exports_2023.json``).
+    reporters rather than no-trade": a mirror of 0 is no evidence of no trade. For
+    Switzerland's 2023 exports Afghanistan's ``mirror_primary_value`` is 0 and its mirror
+    quantities ``None``, beside a ``note`` that counts 2 partners with a data gap without
+    naming them (``tests/fixtures/get_bilateral_data/ch_us_kp_af_exports_2023.json``);
+    that Afghanistan is one of them is inferred from the counts (DPRK alone: 1,
+    ``ch_kp_exports_2023_include_desc.json``; the USA alone: none,
+    ``ch_us_exports_2023.json``), not stated.
     The article also says the tool "only compares the data in classic breakdown mode":
     every recorded row has ``customs_code`` ``"C00"`` and ``mot_code`` 0, and the schema
     has no second-partner code.
@@ -475,9 +479,11 @@ class BilateralData(UpstreamModel):
             ``None`` when upstream sends none.
         note: Upstream's "Data-gap note for the requested reporters/partners, if any."
             (the spec), as sent, HTML markup included; ``None`` when upstream sends none,
-            which no recorded answer did. It qualifies the mirror columns: a partner with
-            a data gap has not reported, so its mirror is 0 or incomplete, which is no
-            sign of no trade. Its wording varies with the answer: "EXPERIMENTAL: We have
+            which no recorded answer did. It qualifies the mirror columns: it counts the
+            partners with a data gap and gives their share of world trade, without
+            naming them; where such a partner has a row, its ``mirror_primary_value`` of
+            0 shows which it is, and is no sign of no trade. Its wording varies with the
+            answer: "EXPERIMENTAL: We have
             good news! There is no data gap among the selected partners for bilateral
             trade comparison. This means all partners in this selection have reported
             their data to us." where every partner reported
@@ -486,7 +492,7 @@ class BilateralData(UpstreamModel):
             gap for 2 partner(s) during specific periods, which accounts for
             approximately 0.015% of the accumulated world's share. ... <b>As a reminder,
             users should be aware of the data availability when using the data.</b>"
-            where some did not (``ch_us_kp_af_exports_2023.json``).
+            where some partners have a gap (``ch_us_kp_af_exports_2023.json``).
         data: The rows, one ``BilateralDataRecord`` per reporter, partner, product code,
             flow and period.
     """

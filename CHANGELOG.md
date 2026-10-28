@@ -36,11 +36,13 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   - getTradeBalance refuses a 13th period with HTTP 400, getBilateralData answers 13;
   - getBilateralData takes one `flowCode` (`M,X` gets HTTP 400) and fills no description
     with `includeDesc`;
-  - getBilateralData answers in classic mode, gives a mirror of 0 for a partner that has
-    not reported, and its `primaryValueDisc` equals (mirror − value) / value in every
+  - getBilateralData answers in classic mode; its `note` counts the partners with a data
+    gap without naming them, and Afghanistan, inferred from the counts to be one of them,
+    has a mirror of 0; its `primaryValueDisc` equals (mirror − value) / value in every
     recorded row, a meaning upstream does not state;
-  - the Tools' HTTP 400 spells its details `ErrorMessage`, which `classify` now reads, so
-    the refusal names the field.
+  - getBilateralData's HTTP 400 spells a detail's message `ErrorMessage`, which
+    `classify` now reads as well as `errorMessage`, so the refusal names the field
+    (getTradeBalance's 400 had `details` null).
 
 ### Changed
 

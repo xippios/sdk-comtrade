@@ -513,9 +513,10 @@ async def get_trade_balance_async(
             (``customs_code`` ``"C00"``, ``mot_code`` 0, ``partner2_code`` 0). ``"plus"``,
             the spec's other value, gives every breakdown on ``get_data``.
         include_desc: Upstream's ``includeDesc``, "Include descriptions of data
-            variables": fills ``reporter_iso``/``reporter_desc``, the partner and second
-            partner ones, ``cmd_desc``, ``customs_desc``, ``mot_desc``, the quantity unit
-            abbreviations, ``aggr_level`` and ``is_leaf``.
+            variables": with it the recorded rows have ``reporter_iso``/``reporter_desc``,
+            the partner and second partner ones, ``cmd_desc``, ``customs_desc``,
+            ``mot_desc``, the quantity unit abbreviations, ``aggr_level`` and ``is_leaf``
+            filled; no answer with rows was recorded without it.
     """
     request = validate_trade_balance(
         type_code,
@@ -555,20 +556,23 @@ async def get_bilateral_data_async(
 
     Upstream's ``getBilateralData``, which its spec marks "EXPERIMENTAL - USE SPARINGLY":
     one keyed call, "basic trade data joined with mirror partner data", useful to analyse
-    bilateral trade asymmetries. It is the one task whose result is not a list:
-    ``data`` is a ``BilateralData`` holding upstream's ``note``, its
-    ``timestamp_requested`` and the rows, ``data.data``, because the note says which
-    partners have data gaps, and that qualifies their mirror values. Each row, a
-    ``BilateralDataRecord``, is one reporter,
-    partner, product code, flow and period at the total of every breakdown
-    (``customs_code`` ``"C00"``, ``mot_code`` 0): the reporter's figures
-    (``primary_value``, ``qty``, ``net_wgt``, ...) beside the mirror
-    (``mirror_primary_value``, ``mirror_qty``, ...), for a reporter's exports "the import
-    data reported by" its partners, as UN Comtrade's Help Center puts it. It warns that
-    "the outcome of the mirror data depends on the availability of other reporters rather
-    than no-trade": a partner that has not reported gives a mirror of 0 (Afghanistan, for
-    Switzerland's 2023 exports), which is no evidence of no trade. ``primary_value_disc``
-    is upstream's, its meaning not stated; in every recorded row it equals
+    bilateral trade asymmetries. It is the one task whose result is not a list: ``data``
+    is a ``BilateralData`` holding upstream's ``note``, its ``timestamp_requested`` and
+    the rows, ``data.data``, because the note qualifies the mirror values. It counts the
+    partners with a data gap and gives their share of world trade without naming them
+    ("a data gap for 2 partner(s) ... approximately 0.015% of the accumulated world's
+    share"); where such a partner has a row, its ``mirror_primary_value`` of 0 shows which
+    it is. Each row, a ``BilateralDataRecord``, is one reporter, partner, product code,
+    flow and period at the total of every breakdown (``customs_code`` ``"C00"``,
+    ``mot_code`` 0): the reporter's figures (``primary_value``, ``qty``, ``net_wgt``, ...)
+    beside the mirror (``mirror_primary_value``, ``mirror_qty``, ...), for a reporter's
+    exports "the import data reported by" its partners, as UN Comtrade's Help Center puts
+    it. It warns that "the outcome of the mirror data depends on the availability of other
+    reporters rather than no-trade": a mirror of 0 is no evidence of no trade. For
+    Switzerland's 2023 exports Afghanistan's mirror is 0; that Afghanistan is one of the
+    two partners the note counts is inferred from the counts (DPRK alone: 1, the USA
+    alone: none, the three together: 2), not stated. ``primary_value_disc`` is
+    upstream's, its meaning not stated; in every recorded row it equals
     ``(mirror_primary_value - primary_value) / primary_value``, a relative difference
     (``-0.16`` for Switzerland's 2023 exports to the USA, ``-1.0`` where the mirror is 0).
     The ``mirror2_*`` fields are not described upstream and were ``None`` or 0 in every

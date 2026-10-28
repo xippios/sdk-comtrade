@@ -13,9 +13,11 @@ asymmetries (``bilateral-asymmetries.md``). Recorded answers (2026-10-28, under
   data gap (``ch_us_exports_2023.json``); ``includeDesc=true`` changes nothing, the
   descriptions stay ``None`` (``ch_us_exports_2023_include_desc.json``).
 - to the USA, DPRK (408) and Afghanistan (4), 2023: two rows, Afghanistan's mirror 0, and
-  a ``note`` naming a data gap for two partners (``ch_us_kp_af_exports_2023.json``); to
-  DPRK alone ``count`` 0 (``ch_kp_exports_2023_include_desc.json``), as ``data/v1/get``
-  answers (``tests/fixtures/get/ch_kp_exports_2023_totals.json``).
+  a ``note`` counting a data gap for 2 partners without naming them
+  (``ch_us_kp_af_exports_2023.json``); to DPRK alone ``count`` 0 and a gap for 1 partner
+  (``ch_kp_exports_2023_include_desc.json``), and ``data/v1/get`` answers ``count`` 0
+  for that pair too (``tests/fixtures/get/ch_kp_exports_2023_totals.json``). The USA
+  alone has no gap, so the second gap is inferred to be Afghanistan's, not stated.
 - 13 periods to the USA: 13 rows (``ch_us_exports_13_periods.json``); the 12-period limit
   of ``data/v1/get`` and ``getTradeBalance`` does not apply here.
 - ``flowCode=M,X``: HTTP 400 "Invalid parameter value", "The field flowCode is invalid"

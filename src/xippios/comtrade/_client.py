@@ -77,8 +77,9 @@ def _quota_reset(text: str) -> float | None:
 def _refusal(payload: dict[str, object]) -> str:
     message = f"UN Comtrade refused the request (HTTP 400): {payload['error']}"
     details = payload.get("details")
-    # data/v1/get spells the detail's key errorMessage, as the spec's ValidationError
-    # does; the Tools operations spell it ErrorMessage (ch_us_2023_flow_code_m_x.json).
+    # Only the message is read: errorMessage as data/v1/get and the spec's ValidationError
+    # spell it, ErrorMessage as getBilateralData's 400 did (ch_us_2023_flow_code_m_x.json);
+    # getTradeBalance's recorded 400 had details null.
     notes = [
         str(item.get("errorMessage") or item.get("ErrorMessage"))
         for item in (details if isinstance(details, list) else [])
@@ -97,10 +98,11 @@ def classify(response: httpx.Response) -> XippiosError | None:
       is a caller mistake upstream caught: ``InvalidRequestError`` with upstream's text.
       Observed: ``Maximum number of periods is 12`` (``count_13_periods.json``, and on
       ``tools/v1/getTradeBalance`` ``ch_world_13_periods.json``) and ``Invalid parameter
-      value`` naming ``clCode`` (``count_cl_code_be5.json``). The Tools operations spell
-      a detail's keys ``MemberNames``/``ErrorMessage`` where ``data/v1/get`` and the
-      spec's ``ValidationError`` spell them ``memberNames``/``errorMessage``; both are
-      read (``tools/v1/getBilateralData``'s ``ch_us_2023_flow_code_m_x.json``).
+      value`` naming ``clCode`` (``count_cl_code_be5.json``). The message of each
+      detail is added to the text: ``errorMessage`` as ``data/v1/get`` and the spec's
+      ``ValidationError`` spell it, or ``ErrorMessage`` as ``tools/v1/getBilateralData``'s
+      400 did (``ch_us_2023_flow_code_m_x.json``); ``memberNames``/``MemberNames`` is not
+      read. ``getTradeBalance``'s recorded 400 had ``details`` null.
     - HTTP 403 whose body mentions a quota is the daily call quota of the key:
       ``RateLimitError``, with ``retry_after`` read from API Management's standard text
       "Out of call volume quota. Quota will be replenished in HH:MM:SS." The spec's 403
