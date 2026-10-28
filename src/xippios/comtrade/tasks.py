@@ -3,7 +3,8 @@
 ``/add-endpoint`` adds them.
 
 ``meta.endpoint`` is the operation as the Help Center names it (``data/v1/get``), or as
-the Tools spec's server path and summary do (``tools/v1/getTradeBalance``), or the
+the Tools spec's server path and summary do (``tools/v1/getTradeBalance``), its path under
+the spec's server where no article names it (``public/v1/getWorldShare``), or the
 reference file a list comes from (``files/v1/app/reference/Reporters.json``), and
 ``meta.request`` the task's own arguments that were set, so ``get_data(**meta.request)``
 repeats the call. The task-shaped slices (``get_bilateral_flows``,
@@ -15,10 +16,12 @@ adds ``n``. The mirror slice, ``get_mirror_flows``, puts the resolved
 
 ``meta.published_at`` stays ``None`` on every task. Data rows carry no publication date,
 and where upstream does publish release dates it publishes one per reporter and period
-(``getDa``, ``getMetadata``, ``getLiveUpdate``); a single value for a whole result would
-be a guess. The lists packaged with this version (``list_reporters``, ``list_partners``)
-carry the time the package fetched them as ``meta.retrieved_at``, and ``meta.vintage``
-stays ``None``: upstream gives the files no release identifier (ADR-0022, rule 1).
+(``getDa``, ``getMetadata``, ``getWorldShare``) or per release (``getComtradeReleases``),
+each printed without a zone; ``getLiveUpdate`` carries pipeline times, not a publication
+date. A single value for a whole result would be a guess.
+The lists packaged with this version (``list_reporters``, ``list_partners``) carry the
+time the package fetched them as ``meta.retrieved_at``, and ``meta.vintage`` stays
+``None``: upstream gives the files no release identifier (ADR-0022, rule 1).
 """
 
 from collections.abc import Mapping
@@ -30,14 +33,17 @@ from xippios.comtrade import api
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.api.get import ENDPOINT
 from xippios.comtrade.api.get_bilateral_data import ENDPOINT as GET_BILATERAL_DATA
+from xippios.comtrade.api.get_comtrade_releases import ENDPOINT as GET_COMTRADE_RELEASES
 from xippios.comtrade.api.get_da import ENDPOINT as GET_DA
 from xippios.comtrade.api.get_live_update import ENDPOINT as GET_LIVE_UPDATE
 from xippios.comtrade.api.get_metadata import ENDPOINT as GET_METADATA
 from xippios.comtrade.api.get_trade_balance import ENDPOINT as GET_TRADE_BALANCE
+from xippios.comtrade.api.get_world_share import ENDPOINT as GET_WORLD_SHARE
 from xippios.comtrade.errors import MAX_PERIODS, RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.models import (
     BilateralData,
     Commodity,
+    ComtradeRelease,
     DataAvailability,
     LiveUpdateRecord,
     MetadataDataset,
@@ -48,6 +54,7 @@ from xippios.comtrade.models import (
     TradeBalanceRecord,
     TradeDataRecord,
     TradeFlowRecord,
+    WorldShare,
 )
 from xippios.comtrade.params import (
     MAX_SERIES_PERIODS,
@@ -59,12 +66,14 @@ from xippios.comtrade.params import (
     validate_mirror_flows,
     validate_slice,
     validate_trade_balance,
+    validate_world_share,
 )
 
 __all__ = [
     "get_bilateral_data",
     "get_bilateral_flows",
     "get_commodity_series",
+    "get_comtrade_releases",
     "get_counts",
     "get_data",
     "get_data_availability",
@@ -73,6 +82,7 @@ __all__ = [
     "get_mirror_flows",
     "get_top_partners",
     "get_trade_balance",
+    "get_world_share",
     "get_world_trade",
     "list_commodities",
     "list_partners",
@@ -84,7 +94,11 @@ BULK_TASKS: frozenset[str] = frozenset()
 
 # Result caps of their own, keyed by the task function's name (conventions §8, ADR-0016):
 # the reporter (255) and partner (310) tables reach an agent whole; a classification file
-# (8,262 HS codes) cannot, and its note tells the agent to search.
+# (8,262 HS codes) cannot, and its note tells the agent to search. One period's world share
+# for every reporter (214 rows, 88.5 KB for 2023) reaches an agent whole too, where the
+# default cap cut it at 157 rows, dropping the USA (842): upstream sends the available rows
+# first, by reporter code, then the unavailable ones in an order the recording does not
+# explain.
 MCP_CAPS: Mapping[str, ResultCap] = {
     "list_reporters": ResultCap(max_rows=400, max_bytes=100_000),
     "list_partners": ResultCap(max_rows=400, max_bytes=100_000),
@@ -92,6 +106,11 @@ MCP_CAPS: Mapping[str, ResultCap] = {
         max_rows=400,
         max_bytes=100_000,
         note='search by code or text, e.g. search="0901" or search="coffee", to see the rest',
+    ),
+    "get_world_share": ResultCap(
+        max_rows=400,
+        max_bytes=100_000,
+        note='narrow by reporter_code (e.g. "842") or period (e.g. "2023") to see the rest',
     ),
 }
 
@@ -642,6 +661,86 @@ async def get_bilateral_data_async(
     return Result(data=BilateralData.project(response), meta=meta)
 
 
+async def get_comtrade_releases_async() -> Result[list[ComtradeRelease]]:
+    """List UN Comtrade's recent data releases: which reporter's dataset came out when.
+
+    Upstream's public ``getComtradeReleases``, "the list of the recent releases, the same
+    with the UI live update page" (https://comtradeplus.un.org/RecentReleases); the spec
+    calls each row "A recent or upcoming dataset release". Keyless: no key is sent and no
+    daily quota is spent, but the call shares the client's pace (the Public tier allows 1
+    call per second) and its quota policy, so once upstream has said the key's daily quota
+    is spent it is held back too; the Public tier's preview API's 500 records a call is far
+    above the rows recorded. One row per release: ``reporter_code`` (UN Comtrade's code,
+    e.g. 757 Switzerland), ``dataset_desc`` (e.g. ``"Switzerland CM 202601"``),
+    ``flag_code`` and ``nr``, whose meanings upstream does not state (recorded: two letters,
+    ``"CH"`` for 757; ``"N"`` or ``"R"``), and ``date_release``, a naive datetime: upstream
+    prints it without a UTC offset and states no zone, so none is attached. When recorded on
+    2026-10-28 it listed 38 releases from 2026-10-22 to 2026-10-28, newest first, every one
+    at midnight, none in the future; the spec states no order. UN Comtrade keeps one version
+    of each dataset, so a revised release replaces the earlier data, which is not archived.
+    ``meta.total`` is upstream's count; ``meta.published_at`` stays ``None``, since each row
+    has its own date. No arguments, one call; ``get_data_availability`` gives a dataset's
+    first and latest release.
+    """
+    response = await api.get_comtrade_releases()
+    meta = ResultMeta(source=SOURCE, endpoint=GET_COMTRADE_RELEASES, total=response.count)
+    return Result(data=response.data, meta=meta)
+
+
+async def get_world_share_async(
+    type_code: str,
+    freq_code: str,
+    *,
+    period: str | None = None,
+    reporter_code: str | None = None,
+) -> Result[list[WorldShare]]:
+    """List each reporter's share of world trade per period, with its release dates.
+
+    Upstream's public ``getWorldShare``, "Get the World Share (including estimates)"; the
+    spec calls a row "A reporter's share of world trade for one period". The spec states
+    neither whether ``world_share`` (a ``Decimal``) is a fraction or a percentage nor of
+    which trade; when recorded, the 214 values for 2023 (annual goods, every reporter) sum
+    to 1.0 and Switzerland's is 0.0165. A row with ``is_available`` false (47 of those 214)
+    still carries a ``world_share``, but ``first_released`` and ``last_released`` read
+    ``0001-01-01T00:00:00``, upstream's placeholder on unavailable datasets, kept as sent,
+    not a release; upstream states no meaning for ``is_available`` or ``data_count``. The
+    four times (``first_released``, ``last_released``, ``created``, ``updated``) are naive
+    datetimes: upstream prints them without a UTC offset and states no zone, so none is
+    attached. Keyless: no key is sent and no daily quota is spent, but the call shares the
+    client's pace (the Public tier allows 1 call per second) and its quota policy, so once
+    upstream has said the key's daily quota is spent it is held back too. Upstream's
+    subscription page limits the Public tier's preview API to 500 records a call; whether
+    that binds this operation is not stated, and the recorded answers (214 rows at most) did
+    not reach it. One call, rows in upstream's order; a period nobody reported returns an
+    empty list. The MCP tool returns up to 400 rows or 100 KB, so the whole 214-row answer
+    for one period reaches an agent; beyond that its note says to narrow by
+    ``reporter_code`` or ``period``. Arguments are checked before the call; an unknown
+    reporter code raises ``UnknownCode``, an ``InvalidRequestError`` naming the packaged
+    list and the closest area, another mistake ``InvalidRequestError``.
+
+    Args:
+        type_code: ``"C"`` goods or ``"S"`` services.
+        freq_code: ``"A"`` annual or ``"M"`` monthly.
+        period: Years ``"2023"`` (annual) or months ``"202301"`` (monthly),
+            comma-separated, e.g. ``"2022,2023"``. The spec also lists ``"recent"``, which
+            is accepted, but upstream answered it with HTTP 500 on all three tries on
+            2026-10-28, with and without a reporter (``ch_recent.json``,
+            ``all_reporters_recent.json``): the client makes 4 attempts (3 retries) on a
+            5xx and then raises ``UpstreamError``, and what ``"recent"`` selects is
+            unknown, so name the periods. Omit for every period (64 annual rows for
+            Switzerland, 1962 to 2025).
+        reporter_code: Reporters, comma-separated, as ``list_reporters`` lists them:
+            ``"757"`` Switzerland, ``"842"`` USA, ``"156"`` China, ``"757,842"``. Omit for
+            every reporter (214 rows for 2023, annual goods).
+    """
+    request = validate_world_share(type_code, freq_code, period=period, reporter_code=reporter_code)
+    response = await api.get_world_share(**request)
+    meta = ResultMeta(
+        source=SOURCE, endpoint=GET_WORLD_SHARE, request=request, total=response.count
+    )
+    return Result(data=response.data, meta=meta)
+
+
 async def get_bilateral_flows_async(
     reporter: str,
     partner: str,
@@ -1074,6 +1173,7 @@ async def list_commodities_async(
 get_bilateral_data = sync(get_bilateral_data_async)
 get_bilateral_flows = sync(get_bilateral_flows_async)
 get_commodity_series = sync(get_commodity_series_async)
+get_comtrade_releases = sync(get_comtrade_releases_async)
 get_counts = sync(get_counts_async)
 get_data = sync(get_data_async)
 get_data_availability = sync(get_data_availability_async)
@@ -1082,6 +1182,7 @@ get_metadata = sync(get_metadata_async)
 get_mirror_flows = sync(get_mirror_flows_async)
 get_top_partners = sync(get_top_partners_async)
 get_trade_balance = sync(get_trade_balance_async)
+get_world_share = sync(get_world_share_async)
 get_world_trade = sync(get_world_trade_async)
 list_commodities = sync(list_commodities_async)
 list_partners = sync(list_partners_async)

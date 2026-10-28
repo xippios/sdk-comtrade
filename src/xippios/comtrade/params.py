@@ -11,11 +11,11 @@ carries the provenance of every file. Each is a packaged-list file,
 against them, and the free-form ones by shape, before anything is sent (ADR-0007);
 ``validate_datasets`` does the same for ``data/v1/getDa`` and ``data/v1/getMetadata``,
 ``validate_trade_balance`` and ``validate_bilateral_data`` for the Tools operations
-``tools/v1/getTradeBalance`` and ``tools/v1/getBilateralData``; ``validate_slice``
-resolves and checks the arguments of the task-shaped slices (an area as a code or ISO
-alpha-3, periods of one format) into a ``data/v1/get`` request with ``SLICE_PINS``, and
-``validate_mirror_flows`` those of the mirror slice into a ``tools/v1/getBilateralData``
-request.
+``tools/v1/getTradeBalance`` and ``tools/v1/getBilateralData``, ``validate_world_share``
+for ``public/v1/getWorldShare``; ``validate_slice`` resolves and checks the arguments of
+the task-shaped slices (an area as a code or ISO alpha-3, periods of one format) into a
+``data/v1/get`` request with ``SLICE_PINS``, and ``validate_mirror_flows`` those of the
+mirror slice into a ``tools/v1/getBilateralData`` request.
 """
 
 import difflib
@@ -36,6 +36,7 @@ __all__ = [
     "PACKAGE",
     "PACKAGED_LISTS",
     "PACKAGED_TABLES",
+    "RECENT",
     "SLICE_PINS",
     "TOOLS_FLOW_CODES",
     "classification_files",
@@ -46,6 +47,7 @@ __all__ = [
     "validate_mirror_flows",
     "validate_slice",
     "validate_trade_balance",
+    "validate_world_share",
 ]
 
 PACKAGE = "xippios.comtrade"
@@ -301,16 +303,21 @@ def _check_areas(argument: str, value: str | None, kind: str, problems: list[str
 
 
 def _check_period(
-    value: str | None, problems: list[str], *, max_periods: int | None = MAX_PERIODS
+    value: str | None,
+    problems: list[str],
+    *,
+    max_periods: int | None = MAX_PERIODS,
+    keyword: str | None = None,
 ) -> None:
-    if value is None:
+    if value is None or value == keyword:
         return
+    alone = f", nor {keyword!r} alone" if keyword else ""
     members = _members("period", value, problems)
     for member in members:
         if not _PERIOD.fullmatch(member):
             problems.append(
                 f"period {member!r} is neither a year (YYYY, e.g. '2023') nor a month "
-                "(YYYYMM, e.g. '202305')"
+                f"(YYYYMM, e.g. '202305'){alone}"
             )
     if max_periods is not None and len(members) > max_periods:
         problems.append(
@@ -652,6 +659,57 @@ def validate_datasets(
         "period": period,
         "published_date_from": published_date_from,
         "published_date_to": published_date_to,
+    }
+    return {name: value for name, value in arguments.items() if value is not None}
+
+
+RECENT = "recent"
+"""The one word ``getWorldShare``'s ``period`` takes besides periods (``public.json``).
+
+Its pattern, ``^((\\d{4}|\\d{6})(,(\\d{4}|\\d{6}))*$|recent\\b)``, ends the word with
+``\\b`` and no ``$``, so it would pass ``recent,2023``; the description reads
+"comma-separated, or 'recent'", and the package takes the word alone, as the description
+writes it.
+"""
+
+
+def validate_world_share(
+    type_code: str,
+    freq_code: str,
+    *,
+    period: str | None = None,
+    reporter_code: str | None = None,
+) -> dict[str, Any]:
+    """Check the arguments of a ``public/v1/getWorldShare`` call before anything is sent.
+
+    ``type_code`` and ``freq_code`` against the packaged lists; ``period`` by shape, each
+    comma-separated member a year or a month as ``validate_get`` checks them, any number
+    of them (the spec states no limit), or ``RECENT`` alone; ``reporter_code`` against
+    ``Reporters.json``, each member of a comma-separated list. Values are never rewritten.
+
+    Returns:
+        The arguments that are set, under the task's parameter names, in signature order.
+
+    Raises:
+        UnknownCode: A reporter code the packaged table lacks, naming the packaged list,
+            its fetch date and the closest area (conventions §5); an
+            ``InvalidRequestError``. The first one found ends the checks: other problems
+            are reported once it is fixed.
+        InvalidRequestError: Naming every problem found, with the closest valid value
+            where there is one.
+    """
+    problems: list[str] = []
+    _check_list("type_code", type_code, "typeCode", problems)
+    _check_list("freq_code", freq_code, "freqCode", problems)
+    _check_period(period, problems, max_periods=None, keyword=RECENT)
+    _check_areas("reporter_code", reporter_code, "reporter", problems)
+    if problems:
+        raise InvalidRequestError("; ".join(problems) + ".", source=SOURCE)
+    arguments: dict[str, Any] = {
+        "type_code": type_code,
+        "freq_code": freq_code,
+        "period": period,
+        "reporter_code": reporter_code,
     }
     return {name: value for name, value in arguments.items() if value is not None}
 

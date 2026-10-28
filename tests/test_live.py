@@ -7,9 +7,10 @@ plus the data call of ``get_data``, one call each for ``get_data_availability``,
 commodity series asks for two periods, one call), one each for the two Tools
 operations, ``get_trade_balance`` and ``get_bilateral_data``, and one for
 ``get_mirror_flows``, the mirror slice over getBilateralData. A Basic Individual key
-allows 500 calls per day. The probe and the list tasks spend none: the probe sends no key, and
-``list_commodities`` and the checks of the packaged tables fetch the public reference
-files without it (four keyless requests).
+allows 500 calls per day. The probe, the list tasks and the public operations spend none:
+the probe sends no key, ``list_commodities`` and the checks of the packaged tables fetch
+the public reference files without it, and ``get_comtrade_releases`` and
+``get_world_share`` call ``public/v1`` without it (six keyless requests).
 """
 
 from datetime import datetime
@@ -195,3 +196,20 @@ async def test_get_mirror_flows_live() -> None:
     assert row.primary_value > 0
     assert row.mirror_primary_value > 0
     assert result.meta.total == 1
+
+
+async def test_get_comtrade_releases_live() -> None:
+    """Keyless: sends no key and spends no keyed call. The calendar may be empty some week."""
+    result = await tasks.get_comtrade_releases_async()
+    assert result.meta.total == len(result.data)
+    assert all(row.date_release.tzinfo is None for row in result.data)
+
+
+async def test_get_world_share_live() -> None:
+    """Keyless: sends no key and spends no keyed call."""
+    result = await tasks.get_world_share_async("C", "A", period="2023", reporter_code="757")
+    [row] = result.data
+    assert (row.reporter_code, row.period, row.freq_code) == (757, 2023, "A")
+    assert isinstance(row.world_share, Decimal)
+    assert 0 < row.world_share < 1
+    assert row.first_released.tzinfo is None

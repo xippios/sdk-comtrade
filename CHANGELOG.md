@@ -69,6 +69,24 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   unchanged.
 - `uv run scripts/refresh_upstream.py --check` fetches everything and compares it with
   the snapshot, writing nothing; exit 1 names the files that differ.
+- The two public operations, MCP tools `comtrade_get_comtrade_releases` and
+  `comtrade_get_world_share`: `get_comtrade_releases()`, upstream's recent releases from
+  `public/v1/getComtradeReleases` (38 from 2026-10-22 to 2026-10-28, newest first, when
+  recorded), and `get_world_share(type_code, freq_code, *, period=None,
+  reporter_code=None)`, each reporter's share of world trade per period from
+  `public/v1/getWorldShare/{typeCode}/{freqCode}`, with its release times. Both are
+  keyless, sending no key and spending no daily quota, while the client's pace and quota
+  policy apply to them as to every call, and never cached. Rows are `ComtradeRelease` and
+  `WorldShare`, every field under its upstream name; their times are naive datetimes, as
+  upstream prints them without a zone, and `world_share` is a `Decimal`. `meta.total` is
+  upstream's count and `meta.published_at` stays `None`. `params.validate_world_share`
+  checks the arguments before the call: `period` as years, months or `recent`, which
+  upstream answered with HTTP 500 when recorded, and `reporter_code` against
+  `Reporters.json`, an unknown code raising `UnknownCode`. MCP: `get_world_share` has a
+  result cap of its own, 400 rows or 100 KB, so one period for every reporter reaches an
+  agent whole (`MCP_CAPS`).
+- `classify`'s reading of `ErrorMessage` (above) covers getWorldShare's HTTP 400 as well
+  (`get_world_share/period_malformed.json`), so its refusal names the field too.
 
 ### Changed
 
