@@ -32,6 +32,7 @@ from pydantic import ValidationError as PydanticValidationError
 from xippios.core import UpstreamModel
 
 __all__ = [
+    "BilateralData",
     "BilateralDataRecord",
     "BilateralDataResponse",
     "Commodity",
@@ -426,6 +427,10 @@ def _utc(value: datetime | None) -> datetime | None:
     return value.replace(tzinfo=UTC) if value is not None and value.tzinfo is None else value
 
 
+_UtcTime = Annotated[datetime | None, AfterValidator(_utc)]
+"""``timestampRequested``: "UTC, yyyy-MM-dd HH:mm:ss.fff" per the spec, read as UTC."""
+
+
 class BilateralDataResponse(UpstreamModel):
     """The envelope of ``tools/v1/getBilateralData``, ``components.schemas.BilateralDataResponse``.
 
@@ -448,13 +453,47 @@ class BilateralDataResponse(UpstreamModel):
     """
 
     elapsed_time: str = Field(validation_alias="elapsedTime")
-    timestamp_requested: Annotated[datetime | None, AfterValidator(_utc)] = Field(
-        default=None, validation_alias="timestampRequested"
-    )
+    timestamp_requested: _UtcTime = Field(default=None, validation_alias="timestampRequested")
     note: str | None = None
     count: int
     data: list[BilateralDataRecord]
     error: str
+
+
+class BilateralData(UpstreamModel):
+    """The rows of ``tools/v1/getBilateralData`` with the note that qualifies them.
+
+    What ``get_bilateral_data`` returns: a projection of ``BilateralDataResponse``
+    (``UpstreamModel.project``), the envelope's ``timestampRequested``, ``note`` and
+    ``data`` under upstream's names in snake_case. ``count`` goes to ``meta.total``;
+    ``elapsedTime`` and ``error`` are left out, as for the other envelopes. The rows keep
+    upstream's name, ``data`` (ADR-0003), so a result reads ``result.data.data``.
+
+    Attributes:
+        timestamp_requested: When upstream took the request, "UTC, yyyy-MM-dd
+            HH:mm:ss.fff" per the spec, read as UTC, e.g. 2026-10-28 16:15:58.965 UTC;
+            ``None`` when upstream sends none.
+        note: Upstream's "Data-gap note for the requested reporters/partners, if any."
+            (the spec), as sent, HTML markup included; ``None`` when upstream sends none,
+            which no recorded answer did. It qualifies the mirror columns: a partner with
+            a data gap has not reported, so its mirror is 0 or incomplete, which is no
+            sign of no trade. Its wording varies with the answer: "EXPERIMENTAL: We have
+            good news! There is no data gap among the selected partners for bilateral
+            trade comparison. This means all partners in this selection have reported
+            their data to us." where every partner reported
+            (``tests/fixtures/get_bilateral_data/ch_us_exports_2023.json``), and
+            "EXPERIMENTAL: In reviewing the selection criteria, we've identified a data
+            gap for 2 partner(s) during specific periods, which accounts for
+            approximately 0.015% of the accumulated world's share. ... <b>As a reminder,
+            users should be aware of the data availability when using the data.</b>"
+            where some did not (``ch_us_kp_af_exports_2023.json``).
+        data: The rows, one ``BilateralDataRecord`` per reporter, partner, product code,
+            flow and period.
+    """
+
+    timestamp_requested: _UtcTime = Field(default=None, validation_alias="timestampRequested")
+    note: str | None = None
+    data: list[BilateralDataRecord]
 
 
 class ReferenceCode(UpstreamModel):
