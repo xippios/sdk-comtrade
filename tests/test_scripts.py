@@ -27,7 +27,9 @@ def test_refresh_reference_help_prints_usage_and_stops(
         script.parse_args(["--help"])
     assert info.value.code == 0
     out = capsys.readouterr().out
-    assert out.startswith("usage: refresh_reference.py [-h]")
+    assert out.startswith("usage: refresh_reference.py [-h] [--render-only]")
     assert "Refresh the packaged reference data from upstream" in out
     with pytest.raises(SystemExit):
         script.parse_args(["--unknown"])
+    assert script.parse_args([]).render_only is False
+    assert script.parse_args(["--render-only"]).render_only is True

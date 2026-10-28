@@ -1,23 +1,24 @@
 """Live smoke tests: skipped unless XIPPIOS_LIVE_TESTS=1 (conventions §10).
 
-Every task function gets one live smoke test here, next to the reachability check. The
-whole module costs eleven keyed calls: the reachability check, one count, the count plus
+Every task function gets one live smoke test here, next to the reachability probe, which
+spends no keyed call. The whole module costs ten keyed calls: one count, the count plus
 the data call of ``get_data``, one call each for ``get_data_availability``,
 ``get_metadata`` and ``get_live_update``, and one for each of the four slices (the
 commodity series asks for two periods, one call). A Basic Individual key allows 500
-calls per day. The list tasks spend none: ``list_commodities`` and the checks of the
-packaged tables fetch the public reference files without the key (three keyless
-fetches).
+calls per day. The probe and the list tasks spend none: the probe sends no key, and
+``list_commodities`` and the checks of the packaged tables fetch the public reference
+files without it (four keyless requests).
 """
 
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+import httpx
 import pytest
 
 from xippios.comtrade import api, tasks
-from xippios.comtrade._client import client
+from xippios.comtrade._client import BASE_URL, config
 
 pytestmark = [pytest.mark.live, pytest.mark.anyio]
 
@@ -36,7 +37,17 @@ CH_EXPORTS_2023: dict[str, Any] = {
 
 
 async def test_upstream_answers() -> None:
-    response = await client.request("GET", "/", raise_on_error=False)
+    """The base URL answers without a server error.
+
+    A plain request, not the package's client, so no key goes out and it spends no keyed
+    call; a keyed gateway's answer to it (a 403 or a 404, say) still shows the host is up.
+    """
+    async with httpx.AsyncClient(
+        headers={"User-Agent": config.user_agent},
+        timeout=config.timeouts.to_httpx(),
+        follow_redirects=True,
+    ) as http:
+        response = await http.get(BASE_URL)
     assert response.status_code < 500
 
 
