@@ -22,12 +22,14 @@ adds ``n``.
 and where upstream does publish release dates it publishes one per reporter and period
 (``getDa``, ``getMetadata``, ``getLiveUpdate``); a single value for a whole result would
 be a guess. The lists packaged with this version (``list_reporters``, ``list_partners``)
-carry the day they were fetched as ``meta.vintage``.
+carry the time the package fetched them as ``meta.retrieved_at``, and ``meta.vintage``
+stays ``None``: upstream gives the files no release identifier (ADR-0022, rule 1).
 """
 
+from collections.abc import Mapping
 from typing import Any
 
-from xippios.core import Result, ResultMeta, sync
+from xippios.core import PackagedList, Result, ResultCap, ResultMeta, matches, sync
 
 from xippios.comtrade import api
 from xippios.comtrade._client import SOURCE
@@ -48,8 +50,7 @@ from xippios.comtrade.models import (
 )
 from xippios.comtrade.params import (
     MAX_SERIES_PERIODS,
-    packaged_table,
-    packaged_table_info,
+    PACKAGE,
     validate_classification_file,
     validate_datasets,
     validate_get,
@@ -71,37 +72,28 @@ __all__ = [
     "list_reporters",
 ]
 
+# A task named here is Python-only: no tool, no route; the adapters skip it (ADR-0019 decision 4).
+BULK_TASKS: frozenset[str] = frozenset()
+
+# Result caps of their own, keyed by the task function's name (conventions §8, ADR-0016):
+# the reporter (255) and partner (310) tables reach an agent whole; a classification file
+# (8,262 HS codes) cannot, and its note tells the agent to search.
+MCP_CAPS: Mapping[str, ResultCap] = {
+    "list_reporters": ResultCap(max_rows=400, max_bytes=100_000),
+    "list_partners": ResultCap(max_rows=400, max_bytes=100_000),
+    "list_commodities": ResultCap(
+        max_rows=400,
+        max_bytes=100_000,
+        note='search by code or text, e.g. search="0901" or search="coffee", to see the rest',
+    ),
+}
+
 REFERENCE = "files/v1/app/reference"
 """Where upstream serves the reference files; ``meta.endpoint`` of the list tasks."""
 
 
 def _meta(request: dict[str, Any]) -> ResultMeta:
     return ResultMeta(source=SOURCE, endpoint=ENDPOINT, request=request)
-
-
-def _packaged_meta(name: str, request: dict[str, Any]) -> ResultMeta:
-    info = packaged_table_info(name)
-    if info is None:  # pragma: no cover - the tables ship with the package
-        raise KeyError(name)
-    file = info.origin.rsplit("/", 1)[-1]
-    return ResultMeta(
-        source=SOURCE,
-        endpoint=f"{REFERENCE}/{file}",
-        vintage=info.fetched.isoformat(),
-        request=request,
-    )
-
-
-def _search(search: str | None) -> dict[str, Any]:
-    return {} if search is None else {"search": search}
-
-
-def _matches(search: str | None, *fields: str | int | None) -> bool:
-    """Case-insensitive substring match of ``search`` in any of ``fields``; no search matches."""
-    if search is None:
-        return True
-    needle = search.casefold()
-    return any(needle in str(field).casefold() for field in fields if field is not None)
 
 
 def _bounded(bound: int) -> None:
@@ -571,7 +563,7 @@ async def get_world_trade_async(
     (``partner2Code`` 0, ``customsCode`` C00, ``motCode`` 0, ``breakdownMode`` classic),
     with descriptions (``includeDesc``): one row per reporter that reported the period
     (167 for 2023 imports of HS chapter 27 when recorded), sorted by ``primary_value``,
-    largest first, so that a capped MCP result keeps the largest. Bounded by
+    largest first. Bounded by
     construction at one row per reporter (255 in the packaged ``Reporters.json``), so
     there is no count call. Arguments are checked before the call; a mistake raises
     ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds the
@@ -595,7 +587,7 @@ async def get_world_trade_async(
             accepted but untested with the pinned ``typeCode`` C.
     """
     request = validate_slice(cl_code, flow, partner="0", commodity=commodity, period=period)
-    _bounded(len(packaged_table("Reporters", Reporter)))
+    _bounded(len(PackagedList.load(PACKAGE, "Reporters").records))
     rows = await _flows(request)
     rows.sort(key=lambda row: (-row.primary_value, row.reporter_code))
     return Result(data=rows, meta=_meta(request))
@@ -651,7 +643,7 @@ async def get_top_partners_async(
     request = validate_slice(
         cl_code, flow, reporter=reporter, commodity=commodity, period=period, n=n
     )
-    _bounded(len(packaged_table("partnerAreas", PartnerArea)))
+    _bounded(len(PackagedList.load(PACKAGE, "partnerAreas").records))
     rows = [row for row in await _flows(request) if row.partner_code != 0]
     rows.sort(key=lambda row: (-row.primary_value, row.partner_code))
     return Result(data=rows[:n], meta=_meta({**request, "n": n}))
@@ -661,15 +653,13 @@ async def list_reporters_async(search: str | None = None) -> Result[list[Reporte
     """List the reporters UN Comtrade has trade data from, with the codes reporter_code takes.
 
     Answered from upstream's ``Reporters.json`` as packaged with this version
-    (``reference/Reporters.csv``), without an upstream call; ``meta.vintage`` is the day
-    it was fetched. 255 rows when packaged, one per reporter code, current and historical
-    (``entry_expired_date`` is set on codes no longer used, such as ``280`` Fed. Rep. of
-    Germany until 1990 or ``810`` USSR). Codes are UN Comtrade's, not always ISO
-    numeric: ``757`` Switzerland (not 756), ``842`` USA, ``276`` Germany, ``156`` China;
-    ``97`` European Union and ``975`` ASEAN are groups (``is_group``). Over MCP results
-    are capped at 200 rows (or 64 KB), which cuts the list in upstream's alphabetical
-    order before Switzerland and the USA, so agents should search; the Python and HTTP
-    results are whole.
+    (``reference/Reporters.json``), without an upstream call; ``meta.retrieved_at`` is
+    when the package fetched it, ``meta.vintage`` is ``None``. 255 rows when packaged,
+    one per reporter code, current and historical (``entry_expired_date`` is set on codes
+    no longer used, such as ``280`` Fed. Rep. of Germany until 1990 or ``810`` USSR).
+    Codes are UN Comtrade's, not always ISO numeric: ``757`` Switzerland (not 756),
+    ``842`` USA, ``276`` Germany, ``156`` China; ``97`` European Union and ``975`` ASEAN
+    are groups (``is_group``). ``search`` finds a code without reading the whole list.
 
     Args:
         search: Keep the rows where this text occurs, ignoring case, in the code
@@ -678,10 +668,11 @@ async def list_reporters_async(search: str | None = None) -> Result[list[Reporte
             (757 Switzerland, and 690 Seychelles by its name), ``"germany"`` (276 Germany,
             278 and 280 until 1990). Omit for every row.
     """
+    packaged = PackagedList.load(PACKAGE, "Reporters")
     rows = [
         row
-        for row in packaged_table("Reporters", Reporter)
-        if _matches(
+        for row in packaged.parse(Reporter, source=SOURCE)
+        if matches(
             search,
             row.reporter_code,
             row.reporter_code_iso_alpha3,
@@ -690,20 +681,19 @@ async def list_reporters_async(search: str | None = None) -> Result[list[Reporte
             row.reporter_note,
         )
     ]
-    return Result(data=rows, meta=_packaged_meta("Reporters", _search(search)))
+    return Result(data=rows, meta=packaged.meta(SOURCE, request={"search": search}))
 
 
 async def list_partners_async(search: str | None = None) -> Result[list[PartnerArea]]:
     """List the partner areas UN Comtrade records trade with, for partner_code and partner2_code.
 
     Answered from upstream's ``partnerAreas.json`` as packaged with this version
-    (``reference/partnerAreas.csv``), without an upstream call; ``meta.vintage`` is the
-    day it was fetched. 310 rows when packaged: ``0`` World (the total over all
-    partners), countries in the reporters' code space (``757`` Switzerland, ``842`` USA,
-    ``276`` Germany, ``156`` China) and areas that only occur as partners, such as ``899``
-    "Areas, nes" or ``756`` Switzerland under its ISO code. Over MCP results are capped at
-    200 rows (or 64 KB), which cuts the list in upstream's alphabetical order, so agents
-    should search; the Python and HTTP results are whole.
+    (``reference/partnerAreas.json``), without an upstream call; ``meta.retrieved_at`` is
+    when the package fetched it, ``meta.vintage`` is ``None``. 310 rows when packaged:
+    ``0`` World (the total over all partners), countries in the reporters' code space
+    (``757`` Switzerland, ``842`` USA, ``276`` Germany, ``156`` China) and areas that only
+    occur as partners, such as ``899`` "Areas, nes" or ``756`` Switzerland under its ISO
+    code. ``search`` finds a code without reading the whole list.
 
     Args:
         search: Keep the rows where this text occurs, ignoring case, in the code
@@ -711,10 +701,11 @@ async def list_partners_async(search: str | None = None) -> Result[list[PartnerA
             ``partner_desc``, ``partner_note``), e.g. ``"world"``, ``"W00"``, ``"USA"``
             (840 United States of America, 841, 842 USA), ``"nes"``. Omit for every row.
     """
+    packaged = PackagedList.load(PACKAGE, "partnerAreas")
     rows = [
         row
-        for row in packaged_table("partnerAreas", PartnerArea)
-        if _matches(
+        for row in packaged.parse(PartnerArea, source=SOURCE)
+        if matches(
             search,
             row.partner_code,
             row.partner_code_iso_alpha3,
@@ -723,7 +714,7 @@ async def list_partners_async(search: str | None = None) -> Result[list[PartnerA
             row.partner_note,
         )
     ]
-    return Result(data=rows, meta=_packaged_meta("partnerAreas", _search(search)))
+    return Result(data=rows, meta=packaged.meta(SOURCE, request={"search": search}))
 
 
 async def list_commodities_async(
@@ -732,13 +723,13 @@ async def list_commodities_async(
     """List the product codes of one UN Comtrade classification, the values cmd_code takes.
 
     Fetched live from upstream's public classification file ``<cl_code>.json`` (no key, no
-    quota) and kept for the life of the process. The lists are large: ``"HS"`` has 8,262
-    codes (about 2 MB), each HS edition 6,000 to 7,000, SITC ``"SS"`` 7,863, BEC ``"B5"``
-    178, EBOPS ``"EB"`` 423. Every row has ``id`` (the code), ``text`` and ``parent``; the
-    goods files add ``is_leaf`` and ``aggr_level`` (0 for ``TOTAL``, then 2, 4 and 6 digits
-    for HS). Over MCP results are capped at 200 rows (or 64 KB), which shows the top of
-    the tree only, so agents should search. ``meta.vintage`` stays ``None``: the files
-    carry no release identifier.
+    quota) and kept for the life of the process: ``meta.retrieved_at`` is when the file
+    was fetched, the first call's time on a later one. The lists are large: ``"HS"`` has
+    8,262 codes (about 2 MB), each HS edition 6,000 to 7,000, SITC ``"SS"`` 7,863, BEC
+    ``"B5"`` 178, EBOPS ``"EB"`` 423, so ``search`` narrows them. Every row has ``id`` (the
+    code), ``text`` and ``parent``; the goods files add ``is_leaf`` and ``aggr_level`` (0
+    for ``TOTAL``, then 2, 4 and 6 digits for HS). ``meta.vintage`` stays ``None``: the
+    files carry no release identifier.
 
     Args:
         cl_code: The classification, with a file upstream: ``"HS"`` (all HS editions
@@ -757,13 +748,13 @@ async def list_commodities_async(
     rows = [
         row
         for row in fetched.rows
-        if _matches(search, row.id, row.cmd_code, row.text, row.description_original)
+        if matches(search, row.id, row.cmd_code, row.text, row.description_original)
     ]
     meta = ResultMeta(
         source=SOURCE,
         endpoint=f"{REFERENCE}/{cl_code}.json",
         retrieved_at=fetched.retrieved_at,
-        request={**request, **_search(search)},
+        request={**request, "search": search},
     )
     return Result(data=rows, meta=meta)
 
