@@ -46,6 +46,8 @@ dev = [
   "respx>=0.22",
   "anyio>=4",
   "detect-secrets>=1.5",
+  "markdownify==1.2.3",
+  "beautifulsoup4==4.15.0",
 ]
 
 [build-system]
