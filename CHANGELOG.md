@@ -18,7 +18,9 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   and imports side by side (`TradeBalanceRecord`, `primary_value_bal` as upstream sends
   it), and `get_bilateral_data(type_code, freq_code, cl_code, *, reporter_code=, period=,
   partner_code=, cmd_code=, flow_code=, include_desc=)` on `tools/v1/getBilateralData`,
-  its figures beside its partners' mirror figures (`BilateralDataRecord`); wrappers
+  its figures beside its partners' mirror figures (`BilateralDataRecord`), returned as
+  one `BilateralData`, not a list: upstream's data-gap `note`, which qualifies the mirror
+  values, `timestamp_requested` (UTC) and the rows as `data`; wrappers
   `api.get_trade_balance` and `api.get_bilateral_data`, `meta.total` upstream's `count`.
   Both need `reporter_code` or `partner_code`, and `cmd_code`, checked before the call
   with the other arguments (`params.validate_trade_balance`,

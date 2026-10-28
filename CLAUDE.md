@@ -139,7 +139,11 @@ availability of other reporters rather than no-trade": Afghanistan, which has no
 reported 2023, gives a mirror of 0. `primaryValueDisc` equals (mirror − value) / value in
 every recorded row and `mirror2*` is empty or 0; upstream states neither meaning. Its
 envelope's `timestampRequested` is UTC per the spec and its `note` names data gaps, in
-wording that varies; the task returns the rows only.
+wording that varies; the task returns both with the rows as one `BilateralData`
+(`note`, `timestamp_requested`, `data`), the one task whose result is not a list, so the
+note that qualifies the mirror values reaches the agent (Johannes, 2026-10-28). Over MCP,
+core's result cap cuts only a top-level list: an answer above 64 KB (about 40 rows)
+arrives as a text preview.
 
 The task-shaped slices (wave 2: `get_bilateral_flows`, `get_commodity_series`,
 `get_world_trade`, `get_top_partners`) call `data/v1/get` through `api.get` with

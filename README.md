@@ -101,13 +101,17 @@ ch = {"reporter_code": "757", "period": "2023", "cmd_code": "TOTAL"}
 [row] = get_trade_balance("C", "A", "HS", partner_code="0", breakdown_mode="classic", **ch).data
 row.primary_value_x, row.primary_value_m  # Switzerland's 2023 exports and imports
 row.primary_value_bal  # upstream's "X - M", as sent
-[row] = get_bilateral_data("C", "A", "HS", partner_code="842", flow_code="X", **ch).data
+bilateral = get_bilateral_data("C", "A", "HS", partner_code="842", flow_code="X", **ch).data
+bilateral.note  # upstream's data-gap note: 'EXPERIMENTAL: We have good news! ...'
+[row] = bilateral.data
 row.primary_value, row.mirror_primary_value  # exports to the USA; the USA's imports
 ```
 
 Both need `reporter_code` or `partner_code`, and `cmd_code`, since upstream offers no
-count to check a query's size first; a partner that has not reported gives a mirror of
-0, not a sign of no trade.
+count to check a query's size first. A partner that has not reported gives a mirror of
+0, not a sign of no trade, so `get_bilateral_data` returns upstream's `note` on such data
+gaps, and its `timestamp_requested`, with the rows: its `data` is one `BilateralData`,
+not a list.
 
 `get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
 result without a second call, and a count above 100,000 raises `QueryTooLarge` with the
@@ -154,7 +158,7 @@ instead of stdio.
 | `data/v1/get/C/{A,M}/{clCode}`, total row, every reporter, partner World | `get_world_trade(commodity, period, flow, *, cl_code="HS")` | `comtrade_get_world_trade` | alpha |
 | `data/v1/get/C/{A,M}/{clCode}`, total row, every partner, ranked | `get_top_partners(reporter, commodity, period, flow, n, *, cl_code="HS")` | `comtrade_get_top_partners` | alpha |
 | `tools/v1/getTradeBalance/{typeCode}/{freqCode}/{clCode}` | `get_trade_balance(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, cmd_code=, ...)` | `comtrade_get_trade_balance` | alpha; experimental upstream |
-| `tools/v1/getBilateralData/{typeCode}/{freqCode}/{clCode}` | `get_bilateral_data(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, cmd_code=, flow_code=, ...)` | `comtrade_get_bilateral_data` | alpha; experimental upstream |
+| `tools/v1/getBilateralData/{typeCode}/{freqCode}/{clCode}` | `get_bilateral_data(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, cmd_code=, flow_code=, ...)`, returns `BilateralData` (`note`, `timestamp_requested`, the rows as `data`) | `comtrade_get_bilateral_data` | alpha; experimental upstream |
 | `files/v1/app/reference/Reporters.json`, packaged | `list_reporters(search=None)` | `comtrade_list_reporters` | alpha |
 | `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(search=None)` | `comtrade_list_partners` | alpha |
 | `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
