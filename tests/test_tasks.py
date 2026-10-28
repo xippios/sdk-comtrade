@@ -804,7 +804,7 @@ async def test_reference_files_are_fetched_without_the_key(respx_mock: respx.Moc
     route = respx_mock.get(
         "https://comtradeapi.un.org/files/v1/app/reference/tradeRegimes.json"
     ).mock(return_value=httpx.Response(200, json={"results": [{"id": "X", "text": "Export"}]}))
-    rows = await api.reference("tradeRegimes.json", ReferenceCode)
+    rows = (await api.reference("tradeRegimes.json", ReferenceCode)).rows
     assert [row.id for row in rows] == ["X"]
     assert "Ocp-Apim-Subscription-Key" not in route.calls.last.request.headers
     assert "subscription-key" not in route.calls.last.request.url.params

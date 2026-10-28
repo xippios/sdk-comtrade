@@ -63,7 +63,7 @@ async def test_get_data_live() -> None:
 async def test_list_reporters_live() -> None:
     """The packaged table still matches upstream's file; a mismatch means a refresh is due."""
     packaged = (await tasks.list_reporters_async()).data
-    upstream = await api.reference_rows("Reporters.json")
+    upstream = (await api.reference_rows("Reporters.json")).rows
     assert {row.reporter_code for row in packaged} == {row["reporterCode"] for row in upstream}
     assert any(row.reporter_code == 757 for row in packaged)
 
@@ -71,7 +71,7 @@ async def test_list_reporters_live() -> None:
 async def test_list_partners_live() -> None:
     """The packaged table still matches upstream's file; a mismatch means a refresh is due."""
     packaged = (await tasks.list_partners_async()).data
-    upstream = await api.reference_rows("partnerAreas.json")
+    upstream = (await api.reference_rows("partnerAreas.json")).rows
     assert {row.partner_code for row in packaged} == {row["PartnerCode"] for row in upstream}
 
 

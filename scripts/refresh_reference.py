@@ -70,11 +70,11 @@ FIXTURES = ROOT / "tests/fixtures/get"
 
 
 async def _codes(name: str) -> list[str]:
-    return [entry.id for entry in await api.reference(name, ReferenceCode)]
+    return [entry.id for entry in (await api.reference(name, ReferenceCode)).rows]
 
 
 async def _cl_codes() -> list[str]:
-    references = await api.reference("ListofReferences.json", Reference)
+    references = (await api.reference("ListofReferences.json", Reference)).rows
     prefix = "cmd:"
     return [
         ref.category.removeprefix(prefix) for ref in references if ref.category.startswith(prefix)
@@ -82,7 +82,8 @@ async def _cl_codes() -> list[str]:
 
 
 async def _qty_codes() -> list[str]:
-    return [str(unit.qty_code) for unit in await api.reference("QuantityUnits.json", QuantityUnit)]
+    units = (await api.reference("QuantityUnits.json", QuantityUnit)).rows
+    return [str(unit.qty_code) for unit in units]
 
 
 LISTS: dict[str, tuple[str, Callable[[], Awaitable[list[str]]]]] = {
@@ -316,7 +317,7 @@ def _cell(value: object) -> str:
 def _write_table(name: str, file: str, today: str) -> dict[str, Any]:
     model = PACKAGED_TABLES[name]
     origin = f"{FILES}{file}"
-    rows = sync(api.reference_rows)(file)
+    rows = sync(api.reference_rows)(file).rows
     columns = _columns(model)
     for row in rows:
         unknown = sorted(set(row) - set(columns))

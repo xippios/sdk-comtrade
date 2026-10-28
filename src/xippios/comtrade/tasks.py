@@ -753,14 +753,16 @@ async def list_commodities_async(
             every row.
     """
     request = validate_classification_file(cl_code)
+    fetched = await api.reference(f"{cl_code}.json", Commodity)
     rows = [
         row
-        for row in await api.reference(f"{cl_code}.json", Commodity)
+        for row in fetched.rows
         if _matches(search, row.id, row.cmd_code, row.text, row.description_original)
     ]
     meta = ResultMeta(
         source=SOURCE,
         endpoint=f"{REFERENCE}/{cl_code}.json",
+        retrieved_at=fetched.retrieved_at,
         request={**request, **_search(search)},
     )
     return Result(data=rows, meta=meta)
