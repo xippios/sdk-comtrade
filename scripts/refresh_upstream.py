@@ -81,6 +81,12 @@ HELP_SLUGS = (
     "data",
     "data-availability",
     "metadata",
+    "un-comtrade-tools",
+    "developer-tools",
+    "un-comtrade-data-pipeline",
+    "bilateral-asymmetries",
+    "how-to-retrieve-data-for-world-exports-to-a-country-in-un-comtrade",
+    "how-should-i-interpret-and-use-quantity-data-in-un-comtrade",
 )
 """Help Center articles to capture, by WordPress slug (``uncomtrade.org/docs/<slug>/``)."""
 REFERENCE_BASE = "https://comtradeapi.un.org/files/v1/app/reference/"
