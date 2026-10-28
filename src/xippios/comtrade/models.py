@@ -607,8 +607,8 @@ class MirrorFlows(UpstreamModel):
             no recorded answer did. It qualifies the mirror columns: it counts the partners
             with a data gap and gives their share of world trade, without naming them
             (``BilateralData`` quotes both recorded wordings).
-        data: The rows, one ``MirrorFlowRecord`` per product code and period, sorted by
-            period, then product code.
+        data: The rows, one ``MirrorFlowRecord`` per product code and period, in
+            upstream's order (period order in every recording).
     """
 
     timestamp_requested: _UtcTime = Field(default=None, validation_alias="timestampRequested")

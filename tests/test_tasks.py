@@ -2612,7 +2612,7 @@ def test_mirror_flows_put_the_partners_report_beside_the_reporters(
     assert [(row.period, row.cmd_code) for row in result.data.data] == [
         ("2022", "27"),
         ("2023", "27"),
-    ]
+    ], "upstream's order, kept: period order, as in every recording"
     for row, raw in zip(result.data.data, response.data, strict=True):
         assert isinstance(row, MirrorFlowRecord)
         assert_projection(row, raw)
@@ -2671,21 +2671,6 @@ def test_mirror_flows_resolve_iso3_codes_and_ask_monthly_data_for_months(
         Decimal("9765705.308"),
         Decimal("246935.0"),
     )
-
-
-def test_mirror_flows_sort_by_period_then_product_code(respx_mock: respx.MockRouter) -> None:
-    """Constructed route, not a fixture: upstream sent the recorded rows in period order.
-
-    Served reversed, the rows come back sorted, as ``get_bilateral_flows`` sorts its own.
-    """
-    body = _tools_body("get_bilateral_data", "ch_us_27_2022_2023_x")
-    reversed_body = {**body, "data": body["data"][::-1]}
-    respx_mock.get(f"{BASE_URL}/tools/v1/getBilateralData/C/A/HS").mock(
-        return_value=httpx.Response(200, json=reversed_body)
-    )
-    result = tasks.get_mirror_flows(**MIRROR_ARGUMENTS)
-    assert [row.period for row in result.data.data] == ["2022", "2023"]
-    assert reversed_body["data"][0]["period"] == "2023"
 
 
 @pytest.mark.parametrize(

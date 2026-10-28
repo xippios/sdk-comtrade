@@ -893,8 +893,9 @@ async def get_mirror_flows_async(
     for goods (``typeCode`` C), which its spec marks "EXPERIMENTAL - USE SPARINGLY"; it
     answers at the total of every breakdown (classic mode). ``data`` is one
     ``MirrorFlows``, not a list: upstream's ``note``, its ``timestamp_requested`` (UTC) and
-    the rows, ``data.data``, one ``MirrorFlowRecord`` per product code and period, sorted
-    by period, then product code; a code or period upstream holds nothing for has no row.
+    the rows, ``data.data``, one ``MirrorFlowRecord`` per product code and period, in
+    upstream's order (period order in every recording); a code or period upstream holds
+    nothing for has no row.
     The note qualifies the mirror: it counts the partners with a data gap and gives their
     share of world trade without naming them, and "the outcome of the mirror data depends
     on the availability of other reporters rather than no-trade", so a mirror of 0 is no
@@ -924,7 +925,7 @@ async def get_mirror_flows_async(
         partner: The partner area whose report is the mirror, as code or ISO alpha-3
             code: ``"842"`` or ``"USA"`` (842, the code the USA reports under, not 840),
             ``"757"`` or ``"CHE"``, ``"276"`` or ``"DEU"``; ``list_partners(search=...)``
-            finds them.
+            finds them. ``"0"`` World is passed on, upstream's answer to it unrecorded.
         commodities: Product codes of ``cl_code``, comma-separated, each naming one code:
             ``"TOTAL"`` all goods, an HS chapter ``"27"``, headings ``"2709,2710"``.
             Levels such as ``"AG2"`` and wildcards such as ``"27??"`` are refused (one row
@@ -953,7 +954,6 @@ async def get_mirror_flows_async(
     _bounded(len(request["cmd_code"].split(",")) * len(request["period"].split(",")))
     response = await api.get_bilateral_data(**request)
     rows = [MirrorFlowRecord.project(record) for record in response.data]
-    rows.sort(key=lambda row: (row.period or "", row.cmd_code or ""))
     meta = ResultMeta(
         source=SOURCE, endpoint=GET_BILATERAL_DATA, request=request, total=response.count
     )
