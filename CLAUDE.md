@@ -166,6 +166,7 @@ tests/
                    the adapters serving exactly the tasks, task shapes and docstrings, the
                    README status table, the template tag, the core bound
   test_tasks.py    checks of this package's own plus per-task replay tests
+  test_scripts.py  the maintenance scripts under scripts/, checked without running them
   test_live.py     @pytest.mark.live smoke tests, one per task
 docs/upstream/     documentation snapshot and FETCHED.md
 .claude/family.md  the family rules, the template's, imported above
