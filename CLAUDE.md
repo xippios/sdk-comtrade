@@ -51,7 +51,8 @@ and how `_client.py` treats them:
   2026-10-23 for a query counted at 5,006,385). `get_data` counts first and raises
   `QueryTooLarge` before any data call.
 - **12 periods per call.** A 13th gets HTTP 400 "Maximum number of periods is 12";
-  `params.validate_get` refuses it before the call.
+  `params.validate_get` refuses it before the call. `tools/v1/getTradeBalance` answers the
+  same; `data/v1/getDa` and `tools/v1/getBilateralData` take more.
 - **Slow counts.** A broad count can take over a minute, so the read timeout is 180 s
   (`TIMEOUTS`), and a timed-out attempt that core retries counts against the quota each
   time; so does each retry of a 5xx.
@@ -120,6 +121,26 @@ What the recorded answers established (2026-10-23). The fixtures are named in
   `comtradeapicall` sends; answers `H6` like `HS`.
 - `data/v1/getLiveUpdate`: 50 rows but `count` 174; no `publishedDate` field.
 
+The two Tools operations (`docs/upstream/apidocs/comtradeTools.json`, both marked
+"EXPERIMENTAL - USE SPARINGLY") are `get_trade_balance` and `get_bilateral_data`, recorded
+on 2026-10-28 under `tests/fixtures/get_trade_balance/` and `get_bilateral_data/`, Switzerland
+and `TOTAL`. Both answered the package's key; the spec's 403 for a free-tier key not on
+getTradeBalance's allow-list ("User not allowed", `AuthError` by core's mapping) did not
+occur, and no other 403 was seen. `countOnly`, not in the spec, counts nothing:
+getTradeBalance answers `count` 0 and a placeholder for a query of 48 rows, getBilateralData
+ignores it; so the tasks count nothing first and require `reporter_code` or `partner_code`,
+and `cmd_code`. getTradeBalance without `breakdownMode` answers every breakdown (48 rows
+with the World in 2023), `classic` the total row; it refuses a 13th period. getBilateralData
+takes 13 periods and one `flowCode`, `M` or `X` (`M,X`: HTTP 400, its details spelt
+`ErrorMessage`, which `classify` reads), fills no description with `includeDesc`, and
+answers in classic mode (`customsCode` C00, `motCode` 0). Its mirror columns are, per the
+Help Center, the partners' reported imports for a reporter's exports, and "depend on the
+availability of other reporters rather than no-trade": Afghanistan, which has not
+reported 2023, gives a mirror of 0. `primaryValueDisc` equals (mirror − value) / value in
+every recorded row and `mirror2*` is empty or 0; upstream states neither meaning. Its
+envelope's `timestampRequested` is UTC per the spec and its `note` names data gaps, in
+wording that varies; the task returns the rows only.
+
 The task-shaped slices (wave 2: `get_bilateral_flows`, `get_commodity_series`,
 `get_world_trade`, `get_top_partners`) call `data/v1/get` through `api.get` with
 `params.SLICE_PINS`: `typeCode` C, `breakdownMode` classic, `partner2Code` 0, `motCode` 0,
@@ -158,7 +179,9 @@ src/xippios/comtrade/
   params.py        packaged lists and tables: PACKAGED_LISTS, PACKAGED_TABLES,
                    CL_CODES_FROM_SPEC, classification_files(); checks run before a
                    call: validate_get(), validate_datasets(),
-                   validate_classification_file(); for the slices validate_slice()
+                   validate_classification_file(), for the Tools validate_trade_balance()
+                   and validate_bilateral_data() (TOOLS_FLOW_CODES); for the slices
+                   validate_slice()
                    (areas by code or ISO alpha-3, periods of one format), SLICE_PINS
                    and MAX_SERIES_PERIODS
   enums.py         StrEnums generated from the packaged lists; never edited by hand
@@ -203,6 +226,6 @@ Only its `uv run pytest -m live --tb=short` step sees the key, from the org secr
 
 ## UN Comtrade specifics
 
-The live run costs ten keyed calls and four keyless requests (`tests/test_live.py`, whose
+The live run costs twelve keyed calls and four keyless requests (`tests/test_live.py`, whose
 docstring counts them): the reachability probe sends no key, and the list tasks fetch the
 public reference files without it. A Basic Individual key allows 500 calls a day.

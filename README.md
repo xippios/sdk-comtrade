@@ -91,6 +91,24 @@ notes = get_metadata("C", "A", "HS", reporter_code="757", period="2023").data[0]
 get_live_update().data  # the 50 most recent releases, newest first
 ```
 
+Two Tools operations, which upstream's spec marks "EXPERIMENTAL - USE SPARINGLY", put
+exports beside imports and a reporter's figures beside its partners' mirror figures:
+
+```python
+from xippios.comtrade import get_bilateral_data, get_trade_balance
+
+ch = {"reporter_code": "757", "period": "2023", "cmd_code": "TOTAL"}
+[row] = get_trade_balance("C", "A", "HS", partner_code="0", breakdown_mode="classic", **ch).data
+row.primary_value_x, row.primary_value_m  # Switzerland's 2023 exports and imports
+row.primary_value_bal  # upstream's "X - M", as sent
+[row] = get_bilateral_data("C", "A", "HS", partner_code="842", flow_code="X", **ch).data
+row.primary_value, row.mirror_primary_value  # exports to the USA; the USA's imports
+```
+
+Both need `reporter_code` or `partner_code`, and `cmd_code`, since upstream offers no
+count to check a query's size first; a partner that has not reported gives a mirror of
+0, not a sign of no trade.
+
 `get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
 result without a second call, and a count above 100,000 raises `QueryTooLarge` with the
 count before anything is fetched, because upstream would cut the answer at 100,000 rows
@@ -135,11 +153,14 @@ instead of stdio.
 | `data/v1/get/C/{A,M}/{clCode}`, total row, partner World, 12 periods per call, at most 120 | `get_commodity_series(reporter, commodity, flow, periods, *, cl_code="HS")` | `comtrade_get_commodity_series` | alpha |
 | `data/v1/get/C/{A,M}/{clCode}`, total row, every reporter, partner World | `get_world_trade(commodity, period, flow, *, cl_code="HS")` | `comtrade_get_world_trade` | alpha |
 | `data/v1/get/C/{A,M}/{clCode}`, total row, every partner, ranked | `get_top_partners(reporter, commodity, period, flow, n, *, cl_code="HS")` | `comtrade_get_top_partners` | alpha |
+| `tools/v1/getTradeBalance/{typeCode}/{freqCode}/{clCode}` | `get_trade_balance(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, cmd_code=, ...)` | `comtrade_get_trade_balance` | alpha; experimental upstream |
+| `tools/v1/getBilateralData/{typeCode}/{freqCode}/{clCode}` | `get_bilateral_data(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, cmd_code=, flow_code=, ...)` | `comtrade_get_bilateral_data` | alpha; experimental upstream |
 | `files/v1/app/reference/Reporters.json`, packaged | `list_reporters(search=None)` | `comtrade_list_reporters` | alpha |
 | `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(search=None)` | `comtrade_list_partners` | alpha |
 | `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
 
-All twelve are covered in 0.1.0, the first release. Alpha: the public surface may change
+The first twelve came with 0.1.0, the first release; `get_trade_balance` and
+`get_bilateral_data` are not released yet. Alpha: the public surface may change
 in a minor version before 1.0; `CHANGELOG.md` lists every change.
 
 ## Upstream terms and attribution
