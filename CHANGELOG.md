@@ -29,8 +29,9 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
 - **BREAKING**: depends on `xippios-core~=0.3.0` and its `mcp`, `http` and `testing`
   extras likewise, from `>=0.1.0`.
 - `list_reporters` and `list_partners`: `meta.retrieved_at` is when the package fetched
-  the list and `meta.vintage` is `None`, where `vintage` carried the fetch date; `list_commodities`' `meta.retrieved_at` is when its file was fetched, the first
-  fetch of the process on a later call.
+  the list and `meta.vintage` is `None`, where `vintage` carried the fetch date;
+  `list_commodities`' `meta.retrieved_at` is when its file was fetched, the first fetch
+  of the process on a later call.
 - One client: `reference_client` and `REFERENCE_CACHE` are gone from `_client`; the
   reference files go through `client` with `auth=None`, its cache kept to those files.
   `api.reference` and `api.reference_rows` return a `ReferenceFile` of the rows and

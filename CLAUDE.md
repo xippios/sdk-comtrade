@@ -170,7 +170,7 @@ src/xippios/comtrade/
   models.py        pydantic models mirroring upstream payloads (UpstreamModel)
   api/             endpoint wrappers, one module per upstream operation
   tasks.py         task functions; __all__ is what the adapters register, but BULK_TASKS,
-                   the Python-only ones; MCP_CAPS the list tasks' result caps
+                   the Python-only ones; MCP_CAPS the caps of three list tasks
   mcp.py           xippios-comtrade-mcp entry point
   http.py          FastAPI router
   params.py        packaged lists and tables: PACKAGED_LISTS, PACKAGED_TABLES,
