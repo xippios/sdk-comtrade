@@ -22,7 +22,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any, NamedTuple
 
-from xippios.core import InvalidRequestError, PackagedList, UpstreamModel
+from xippios.core import InvalidRequestError, PackagedList, UnknownCode, UpstreamModel
 
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.errors import MAX_PERIODS
@@ -190,31 +190,72 @@ def _iso3() -> dict[str, str]:
     }
 
 
-def _area_hint(member: str, kind: str) -> str:
-    """Why ``member`` is not a code of ``kind``, and the code to use instead if there is one.
+_UNKNOWN_CODE = (
+    "UN Comtrade answers a code it does not have with count 0, so the package refuses it "
+    "before the call."
+)
+"""``UnknownCode``'s reason for an area code (conventions §5): 756, no reporter, counted 0.
 
-    ``country_area_code_iso.json`` gives the ISO alpha-3 of every reporter and partner
-    code, and a code of the table with the same alpha-3 is the same area: 756, Switzerland
-    as a partner, is 757 among the reporters. Failing that, a code of the other table is
-    named as such (0 World is a partner only), and anything else gets the most similar
-    code of the table.
+``tests/fixtures/get/count_not_a_reporter_756.json``.
+"""
+
+_UNKNOWN_ALPHA3 = (
+    "The package resolves an ISO alpha-3 code to UN Comtrade's numeric code through this list."
+)
+"""``UnknownCode``'s reason for an ISO alpha-3 code no area of the list carries."""
+
+
+def _unknown_area(
+    argument: str,
+    value: str,
+    kind: str,
+    *,
+    closest: Sequence[tuple[str, str]] = (),
+    hint: str | None = None,
+    reason: str = _UNKNOWN_CODE,
+) -> UnknownCode:
+    """The refusal of an area ``value`` the packaged reporter or partner table lacks."""
+    list_name, _, task = _AREA_TABLES[kind]
+    return UnknownCode(
+        argument,
+        value,
+        list_name=list_name,
+        fetched=PackagedList.load(PACKAGE, list_name).fetched,
+        closest=closest,
+        hint=hint,
+        reason=f"{reason} {task} lists every code.",
+        source=SOURCE,
+    )
+
+
+def _unknown_code(argument: str, member: str, kind: str) -> UnknownCode:
+    """``UnknownCode`` for a numeric ``member`` that is no code of ``kind``.
+
+    Comtrade's own strategy for the closest code (conventions §5):
+    ``country_area_code_iso.json`` gives the ISO alpha-3 of every reporter and partner code,
+    and a code of the table with the same alpha-3 is the same area: 756, Switzerland as a
+    partner, is 757 among the reporters. Failing that, a code of the other table is named
+    as such (0 World is a partner only), and anything else gets the most similar code of
+    the table.
     """
     areas = _areas(kind)
     alpha3 = _iso3().get(member)
     same = [code for code, (_, iso3) in areas.items() if alpha3 and iso3 == alpha3]
     if same:
-        return f"; closest: {same[0]!r} ({areas[same[0]][0]})"
+        return _unknown_area(argument, member, kind, closest=[(same[0], areas[same[0]][0])])
     other = "partner" if kind == "reporter" else "reporter"
     if member in _areas(other):
-        return f"; {member!r} ({_areas(other)[member][0]}) is a {other} code only"
+        hint = f"{member!r} ({_areas(other)[member][0]}) is a {other} code only."
+        return _unknown_area(argument, member, kind, hint=hint)
     closest = _closest(member, list(areas))
-    return f"; closest: {closest!r} ({areas[closest][0]})" if closest else ""
+    near = [(closest, areas[closest][0])] if closest else []
+    return _unknown_area(argument, member, kind, closest=near)
 
 
 def _check_areas(argument: str, value: str | None, kind: str, problems: list[str]) -> None:
+    """Gather a malformed area code; raise ``UnknownCode`` for the first one the table lacks."""
     if value is None:
         return
-    _, upstream_file, task = _AREA_TABLES[kind]
     for member in _members(argument, value, problems):
         if not _AREA.fullmatch(member):
             problems.append(
@@ -222,10 +263,7 @@ def _check_areas(argument: str, value: str | None, kind: str, problems: list[str
                 "such as '757' (Switzerland) or '0' (World), separated by commas"
             )
         elif member not in _areas(kind):
-            problems.append(
-                f"{argument} {member!r} is not a UN Comtrade {kind} code ({upstream_file})"
-                f"{_area_hint(member, kind)}; {task} lists every code"
-            )
+            raise _unknown_code(argument, member, kind)
 
 
 def _check_period(
@@ -287,8 +325,11 @@ def validate_get(
         The arguments that are set, under the task's parameter names, in signature order.
 
     Raises:
-        InvalidRequestError: Naming every problem, with the closest valid value where
-            there is one.
+        UnknownCode: A reporter, partner or second-partner code the packaged table lacks,
+            the first one found, naming the packaged list, its fetch date and the closest
+            area (conventions §5); an ``InvalidRequestError``.
+        InvalidRequestError: Naming every other problem, with the closest valid value
+            where there is one.
     """
     problems: list[str] = []
     _check_list("type_code", type_code, "typeCode", problems)
@@ -364,8 +405,11 @@ def validate_datasets(
         The arguments that are set, under the task's parameter names, in signature order.
 
     Raises:
-        InvalidRequestError: Naming every problem, with the closest valid value where
-            there is one.
+        UnknownCode: A reporter code the packaged table lacks, the first one found, naming
+            the packaged list, its fetch date and the closest area (conventions §5); an
+            ``InvalidRequestError``.
+        InvalidRequestError: Naming every other problem, with the closest valid value
+            where there is one.
     """
     problems: list[str] = []
     _check_list("type_code", type_code, "typeCode", problems)
@@ -505,17 +549,18 @@ def _by_iso3(iso3: str, kind: str) -> list[_Area]:
 
 
 def _resolve_iso3(argument: str, value: str, kind: str, problems: list[str]) -> str | None:
-    """The one code of ``kind`` behind an ISO alpha-3 code, or a problem naming the closest.
+    """The one code of ``kind`` behind an ISO alpha-3 code; ``UnknownCode`` for an unknown one.
 
-    ``_by_iso3`` picks the code; an ambiguous alpha-3 code is refused, naming every
-    candidate. The closest-value hint for an unknown one names the code that alpha-3 code
-    resolves to (``'USA' (842, USA)`` among partners, not 840).
+    ``_by_iso3`` picks the code; an ambiguous alpha-3 code is a gathered problem, naming
+    every candidate. An alpha-3 code no area of ``kind`` carries raises ``UnknownCode``,
+    naming the code of the closest alpha-3 or name (842 USA among partners, not 840), or
+    the other table where the area is one of its own (W00 World is a partner only).
     """
     wanted = value.upper()
     found = _by_iso3(wanted, kind)
     if len(found) == 1:
         return found[0].code
-    _, upstream_file, task = _AREA_TABLES[kind]
+    _, upstream_file, _ = _AREA_TABLES[kind]
     if found:
         problems.append(
             f"{argument} {value!r} is the ISO alpha-3 code of several UN Comtrade {kind} codes "
@@ -526,26 +571,15 @@ def _resolve_iso3(argument: str, value: str, kind: str, problems: list[str]) -> 
     other = "partner" if kind == "reporter" else "reporter"
     elsewhere = _by_iso3(wanted, other)
     if elsewhere:
-        problems.append(
-            f"{argument} {value!r} ({elsewhere[0].code}, {elsewhere[0].desc}) is a {other} "
-            f"area only, not a UN Comtrade {kind} ({upstream_file})"
-        )
-        return None
+        hint = f"{value!r} ({elsewhere[0].code}, {elsewhere[0].desc}) is a {other} area only."
+        raise _unknown_area(argument, value, kind, hint=hint, reason=_UNKNOWN_ALPHA3)
     rows = _area_rows(kind)
     options = {area.iso3: area.iso3 for area in rows} | {
         area.desc.upper(): area.iso3 for area in rows
     }
     closest = _closest(value, list(options))
-    hint = ""
-    if closest:
-        iso3 = options[closest]
-        named = " or ".join(f"{area.code}, {area.desc}" for area in _by_iso3(iso3, kind))
-        hint = f"; closest: {iso3!r} ({named})"
-    problems.append(
-        f"{argument} {value!r} is neither a UN Comtrade {kind} code nor the ISO alpha-3 code "
-        f"of one ({upstream_file}){hint}; {task} lists every code"
-    )
-    return None
+    near = [(area.code, area.desc) for area in _by_iso3(options[closest], kind)] if closest else []
+    raise _unknown_area(argument, value, kind, closest=near, reason=_UNKNOWN_ALPHA3)
 
 
 def _resolve_area(argument: str, value: str | None, kind: str, problems: list[str]) -> str | None:
@@ -677,8 +711,11 @@ def validate_slice(
         given.
 
     Raises:
-        InvalidRequestError: Naming every problem, with the closest valid value where
-            there is one.
+        UnknownCode: A ``reporter`` or ``partner`` the packaged table lacks, as a code or
+            an ISO alpha-3 code, naming the packaged list, its fetch date and the closest
+            area (conventions §5); an ``InvalidRequestError``.
+        InvalidRequestError: Naming every other problem, with the closest valid value
+            where there is one.
     """
     problems: list[str] = []
     _check_list("cl_code", cl_code, "clCode", problems)

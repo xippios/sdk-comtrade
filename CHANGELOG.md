@@ -32,6 +32,9 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   `packaged_table_info`, `PackagedValues`, `PackagedTable` and `ListException` give way
   to `xippios.core.PackagedList.load("xippios.comtrade", name)`, and
   `params.CL_CODES_FROM_SPEC` names the `clCode` values without a classification file.
+- An unknown reporter, partner or second-partner code, as a code or an ISO alpha-3 code,
+  raises `UnknownCode`, an `InvalidRequestError`, naming the packaged list, its fetch date
+  and the closest area (conventions §5); the value lists are refused as before.
 
 ## [0.1.0] - 2026-10-23
 

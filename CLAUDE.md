@@ -68,9 +68,13 @@ no key and cost no quota; a reference fetch still takes the 1.5 s pace, and a sp
 holds it back too.
 Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757 in
 `Reporters.json`. Upstream answers 756, which is no reporter, with count 0; the tasks
-refuse it before the call, naming 757, because they check `reporter_code` against
-`reference/Reporters.json` and partner codes against `reference/partnerAreas.json`, the
-package's copies of upstream's `Reporters.json` and `partnerAreas.json`. Both tables
+refuse it before the call with core's `UnknownCode` (conventions §5), naming the packaged
+`Reporters` list, its fetch date and the closest area, 757, because they check
+`reporter_code` against `reference/Reporters.json` and partner codes against
+`reference/partnerAreas.json`, the package's copies of upstream's `Reporters.json` and
+`partnerAreas.json`; an ISO alpha-3 code the slices cannot resolve is refused the same
+way. The value lists (`clCode`, `flowCode`, ...) keep one `InvalidRequestError` naming
+every problem. Both tables
 share one code space (a code in both is the same area) but differ: 0 World and 56 other
 areas are partners only, 97 European Union and 975 ASEAN reporters only.
 
