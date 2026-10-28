@@ -136,6 +136,22 @@ def _members(argument: str, value: str, problems: list[str]) -> list[str]:
     return members
 
 
+_DIMENSIONS = frozenset({"customsCode", "motCode"})
+"""Packaged lists whose unknown member raises ``UnknownCode`` (conventions §5).
+
+Dimension codes of the data rows, like the areas; upstream's answer to a code it does not
+have is not recorded for them. The other lists stay gathered problems: upstream answers
+an unknown ``clCode`` and ``flowCode`` with HTTP 400 (``count_cl_code_be5.json``,
+``count_flow_code_unknown.json``), and the spec's enums are its own.
+"""
+
+_UNKNOWN_DIMENSION = (
+    "UN Comtrade's answer to a customs or transport code it does not have is not recorded, "
+    "so the package refuses it before the call, as it does an unknown area."
+)
+"""``UnknownCode``'s reason for a member of a ``_DIMENSIONS`` list."""
+
+
 def _check_list(
     argument: str,
     value: str | None,
@@ -154,6 +170,17 @@ def _check_list(
         if (member.upper() if case_insensitive else member) in known:
             continue
         closest = _closest(member, allowed)
+        if upstream in _DIMENSIONS:
+            raise UnknownCode(
+                argument,
+                member,
+                list_name=upstream,
+                fetched=PackagedList.load(PACKAGE, upstream).fetched,
+                hint=(f"Did you mean {closest!r}? " if closest else "")
+                + f"Valid values: {', '.join(allowed)}.",
+                reason=f"{_UNKNOWN_DIMENSION} reference/{upstream}.json lists every code.",
+                source=SOURCE,
+            )
         hint = f"; closest: {closest!r}" if closest else ""
         problems.append(
             f"{argument} {member!r} is not a UN Comtrade {upstream} value{hint}. "
@@ -326,9 +353,11 @@ def validate_get(
 
     Raises:
         UnknownCode: A reporter, partner or second-partner code the packaged table lacks,
-            the first one found, naming the packaged list, its fetch date and the closest
-            area (conventions §5); an ``InvalidRequestError``.
-        InvalidRequestError: Naming every other problem, with the closest valid value
+            or a ``customs_code`` or ``mot_code`` the packaged list lacks, naming the
+            packaged list, its fetch date and the closest code (conventions §5); an
+            ``InvalidRequestError``. The first one found ends the checks: other problems
+            are reported once it is fixed.
+        InvalidRequestError: Naming every problem found, with the closest valid value
             where there is one.
     """
     problems: list[str] = []
@@ -405,10 +434,11 @@ def validate_datasets(
         The arguments that are set, under the task's parameter names, in signature order.
 
     Raises:
-        UnknownCode: A reporter code the packaged table lacks, the first one found, naming
-            the packaged list, its fetch date and the closest area (conventions §5); an
-            ``InvalidRequestError``.
-        InvalidRequestError: Naming every other problem, with the closest valid value
+        UnknownCode: A reporter code the packaged table lacks, naming the packaged list,
+            its fetch date and the closest area (conventions §5); an
+            ``InvalidRequestError``. The first one found ends the checks: other problems
+            are reported once it is fixed.
+        InvalidRequestError: Naming every problem found, with the closest valid value
             where there is one.
     """
     problems: list[str] = []
@@ -713,8 +743,9 @@ def validate_slice(
     Raises:
         UnknownCode: A ``reporter`` or ``partner`` the packaged table lacks, as a code or
             an ISO alpha-3 code, naming the packaged list, its fetch date and the closest
-            area (conventions §5); an ``InvalidRequestError``.
-        InvalidRequestError: Naming every other problem, with the closest valid value
+            area (conventions §5); an ``InvalidRequestError``. It ends the checks: other
+            problems are reported once it is fixed.
+        InvalidRequestError: Naming every problem found, with the closest valid value
             where there is one.
     """
     problems: list[str] = []

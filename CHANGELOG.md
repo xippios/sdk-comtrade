@@ -36,7 +36,8 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   their `retrieved_at`.
 - The daily quota: `_client.policy`, a `QuotaPolicy`, reads upstream's 403 "Quota will
   be replenished in HH:MM:SS" and refuses the next call with `RateLimitError` before it
-  is sent, until then.
+  is sent, until then; after a 429 it holds calls back for its `Retry-After` or the
+  seconds its body names, never for a day.
 - MCP: `list_reporters` and `list_partners` have a result cap of their own, 400 rows or
   100 KB, and reach an agent whole; `list_commodities` the same, its note saying to
   search (`MCP_CAPS`).
@@ -46,9 +47,12 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   `packaged_table_info`, `PackagedValues`, `PackagedTable` and `ListException` give way
   to `xippios.core.PackagedList.load("xippios.comtrade", name)`, and
   `params.CL_CODES_FROM_SPEC` names the `clCode` values without a classification file.
-- An unknown reporter, partner or second-partner code, as a code or an ISO alpha-3 code,
-  raises `UnknownCode`, an `InvalidRequestError`, naming the packaged list, its fetch date
-  and the closest area (conventions §5); the value lists are refused as before.
+- An unknown reporter, partner or second-partner code (the slices' `reporter` and
+  `partner` also as an ISO alpha-3 code), `customs_code` or `mot_code` raises
+  `UnknownCode`, an `InvalidRequestError`, naming the packaged list (`Reporters`,
+  `partnerAreas`, `customsCode`, `motCode`), its fetch date and the closest code
+  (conventions §5); the first unknown code ends the checks. The other lists are refused
+  as before.
 - `docs/upstream/FETCHED.md` takes the form of conventions §3: `Fetched` is the UTC time
   of the run with `Z`; an Attribution section quotes the Help Center's footer line,
   `© 2026 UN Comtrade Help Center`, read from https://uncomtrade.org/, and the data's
