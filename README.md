@@ -207,10 +207,11 @@ HTTP instead of stdio.
 | `files/v1/app/reference/` code lists and the spec's enums, packaged | `list_codes(param)` | `comtrade_list_codes` | alpha |
 | `files/v1/app/reference/ListofReferences.json`, packaged | `list_classifications(category=None)` | `comtrade_list_classifications` | alpha |
 
-Every task above came with 0.1.0, the first release, but `get_trade_balance`,
-`get_bilateral_data`, `get_mirror_flows`, `get_comtrade_releases`, `get_world_share`,
-`list_codes` and `list_classifications`, which are unreleased. Alpha: the public surface
-may change in a minor version before 1.0; `CHANGELOG.md` lists every change.
+All nineteen are covered in 0.2.0: twelve came with 0.1.0, the first release, and
+`get_trade_balance`, `get_bilateral_data`, `get_mirror_flows`, `get_comtrade_releases`,
+`get_world_share`, `list_codes` and `list_classifications` were released in 0.2.0. Alpha:
+the public surface may change in a minor version before 1.0; `CHANGELOG.md` lists every
+change.
 
 ## Upstream terms and attribution
 

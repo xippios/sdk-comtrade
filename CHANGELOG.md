@@ -6,6 +6,38 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-28
+
+xippios-comtrade 0.2.0 is released on xippios-core 0.3.0 and sdk-template v0.3.0, its new
+floor: it depends on `xippios-core~=0.3.0`, and its `mcp`, `http` and `testing` extras
+likewise. It adds seven tasks to the twelve of 0.1.0, each with its MCP tool and FastAPI
+route: `get_trade_balance` and `get_bilateral_data` on UN Comtrade's two Tools
+operations, which upstream marks experimental, and `get_mirror_flows`, a slice over the
+second that puts a reporter's trade with one partner beside the partner's mirror of it;
+`get_comtrade_releases` and `get_world_share` on the two public operations, which send no
+key and spend no daily quota; and `list_codes` and `list_classifications`, two lookups
+over the packaged lists that answer without a call and give each value with upstream's
+words for it. The upstream documentation snapshot is refreshed with eight more Help
+Center articles, among them the two that state the data's terms, and
+`docs/upstream/FETCHED.md` quotes upstream's copyright and licence-agreement lines as the
+attribution. The packaged lists and tables are all core's packaged lists now, JSON files
+whose code lists carry upstream's words beside each value where upstream gives any, and
+every one was refreshed on 2026-10-28, from upstream's reference files and the spec,
+without a value or row changing. An unknown area, customs or transport code raises
+`UnknownCode`, naming the packaged list, its fetch date and the closest code. The
+client's quota policy reads upstream's answer that the day's 500 calls are spent and
+refuses every further call with `RateLimitError`, unsent, until the time upstream names.
+The area lists and `get_world_share` have an MCP result cap of their own, 400 rows or
+100 KB, so a whole list, or one period for every reporter, reaches an agent;
+`list_commodities` has the same cap and a note that says to search.
+
+A minor release, since before 1.0 a breaking change bumps the minor: the new core bound
+breaks, as core keeps no compatibility across minors while it is 0.x, and the public
+surface grew. Code written against 0.1.0 meets more changes below, among them: the
+packaged CSV tables and the `params` helpers that read them are gone, so is the separate
+reference client, and the area lists' `meta.vintage` is `None` where it carried the
+fetch date.
+
 Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (conventions §15).
 
 ### Added
