@@ -8,9 +8,10 @@ Within-source hygiene only: numbers become numbers, upstream enumerations become
 ``StrEnum``. No cross-source normalisation (ADR-0003): an upstream concept stays an
 upstream concept.
 
-Shapes come from ``components.schemas`` in ``docs/upstream/apidocs/comtrade.json``, from
-the recorded fixtures under ``tests/fixtures/`` and, for the reference tables, from the
-public files under ``files/v1/app/reference/``. Trade values and quantities are
+Shapes come from ``components.schemas`` in ``docs/upstream/apidocs/comtrade.json`` and,
+for the public operations, ``public.json``, from the recorded fixtures under
+``tests/fixtures/`` and, for the reference tables, from the public files under
+``files/v1/app/reference/``. Trade values and quantities are
 ``Decimal`` (ADR-0008) and travel as JSON numbers through the adapters.
 """
 
@@ -31,6 +32,8 @@ from xippios.core import UpstreamModel
 
 __all__ = [
     "Commodity",
+    "ComtradeRelease",
+    "ComtradeReleasesResponse",
     "CountryAreaCodeIso",
     "DataAvailability",
     "DataAvailabilityResponse",
@@ -49,6 +52,8 @@ __all__ = [
     "TradeDataRecord",
     "TradeDataResponse",
     "TradeFlowRecord",
+    "WorldShare",
+    "WorldShareResponse",
 ]
 
 
@@ -635,4 +640,109 @@ class LiveUpdateResponse(UpstreamModel):
     elapsed_time: str = Field(validation_alias="elapsedTime")
     count: int
     data: list[LiveUpdateRecord]
+    error: str
+
+
+class ComtradeRelease(UpstreamModel):
+    """One release of ``public/v1/getComtradeReleases``, ``components.schemas.ComtradeRelease``.
+
+    "A recent or upcoming dataset release." (``public.json``). Every field of the schema
+    under its upstream name in snake_case, typed from the recorded answer
+    (``tests/fixtures/get_comtrade_releases/calendar.json``, 2026-10-28). The spec states
+    neither what ``nr`` nor what ``flag_code`` means; the recorded values are ``"N"`` and
+    ``"R"`` for ``nr`` and two letters for ``flag_code`` (``"CH"`` on reporter 757).
+
+    Attributes:
+        reporter_code: UN Comtrade's reporter code, e.g. ``757`` Switzerland.
+        flag_code: As upstream sends it, e.g. ``"CH"``.
+        dataset_desc: The dataset as upstream labels it, e.g. ``"Switzerland CM 202601"``.
+        nr: As upstream sends it, ``"N"`` or ``"R"`` when recorded.
+        date_release: The release time. Upstream prints it without a UTC offset ("ISO
+            8601 date-time without a UTC offset") and states no zone, so it is naive and
+            no zone is attached; every recorded value is a midnight.
+    """
+
+    reporter_code: int = Field(validation_alias="reporterCode")
+    flag_code: str | None = Field(validation_alias="flagCode")
+    dataset_desc: str | None = Field(validation_alias="datasetDesc")
+    nr: str | None
+    date_release: datetime = Field(validation_alias="dateRelease")
+
+
+class ComtradeReleasesResponse(UpstreamModel):
+    """The envelope of ``public/v1/getComtradeReleases``, ``ComtradeReleasesResponse``.
+
+    Attributes:
+        elapsed_time: Server processing time as upstream words it, e.g. ``"0.86 secs"``.
+        count: "Number of items in data." (the spec); 38 with 38 rows when recorded.
+        data: The releases, newest first when recorded.
+        error: Empty string on success.
+    """
+
+    elapsed_time: str = Field(validation_alias="elapsedTime")
+    count: int
+    data: list[ComtradeRelease]
+    error: str
+
+
+class WorldShare(UpstreamModel):
+    """One row of ``public/v1/getWorldShare``, ``components.schemas.WorldShare``.
+
+    "A reporter's share of world trade for one period." (``public.json``). Every field of
+    the schema under its upstream name in snake_case, all present in every recorded row
+    (``tests/fixtures/get_world_share/``, 2026-10-28). ``month`` is 52 on annual rows, as
+    on the trade data rows. The four times are printed without a UTC offset and upstream
+    states no zone, so they are naive and no zone is attached; a row with
+    ``is_available`` false carries ``0001-01-01T00:00:00`` in ``first_released`` and
+    ``last_released`` (47 of the 214 rows for 2023), kept as sent.
+
+    Attributes:
+        dataset_desc: The dataset as upstream labels it, e.g. ``"Switzerland CA 2023"``,
+            ``"Switzerland CM 2023-01"``.
+        reporter_code: UN Comtrade's reporter code, e.g. ``757`` Switzerland.
+        world_share: "the World Share (including estimates)" (the spec), a double read as
+            ``Decimal`` like the package's other upstream numbers (ADR-0008); the spec
+            states neither whether it is a fraction or a percentage nor of which trade.
+            The 214 values recorded for 2023 (annual goods, every reporter) sum to 1.0.
+        is_available: As upstream sends it; the spec states no meaning.
+        data_count: As upstream sends it; 1 on every recorded row.
+        first_released: Naive, no zone stated; ``0001-01-01T00:00:00`` where
+            ``is_available`` is false.
+        last_released: Naive, no zone stated; as ``first_released``.
+        created: Naive, no zone stated.
+        updated: Naive, no zone stated.
+    """
+
+    type_code: str | None = Field(validation_alias="typeCode")
+    freq_code: str | None = Field(validation_alias="freqCode")
+    period: int
+    year: int
+    month: int
+    dataset_desc: str | None = Field(validation_alias="datasetDesc")
+    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_iso: str | None = Field(validation_alias="reporterISO")
+    reporter_desc: str | None = Field(validation_alias="reporterDesc")
+    world_share: Decimal | None = Field(validation_alias="worldShare")
+    is_available: bool = Field(validation_alias="isAvailable")
+    data_count: int = Field(validation_alias="dataCount")
+    first_released: datetime = Field(validation_alias="firstReleased")
+    last_released: datetime = Field(validation_alias="lastReleased")
+    created: datetime
+    updated: datetime
+
+
+class WorldShareResponse(UpstreamModel):
+    """The envelope of ``public/v1/getWorldShare``, ``components.schemas.WorldShareResponse``.
+
+    Attributes:
+        elapsed_time: Server processing time as upstream words it, e.g. ``"0.22 secs"``.
+        count: "Number of items in data." (the spec); equal to the rows in every recorded
+            answer.
+        data: The rows.
+        error: Empty string on success.
+    """
+
+    elapsed_time: str = Field(validation_alias="elapsedTime")
+    count: int
+    data: list[WorldShare]
     error: str
