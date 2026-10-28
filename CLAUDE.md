@@ -68,31 +68,41 @@ no key and cost no quota; a reference fetch still takes the 1.5 s pace, and a sp
 holds it back too.
 
 The public operations under `public/v1`, `getComtradeReleases` and `getWorldShare`
-(`docs/upstream/apidocs/public.json`, whose `security` allows no key), go through the same
-client with `auth=None` too: `get_comtrade_releases` and `get_world_share` send no key and
-spend no daily quota, but the Public tier's 1 call per second applies and `RATE_LIMIT`
-paces them with every other call. `cache_filter` keeps their answers out of the cache, so
-a release calendar always comes from upstream. Their operationIds are opaque hex ids, so
-the wrappers are named after the paths (conventions §2). What the keyless recordings of
-2026-10-28 established (`tests/fixtures/get_comtrade_releases/`, `get_world_share/`):
+(`docs/upstream/apidocs/public.json`, whose `security` is `[{}, apiKeyHeader,
+apiKeyQuery]`, a key optional, and whose `info` says "No subscription key required"), go
+through the same client with `auth=None` too: `get_comtrade_releases` and
+`get_world_share` send no key and spend no daily quota, but they share `RATE_LIMIT`'s pace
+(the Public tier allows 1 call per second) and `policy`, so a spent key quota holds them
+back too, as it does the reference files. `cache_filter` keeps their answers out of the
+cache, so a release calendar always comes from upstream. Their operationIds are opaque hex
+ids, so the wrappers are named after the paths (conventions §2). What the keyless
+recordings of 2026-10-28 established (`tests/fixtures/get_comtrade_releases/`,
+`get_world_share/`):
 
 - `getComtradeReleases`: 38 rows, `count` 38, 4.5 KB, released from 2026-10-22 to
-  2026-10-28, newest first, every `dateRelease` a midnight and none after the recording
-  day; `nr` `N` (12) or `R` (26) and `flagCode` two letters (`CH` for 757), neither
-  meaning stated. It fits the default MCP cap, so it has no cap of its own.
+  2026-10-28, newest first when recorded (the spec states no order), every `dateRelease`
+  a midnight and none after the recording day; `nr` `N` (12) or `R` (26) and `flagCode`
+  two letters (`CH` for 757), neither meaning stated. It fits the default MCP cap, so it
+  has no cap of its own.
 - `getWorldShare`: one row per reporter and period. Without `period` every period
   (Switzerland: 64 annual rows, 1962 to 2025), without `reporterCode` every reporter
-  (2023: 214 rows, of which the default MCP cap shows 157 with its note). The 214 values
-  of 2023 sum to 1.0; whether a fraction or a percentage, and of which trade, is not
-  stated. 47 of them have `isAvailable` false, a `worldShare` all the same and
-  `0001-01-01T00:00:00` as both release times, kept as sent. Switzerland 2023's
-  `firstReleased`/`lastReleased` equal `getDa`'s. `period=1900` answers 200, `count` 0;
-  `period=recent`, which the spec lists, answered HTTP 500 "Something went wrong" with
-  `count` -1 and `error` an object on all three tries, with `reporterCode` and without;
+  (2023: 214 rows, 88.5 KB; the default MCP cap cut it at 157, dropping the USA, row
+  161, so `MCP_CAPS` gives `get_world_share` 400 rows or 100 KB and the whole period
+  reaches an agent). The 214 values of 2023 sum to 1.0; whether a fraction or a
+  percentage, and of which trade, is not stated. 47 of them have `isAvailable` false, a
+  `worldShare` all the same and `0001-01-01T00:00:00` as both release times, upstream's
+  placeholder on unavailable datasets, kept as sent, a naive datetime. Switzerland 2023's
+  `firstReleased`/`lastReleased` equal `getDa`'s. `period=1900` answers 200, `count` 0.
   `period=2023-01` answered HTTP 400 "Invalid parameter value" with its detail spelt
-  `MemberNames`/`ErrorMessage` and no `Content-Type`, which `classify` reads.
+  `MemberNames`/`ErrorMessage` and no `Content-Type`; `classify` reads its
+  `ErrorMessage`.
+- `period=recent` stays accepted, as the spec lists it and as `H6` stayed in 0.1.0, though
+  upstream answered it with HTTP 500 "Something went wrong" (`count` -1, `error` an
+  object) on all three tries, with `reporterCode` and without: the client makes 4 attempts
+  and raises `UpstreamError`, and what `recent` selects is unknown.
 - Every time field is printed without a UTC offset and no zone is stated: the models keep
   them naive, none attached, and the tasks leave `meta.published_at` `None`.
+
 Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757 in
 `Reporters.json`. Upstream answers 756, which is no reporter, with count 0; the tasks
 refuse it before the call with core's `UnknownCode` (conventions §5), naming the packaged
@@ -114,7 +124,9 @@ and 56 other areas are partners only, 97 European Union and 975 ASEAN reporters 
 rows cut them in upstream's alphabetical order. A classification does not fit (8,262 HS
 codes); the cap's note tells the agent to search. All three take `search`, a
 case-insensitive substring of the code, the ISO alpha-3 (reporters, partners) or the
-text.
+text. `get_world_share` has the same cap, so one period for every reporter (214 rows,
+88.5 KB for 2023) reaches an agent whole; its note says to narrow by `reporter_code` or
+`period`.
 
 When recording fixtures, budget the calls. The package client retries 429, 5xx and
 transport errors up to four attempts, each a keyed call (`clCode=H6` on `data/v1/get`

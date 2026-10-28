@@ -99,7 +99,7 @@ dataset.first_released, dataset.last_released  # first publication and latest re
 notes = get_metadata("C", "A", "HS", reporter_code="757", period="2023").data[0].notes
 [note.publication_date for note in notes]  # "New Data", then each "Revised Data"
 get_live_update().data  # the 50 most recent releases, newest first
-get_comtrade_releases().data  # upstream's recent releases, newest first; keyless
+get_comtrade_releases().data  # upstream's recent releases (newest first when recorded); keyless
 [share] = get_world_share("C", "A", period="2023", reporter_code="757").data  # keyless
 share.world_share, share.last_released  # Decimal('0.01651852126450239'), its release
 ```
@@ -132,8 +132,10 @@ Tools are read-only and named `comtrade_<verb>_<noun>`. Results are capped at
 `comtrade_list_partners` have a cap of their own, 400 rows or 100 KB, so their whole
 tables reach the agent. `comtrade_list_commodities` has the same cap, but a
 classification is larger (8,262 HS codes), so its note says to search. All three take
-`search`: `{"search": "switz"}` returns 757 Switzerland. `--http` serves streamable HTTP
-instead of stdio.
+`search`: `{"search": "switz"}` returns 757 Switzerland. `comtrade_get_world_share` has the
+same cap too, so one period for every reporter (214 rows for 2023) reaches the agent
+whole; its note says to narrow by `reporter_code` or `period`. `--http` serves streamable
+HTTP instead of stdio.
 
 ## Status
 
@@ -154,9 +156,9 @@ instead of stdio.
 | `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(search=None)` | `comtrade_list_partners` | alpha |
 | `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
 
-The first twelve came with 0.1.0, the first release; `get_comtrade_releases` and
-`get_world_share` are unreleased. Alpha: the public surface may change in a minor version
-before 1.0; `CHANGELOG.md` lists every change.
+Every task above came with 0.1.0, the first release, but `get_comtrade_releases` and
+`get_world_share`, which are unreleased. Alpha: the public surface may change in a minor
+version before 1.0; `CHANGELOG.md` lists every change.
 
 ## Upstream terms and attribution
 

@@ -12,20 +12,22 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
 
 - The two public operations, MCP tools `comtrade_get_comtrade_releases` and
   `comtrade_get_world_share`: `get_comtrade_releases()`, upstream's recent releases from
-  `public/v1/getComtradeReleases`, newest first (38 from 2026-10-22 to 2026-10-28 when
+  `public/v1/getComtradeReleases` (38 from 2026-10-22 to 2026-10-28, newest first, when
   recorded), and `get_world_share(type_code, freq_code, *, period=None,
   reporter_code=None)`, each reporter's share of world trade per period from
   `public/v1/getWorldShare/{typeCode}/{freqCode}`, with its release times. Both are
-  keyless, sending no key and spending no daily quota while the client paces them like
-  every call, and never cached. Rows are `ComtradeRelease` and `WorldShare`, every field
-  under its upstream name; their times are naive datetimes, as upstream prints them
-  without a zone, and `world_share` is a `Decimal`. `meta.total` is upstream's count and
-  `meta.published_at` stays `None`. `params.validate_world_share` checks the arguments
-  before the call: `period` as years, months or `recent`, which upstream answered with
-  HTTP 500 when recorded, and `reporter_code` against `Reporters.json`, an unknown code
-  raising `UnknownCode`.
-- `classify` names the refused field in the public operations' HTTP 400, whose detail
-  is spelt `ErrorMessage`, as it does for the data API's `errorMessage`.
+  keyless, sending no key and spending no daily quota, while the client's pace and quota
+  policy apply to them as to every call, and never cached. Rows are `ComtradeRelease` and
+  `WorldShare`, every field under its upstream name; their times are naive datetimes, as
+  upstream prints them without a zone, and `world_share` is a `Decimal`. `meta.total` is
+  upstream's count and `meta.published_at` stays `None`. `params.validate_world_share`
+  checks the arguments before the call: `period` as years, months or `recent`, which
+  upstream answered with HTTP 500 when recorded, and `reporter_code` against
+  `Reporters.json`, an unknown code raising `UnknownCode`. MCP: `get_world_share` has a
+  result cap of its own, 400 rows or 100 KB, so one period for every reporter reaches an
+  agent whole (`MCP_CAPS`).
+- `classify` names the refused field in getWorldShare's HTTP 400, reading the detail's
+  message spelt `ErrorMessage` as it reads the data API's `errorMessage`.
 
 ### Changed
 

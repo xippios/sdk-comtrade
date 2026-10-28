@@ -155,8 +155,6 @@ async def test_get_comtrade_releases_live() -> None:
     result = await tasks.get_comtrade_releases_async()
     assert result.meta.total == len(result.data)
     assert all(row.date_release.tzinfo is None for row in result.data)
-    released = [row.date_release for row in result.data]
-    assert released == sorted(released, reverse=True)
 
 
 async def test_get_world_share_live() -> None:
