@@ -1,14 +1,15 @@
 """Live smoke tests: skipped unless XIPPIOS_LIVE_TESTS=1 (conventions §10).
 
 Every task function gets one live smoke test here, next to the reachability probe, which
-spends no keyed call. The whole module costs ten keyed calls: one count, the count plus
-the data call of ``get_data``, one call each for ``get_data_availability``,
-``get_metadata`` and ``get_live_update``, and one for each of the four slices (the
-commodity series asks for two periods, one call). A Basic Individual key allows 500
-calls per day. The probe, the list tasks and the public operations spend none: the probe
-sends no key, ``list_commodities`` and the checks of the packaged tables fetch the public
-reference files without it, and ``get_comtrade_releases`` and ``get_world_share`` call
-``public/v1`` without it (six keyless requests).
+spends no keyed call. The whole module costs twelve keyed calls: one count, the count
+plus the data call of ``get_data``, one call each for ``get_data_availability``,
+``get_metadata`` and ``get_live_update``, one for each of the four slices (the
+commodity series asks for two periods, one call), and one each for the two Tools
+operations, ``get_trade_balance`` and ``get_bilateral_data``. A Basic Individual key
+allows 500 calls per day. The probe, the list tasks and the public operations spend none:
+the probe sends no key, ``list_commodities`` and the checks of the packaged tables fetch
+the public reference files without it, and ``get_comtrade_releases`` and
+``get_world_share`` call ``public/v1`` without it (six keyless requests).
 """
 
 from datetime import datetime
@@ -148,6 +149,34 @@ async def test_get_top_partners_live() -> None:
     assert 0 not in {row.partner_code for row in result.data}
     values = [row.primary_value for row in result.data]
     assert values == sorted(values, reverse=True)
+
+
+async def test_get_trade_balance_live() -> None:
+    result = await tasks.get_trade_balance_async(
+        "C", "A", "HS", reporter_code="757", period="2023", partner_code="0",
+        cmd_code="TOTAL", breakdown_mode="classic",
+    )  # fmt: skip
+    [row] = result.data
+    assert (row.reporter_code, row.partner_code, row.cmd_code) == (757, 0, "TOTAL")
+    assert isinstance(row.primary_value_bal, Decimal)
+    assert row.primary_value_x > 0
+    assert row.primary_value_m > 0
+    assert result.meta.total == 1
+
+
+async def test_get_bilateral_data_live() -> None:
+    result = await tasks.get_bilateral_data_async(
+        "C", "A", "HS", reporter_code="757", period="2023", partner_code="842",
+        cmd_code="TOTAL", flow_code="X",
+    )  # fmt: skip
+    assert result.data.note, "upstream's data-gap note"
+    assert result.data.timestamp_requested is not None
+    assert result.data.timestamp_requested.tzinfo is not None
+    [row] = result.data.data
+    assert (row.reporter_code, row.partner_code, row.flow_code) == (757, 842, "X")
+    assert isinstance(row.mirror_primary_value, Decimal)
+    assert row.primary_value > 0
+    assert row.mirror_primary_value > 0
 
 
 async def test_get_comtrade_releases_live() -> None:
