@@ -14,7 +14,9 @@ uv add "xippios-comtrade[mcp]"     # + MCP server
 uv add "xippios-comtrade[http]"    # + FastAPI router
 ```
 
-Set `COMTRADE_API_KEY` in the environment. Nothing is read from files.
+Set `COMTRADE_API_KEY` in the environment. Nothing is read from files. The public
+operations (`get_comtrade_releases`, `get_world_share`) and the reference files need no
+key and send none.
 
 ## 30-second example
 
@@ -79,16 +81,27 @@ get_world_trade("27", "2023", "M").data[0].reporter_desc  # 'China': largest fir
 # ['USA', 'Germany', 'China']: World, the total, is dropped
 ```
 
-Release dates are per dataset, so they sit on the rows, not in `meta.published_at`:
+Release dates are per dataset, so they sit on the rows, not in `meta.published_at`.
+Upstream prints `first_released`, `last_released`, `publication_date` and `date_release`
+without a zone, so they are naive datetimes:
 
 ```python
-from xippios.comtrade import get_data_availability, get_live_update, get_metadata
+from xippios.comtrade import (
+    get_comtrade_releases,
+    get_data_availability,
+    get_live_update,
+    get_metadata,
+    get_world_share,
+)
 
 [dataset] = get_data_availability("C", "A", "HS", reporter_code="757", period="2023").data
 dataset.first_released, dataset.last_released  # first publication and latest revision
 notes = get_metadata("C", "A", "HS", reporter_code="757", period="2023").data[0].notes
 [note.publication_date for note in notes]  # "New Data", then each "Revised Data"
 get_live_update().data  # the 50 most recent releases, newest first
+get_comtrade_releases().data  # upstream's recent releases, newest first; keyless
+[share] = get_world_share("C", "A", period="2023", reporter_code="757").data  # keyless
+share.world_share, share.last_released  # Decimal('0.01651852126450239'), its release
 ```
 
 `get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
@@ -131,6 +144,8 @@ instead of stdio.
 | `data/v1/getDa/{typeCode}/{freqCode}/{clCode}` | `get_data_availability(type_code, freq_code, cl_code, *, reporter_code=, period=, published_date_from=, published_date_to=)` | `comtrade_get_data_availability` | alpha |
 | `data/v1/getMetadata/{typeCode}/{freqCode}/{clCode}` | `get_metadata(type_code, freq_code, cl_code, *, reporter_code=, period=)` | `comtrade_get_metadata` | alpha |
 | `data/v1/getLiveUpdate` | `get_live_update()` | `comtrade_get_live_update` | alpha |
+| `public/v1/getComtradeReleases`, keyless | `get_comtrade_releases()` | `comtrade_get_comtrade_releases` | alpha |
+| `public/v1/getWorldShare/{typeCode}/{freqCode}`, keyless | `get_world_share(type_code, freq_code, *, period=None, reporter_code=None)` | `comtrade_get_world_share` | alpha |
 | `data/v1/get/C/{A,M}/{clCode}`, total row, one reporter and partner | `get_bilateral_flows(reporter, partner, commodities, periods, flow, *, cl_code="HS")` | `comtrade_get_bilateral_flows` | alpha |
 | `data/v1/get/C/{A,M}/{clCode}`, total row, partner World, 12 periods per call, at most 120 | `get_commodity_series(reporter, commodity, flow, periods, *, cl_code="HS")` | `comtrade_get_commodity_series` | alpha |
 | `data/v1/get/C/{A,M}/{clCode}`, total row, every reporter, partner World | `get_world_trade(commodity, period, flow, *, cl_code="HS")` | `comtrade_get_world_trade` | alpha |
@@ -139,8 +154,9 @@ instead of stdio.
 | `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(search=None)` | `comtrade_list_partners` | alpha |
 | `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
 
-All twelve are covered in 0.1.0, the first release. Alpha: the public surface may change
-in a minor version before 1.0; `CHANGELOG.md` lists every change.
+The first twelve came with 0.1.0, the first release; `get_comtrade_releases` and
+`get_world_share` are unreleased. Alpha: the public surface may change in a minor version
+before 1.0; `CHANGELOG.md` lists every change.
 
 ## Upstream terms and attribution
 
