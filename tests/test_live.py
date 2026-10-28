@@ -6,8 +6,8 @@ the data call of ``get_data``, one call each for ``get_data_availability``,
 ``get_metadata`` and ``get_live_update``, and one for each of the four slices (the
 commodity series asks for two periods, one call). A Basic Individual key allows 500
 calls per day. The probe and the list tasks spend none: the probe sends no key, and
-``list_commodities`` and the checks of the packaged tables fetch the public reference
-files without it (four keyless requests).
+``list_commodities`` and the checks of the packaged lists and tables fetch the public
+reference files without it (six keyless requests).
 """
 
 from datetime import datetime
@@ -93,6 +93,22 @@ async def test_list_commodities_live() -> None:
     assert (total.id, total.aggr_level, total.parent) == ("TOTAL", 0, "#")
     coffee = next(row for row in result.data if row.id == "090111")
     assert (coffee.parent, coffee.aggr_level, coffee.is_leaf) == ("0901", 6, True)
+
+
+async def test_list_codes_live() -> None:
+    """The packaged motCode list still holds upstream's codes and texts; else a refresh is due."""
+    packaged = (await tasks.list_codes_async("motCode")).data
+    upstream = (await api.reference_rows("ModeOfTransportCodes.json")).rows
+    assert [row.model_dump() for row in packaged] == [
+        {"mot_code": row["id"], "text": row["text"]} for row in upstream
+    ]
+
+
+async def test_list_classifications_live() -> None:
+    """The packaged index still lists upstream's categories; a mismatch means a refresh is due."""
+    packaged = (await tasks.list_classifications_async()).data
+    upstream = (await api.reference_rows("ListofReferences.json")).rows
+    assert [row.category for row in packaged] == [row["category"] for row in upstream]
 
 
 async def test_get_data_availability_live() -> None:

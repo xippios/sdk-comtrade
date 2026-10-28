@@ -1,4 +1,4 @@
-"""The maintenance scripts under ``scripts/``, checked without running them."""
+"""The maintenance scripts under ``scripts/``, checked without a request or a key."""
 
 import importlib.util
 from pathlib import Path
@@ -33,3 +33,19 @@ def test_refresh_reference_help_prints_usage_and_stops(
         script.parse_args(["--unknown"])
     assert script.parse_args([]).render_only is False
     assert script.parse_args(["--render-only"]).render_only is True
+
+
+def test_refresh_reference_render_only_changes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--render-only`` renders ``enums.py`` from the packaged files exactly as committed.
+
+    It reads ``reference/*.json`` alone, no request, and formats with ruff; here it writes
+    into a copy, so the committed module is never touched.
+    """
+    script = _load("refresh_reference")
+    rendered = tmp_path / "enums.py"
+    monkeypatch.setattr(script, "ENUMS", rendered)
+    script.main(["--render-only"])
+    committed = script.PACKAGE_DIR / "enums.py"
+    assert rendered.read_text(encoding="utf-8") == committed.read_text(encoding="utf-8")

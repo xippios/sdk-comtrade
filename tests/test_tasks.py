@@ -249,8 +249,13 @@ async def test_a_code_that_is_not_a_reporter_counts_zero_upstream(
     assert (response.count, response.error) == (0, "")
 
 
+def _day(name: str) -> str:
+    """The day the packaged list ``name`` was fetched, as ``UnknownCode`` names it."""
+    return f"{PackagedList.load(PACKAGE, name).fetched:%Y-%m-%d}"
+
+
 REFUSED_756 = (
-    "'756' is not a reporter_code in the packaged Reporters list (fetched 2026-10-23). "
+    f"'756' is not a reporter_code in the packaged Reporters list (fetched {_day('Reporters')}). "
     "Did you mean 757 (Switzerland)? UN Comtrade answers a code it does not have with count "
     "0, so the package refuses it before the call. list_reporters lists every code. If "
     "upstream added it since, the packaged list needs a refresh (/refresh-reference-data)."
@@ -290,7 +295,8 @@ def test_unknown_partner_codes_are_refused(respx_mock: respx.MockRouter) -> None
         "partnerAreas",
     )
     assert str(unknown).startswith(
-        "'9999' is not a partner_code in the packaged partnerAreas list (fetched 2026-10-23)."
+        "'9999' is not a partner_code in the packaged partnerAreas list "
+        f"(fetched {_day('partnerAreas')})."
     )
     assert "list_partners lists every code" in str(unknown)
     reporter_only = _unknown(respx_mock, partner2_code="97")
@@ -620,8 +626,10 @@ def test_mos_code_is_accepted_upstream_but_not_a_parameter_here(fixtures_dir: Pa
     assert "mos_code" not in inspect.signature(tasks.get_data).parameters
     mos_code = PackagedList.load(PACKAGE, "mosCode")
     assert mos_code.note is not None
-    assert mos_code.note.startswith("The ids of ModeOfSupply.json, not proven parameter values")
-    assert enums.MosCode.__doc__ == "Values of ``mosCode`` (fetched 2026-10-23)."
+    assert mos_code.note.startswith(
+        "The ids of ModeOfSupply.json with their text, not proven parameter values"
+    )
+    assert enums.MosCode.__doc__ == f"Values of ``mosCode`` (fetched {_day('mosCode')})."
 
 
 def _refused(respx_mock: respx.MockRouter, **overrides: str) -> str:
@@ -710,20 +718,24 @@ def test_every_list_parameter_is_checked() -> None:
 
 
 REFUSED_C16 = (
-    "'C16' is not a customs_code in the packaged customsCode list (fetched 2026-10-23). "
-    "Did you mean 'C15'? Valid values: C00, C01, C02, C03, C04, C05, C06, C07, C08, C09, "
-    "C10, C11, C12, C13, C14, C15, C20. UN Comtrade's answer to a customs or transport code "
-    "it does not have is not recorded, so the package refuses it before the call, as it "
-    "does an unknown area. reference/customsCode.json lists every code. If upstream added "
-    "it since, the packaged list needs a refresh (/refresh-reference-data)."
+    "'C16' is not a customs_code in the packaged customsCode list (fetched "
+    f"{_day('customsCode')}). Did you mean C15 (Relief consignments), C14 (Stores), C13 "
+    "(Postal traffic)? UN Comtrade's answer to a customs or transport code it does not have "
+    "is not recorded, so the package refuses it before the call, as it does an unknown "
+    "area. list_codes('customsCode') lists every code. If upstream added it since, the "
+    "packaged list needs a refresh (/refresh-reference-data)."
 )
-"""``UnknownCode``'s message for customs_code C16 (conventions §5)."""
+"""``UnknownCode``'s message for customs_code C16 (conventions §5): the closest with their text."""
 
 
 def test_an_unknown_customs_or_transport_code_is_an_unknown_code(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Dimension codes of the rows, like the areas: ``UnknownCode`` before any call."""
+    """Dimension codes of the rows, like the areas: ``UnknownCode`` before any call.
+
+    The closest codes come with upstream's text: core's ``closest`` by code, then by text,
+    and where it finds none the most similar code, as for an area.
+    """
     customs = _unknown(respx_mock, customs_code="C00,C16")
     assert str(customs) == REFUSED_C16
     assert (customs.param, customs.value, customs.list_name) == (
@@ -732,12 +744,20 @@ def test_an_unknown_customs_or_transport_code_is_an_unknown_code(
         "customsCode",
     )
     assert customs.fetched == PackagedList.load(PACKAGE, "customsCode").fetched
+    assert customs.closest == (
+        ("C15", "Relief consignments"),
+        ("C14", "Stores"),
+        ("C13", "Postal traffic"),
+    )
     transport = _unknown(respx_mock, mot_code="0,9")
     assert (transport.param, transport.value, transport.list_name) == ("mot_code", "9", "motCode")
+    assert transport.closest == (("9900", "Other"),)
     assert str(transport).startswith(
-        "'9' is not a mot_code in the packaged motCode list (fetched 2026-10-23). "
-        "Did you mean '9900'?"
+        f"'9' is not a mot_code in the packaged motCode list (fetched {_day('motCode')}). "
+        "Did you mean 9900 (Other)?"
     )
+    assert _unknown(respx_mock, mot_code="air").closest == (("1000", "Air"),), "by text"
+    assert _unknown(respx_mock, customs_code="travellers").closest == (("C12", "Travellers"),)
 
 
 @pytest.mark.anyio
@@ -748,18 +768,50 @@ async def test_an_unknown_customs_code_over_mcp() -> None:
     assert refused == f"error: UnknownCode: {REFUSED_C16}"
 
 
+TEXT_FIELDS: dict[str, tuple[str, ...]] = {
+    "typeCode": ("text",),
+    "freqCode": ("text",),
+    "clCode": ("variable", "description"),
+    "flowCode": ("text",),
+    "customsCode": ("text",),
+    "motCode": ("text",),
+    "aggregateBy": (),
+    "breakdownMode": (),
+    "mosCode": ("text",),
+    "qtyUnitCode": ("qtyAbbr", "qtyDescription"),
+}
+"""The fields upstream words a list's values in, beside the value under the parameter's name.
+
+``text`` in ``tradeRegimes.json``, ``CustomsCodes.json``, ``ModeOfTransportCodes.json``
+and ``ModeOfSupply.json``; ``qtyAbbr`` and ``qtyDescription`` in ``QuantityUnits.json``;
+``variable`` and ``description`` in ``ListofReferences.json``; ``text`` cut from the
+spec's descriptions of ``typeCode`` and ``freqCode``, which word every value, where those
+of ``breakdownMode`` and ``aggregateBy`` word none.
+"""
+
+
 @pytest.mark.parametrize("name", [*PACKAGED_LISTS, *PACKAGED_TABLES])
 def test_every_packaged_list_is_upstreams_records_with_their_provenance(name: str) -> None:
-    """Structure, not counts: each refresh changes the sizes and writes the full fetch time."""
+    """Structure, not counts or days: each refresh changes the sizes and the fetch time."""
     packaged = PackagedList.load(PACKAGE, name)
     assert packaged.param == name
     assert packaged.endpoint.startswith(("files/v1/app/reference/", "files/v1/app/apim/"))
     assert packaged.fetched.tzinfo is UTC
-    assert packaged.fetched.date() == date(2026, 10, 23)
+    assert packaged.fetched.microsecond == 0, "written to the second"
     assert packaged.records
     if name in PACKAGED_LISTS:
-        assert all(list(record) == [name] for record in packaged.records), name
-        assert all(isinstance(record[name], str) for record in packaged.records), name
+        # A value the reconciliation added from the spec has no text: the spec words none.
+        added = {value for value, (decision, _) in _exceptions(name).items() if decision == "added"}
+        for record in packaged.records:
+            assert next(iter(record)) == name, "the value first, under the parameter's name"
+            fields = () if record[name] in added else TEXT_FIELDS[name]
+            assert tuple(record) == (name, *fields), record
+            assert all(isinstance(value, str) and value for value in record.values()), record
+        rows = packaged.parse(PACKAGED_LISTS[name], source="comtrade")
+        assert [
+            {key: value for key, value in row.dump_upstream().items() if value is not None}
+            for row in rows
+        ] == packaged.records, "every record is its model's, with upstream's names"
     else:
         model = PACKAGED_TABLES[name]
         for row, record in zip(
@@ -1120,7 +1172,6 @@ def test_list_reporters_returns_the_packaged_table(respx_mock: respx.MockRouter)
     assert len(result.data) == 255
     assert result.meta.endpoint == "files/v1/app/reference/Reporters.json"
     assert result.meta.retrieved_at == PackagedList.load(PACKAGE, "Reporters").fetched
-    assert result.meta.retrieved_at == datetime(2026, 10, 23, tzinfo=UTC)
     assert result.meta.vintage is None
     assert result.meta.published_at is None
     assert result.meta.request == {}
@@ -1325,7 +1376,8 @@ async def test_list_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
     # MCP_CAPS: both tables reach an agent whole, Switzerland (757) and the USA (842) among
     # them, which the default cap of 200 rows cut off in upstream's alphabetical order.
     reporters = await mcp_call(server, "comtrade_list_reporters", {})
-    assert reporters["meta"]["retrieved_at"] == "2026-10-23T00:00:00Z"
+    fetched = PackagedList.load(PACKAGE, "Reporters").fetched
+    assert reporters["meta"]["retrieved_at"] == f"{fetched:%Y-%m-%dT%H:%M:%SZ}"
     assert reporters["meta"]["vintage"] is None
     assert len(reporters["data"]) == 255
     assert "note" not in reporters
@@ -1356,8 +1408,166 @@ def test_list_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
         reporters = http.get("/comtrade/list_reporters").json()
         assert len(reporters["data"]) == 255, "HTTP results are not capped"
         partners = http.get("/comtrade/list_partners").json()["meta"]
-        assert (partners["retrieved_at"], partners["vintage"]) == ("2026-10-23T00:00:00Z", None)
+        fetched = PackagedList.load(PACKAGE, "partnerAreas").fetched
+        assert (partners["retrieved_at"], partners["vintage"]) == (
+            f"{fetched:%Y-%m-%dT%H:%M:%SZ}",
+            None,
+        )
         refused = http.get("/comtrade/list_commodities", params={"cl_code": "BE"})
+        assert refused.status_code == 422
+
+
+# The packaged lists and the index of the reference files, with upstream's words.
+
+
+@pytest.mark.parametrize("name", list(PACKAGED_LISTS))
+def test_list_codes_returns_the_packaged_list(respx_mock: respx.MockRouter, name: str) -> None:
+    """Every record, its value under the parameter's name, upstream's words where it has them."""
+    packaged = PackagedList.load(PACKAGE, name)
+    result = tasks.list_codes(name)
+    assert not respx_mock.calls, "packaged: no upstream call"
+    model = PACKAGED_LISTS[name]
+    assert all(isinstance(row, model) for row in result.data)
+    assert [
+        {key: value for key, value in row.dump_upstream().items() if value is not None}
+        for row in result.data
+    ] == packaged.records
+    # A value from the reference file carries the file's words; one the spec adds, none.
+    added = {value for value, (decision, _) in _exceptions(name).items() if decision == "added"}
+    for row in result.data:
+        upstream = row.dump_upstream()
+        words = [upstream[field] for field in TEXT_FIELDS[name]]
+        assert all(words) if upstream[name] not in added else not any(words), upstream
+    assert result.meta.endpoint == packaged.endpoint
+    assert result.meta.retrieved_at == packaged.fetched
+    assert (result.meta.vintage, result.meta.published_at, result.meta.total) == (None, None, None)
+    assert result.meta.request == {"param": name}
+
+
+def test_list_codes_carries_upstreams_words(respx_mock: respx.MockRouter) -> None:
+    """``text`` and its kin under upstream's names; a value the spec adds stands alone."""
+
+    def by_value(name: str) -> dict[str, dict[str, Any]]:
+        rows = [row.model_dump() for row in tasks.list_codes(name).data]
+        return {row.pop(next(iter(row))): row for row in rows}
+
+    assert by_value("flowCode")["X"] == {"text": "Export"}
+    assert by_value("flowCode")["MIF"] == {"text": None}, "added from the spec's description"
+    assert by_value("motCode")["2100"] == {"text": "Sea"}
+    assert by_value("customsCode")["C00"] == {"text": "TOTAL customs procedure codes"}
+    assert by_value("mosCode")["Mode 1"] == {"text": "Cross-border"}
+    assert by_value("qtyUnitCode")["8"] == {
+        "qty_abbr": "kg",
+        "qty_description": "Weight in kilograms",
+    }
+    assert by_value("clCode")["H6"]["variable"] == "Product [HS 2022]"
+    assert by_value("clCode")["BE"] == {"variable": None, "description": None}
+    assert by_value("typeCode") == {"C": {"text": "commodities"}, "S": {"text": "service"}}
+    assert by_value("freqCode") == {"A": {"text": "annual"}, "M": {"text": "monthly"}}
+    assert by_value("breakdownMode") == {"classic": {}, "plus": {}}
+    assert list(by_value("aggregateBy"))[:2] == ["cmdCode", "period"]
+    assert not respx_mock.calls
+
+
+def test_list_codes_refuses_a_list_the_package_lacks(respx_mock: respx.MockRouter) -> None:
+    """A parameter name, not an upstream code: ``InvalidRequestError``, not ``UnknownCode``."""
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.list_codes("flow_code")
+    assert not isinstance(info.value, UnknownCode)
+    message = str(info.value)
+    assert message.startswith("param 'flow_code' is not a list the package carries; closest: ")
+    assert "closest: 'flowCode'" in message
+    assert f"Valid values: {', '.join(PACKAGED_LISTS)}." in message
+    assert not respx_mock.calls
+
+
+def test_list_classifications_returns_the_packaged_index(respx_mock: respx.MockRouter) -> None:
+    packaged = PackagedList.load(PACKAGE, "ListofReferences")
+    whole = tasks.list_classifications()
+    assert not respx_mock.calls, "packaged: no upstream call"
+    assert [row.dump_upstream() for row in whole.data] == packaged.records
+    assert whole.meta.endpoint == "files/v1/app/reference/ListofReferences.json"
+    assert whole.meta.retrieved_at == packaged.fetched
+    assert (whole.meta.vintage, whole.meta.request) == (None, {})
+    categories = [row.category for row in whole.data]
+    assert {"flow", "reporter", "partner", "qtyunit", "mos", "customs", "mot"} <= set(categories)
+    classifications = [c.removeprefix("cmd:") for c in categories if c.startswith("cmd:")]
+    assert classifications == list(classification_files())
+    [hs] = tasks.list_classifications("cmd:HS").data
+    assert (hs.variable, hs.fileuri) == (
+        "Product [HS]",
+        "https://comtradeapi.un.org/files/v1/app/reference/HS.json",
+    )
+    flow = tasks.list_classifications("flow")
+    assert [row.fileuri.rsplit("/", 1)[-1] for row in flow.data] == ["tradeRegimes.json"]
+    assert flow.meta.request == {"category": "flow"}
+
+
+def test_list_classifications_refuses_an_unknown_category(respx_mock: respx.MockRouter) -> None:
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.list_classifications("cmd:hs")
+    message = str(info.value)
+    assert message.startswith(
+        "category 'cmd:hs' is not a category of UN Comtrade's ListofReferences.json; "
+        "closest: 'cmd:HS'. Valid values: dataitem, freq, flow,"
+    )
+    assert "cmd:SS." in message
+    assert not respx_mock.calls
+
+
+@pytest.mark.anyio
+async def test_list_codes_and_classifications_tools_end_to_end() -> None:
+    """Snake_case on the tool, whole lists under the default cap: no cap of their own."""
+    assert {"list_codes", "list_classifications"}.isdisjoint(tasks.MCP_CAPS)
+    motion = json.loads(await mcp_call_text(server, "comtrade_list_codes", {"param": "motCode"}))
+    assert motion["data"][:2] == [
+        {"mot_code": "0", "text": "TOTAL modes of transport"},
+        {"mot_code": "1000", "text": "Air"},
+    ]
+    assert motion["meta"]["endpoint"] == "files/v1/app/reference/ModeOfTransportCodes.json"
+    assert motion["meta"]["request"] == {"param": "motCode"}
+    assert "note" not in motion
+    for name in PACKAGED_LISTS:
+        whole = json.loads(await mcp_call_text(server, "comtrade_list_codes", {"param": name}))
+        assert "note" not in whole, f"{name} reaches the agent whole"
+        assert len(whole["data"]) == len(PackagedList.load(PACKAGE, name).records)
+    refused = await mcp_call_text(server, "comtrade_list_codes", {"param": "flow_code"})
+    assert refused.startswith("error: InvalidRequestError: param 'flow_code' is not a list")
+    index = json.loads(await mcp_call_text(server, "comtrade_list_classifications", {}))
+    assert "note" not in index
+    assert len(index["data"]) == len(PackagedList.load(PACKAGE, "ListofReferences").records)
+    h6 = json.loads(
+        await mcp_call_text(server, "comtrade_list_classifications", {"category": "cmd:H6"})
+    )
+    assert [row["variable"] for row in h6["data"]] == ["Product [HS 2022]"]
+    assert h6["meta"]["vintage"] is None
+
+
+def test_list_codes_and_classifications_routes_end_to_end() -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as http:
+        units = http.get("/comtrade/list_codes", params={"param": "qtyUnitCode"})
+        assert units.status_code == 200
+        assert units.json()["data"][0] == {
+            "qty_unit_code": "-1",
+            "qty_abbr": "N/A",
+            "qty_description": "Not available or not specified or no quantity.",
+        }
+        fetched = PackagedList.load(PACKAGE, "qtyUnitCode").fetched
+        assert units.json()["meta"]["retrieved_at"] == f"{fetched:%Y-%m-%dT%H:%M:%SZ}"
+        flows = http.get("/comtrade/list_codes", params={"param": "flowCode"}).json()["data"]
+        assert {"flow_code": "XIF", "text": None} in flows
+        assert http.get("/comtrade/list_codes", params={"param": "flows"}).status_code == 422
+        customs = http.get("/comtrade/list_classifications", params={"category": "customs"})
+        assert customs.status_code == 200
+        assert [row["variable"] for row in customs.json()["data"]] == ["Customs Procedure Code"]
+        refused = http.get("/comtrade/list_classifications", params={"category": "cmd"})
         assert refused.status_code == 422
 
 
@@ -1886,7 +2096,8 @@ def test_slice_arguments_are_refused_before_any_call(
         (
             lambda: tasks.get_bilateral_flows("CHF", "USA", "TOTAL", "2023", "X"),
             "reporter", "CHF",
-            "'CHF' is not a reporter in the packaged Reporters list (fetched 2026-10-23). "
+            f"'CHF' is not a reporter in the packaged Reporters list "
+            f"(fetched {_day('Reporters')}). "
             "Did you mean 156 (China)?",
         ),
         (
@@ -1896,13 +2107,15 @@ def test_slice_arguments_are_refused_before_any_call(
         (
             lambda: tasks.get_bilateral_flows("CHE", "US", "TOTAL", "2023", "X"),
             "partner", "US",
-            "'US' is not a partner in the packaged partnerAreas list (fetched 2026-10-23). "
+            f"'US' is not a partner in the packaged partnerAreas list "
+            f"(fetched {_day('partnerAreas')}). "
             "Did you mean 842 (USA)?",
         ),
         (
             lambda: tasks.get_bilateral_flows("756", "USA", "TOTAL", "2023", "X"),
             "reporter", "756",
-            "'756' is not a reporter in the packaged Reporters list (fetched 2026-10-23). "
+            f"'756' is not a reporter in the packaged Reporters list "
+            f"(fetched {_day('Reporters')}). "
             "Did you mean 757 (Switzerland)?",
         ),
         (
@@ -1962,7 +2175,7 @@ def test_the_list_tasks_search_code_iso3_and_text(respx_mock: respx.MockRouter) 
     assert [row.reporter_code for row in by_iso3.data] == [690, 757], "Seychelles by its name"
     assert by_iso3.meta.request == {"search": "che"}
     assert (by_iso3.meta.retrieved_at, by_iso3.meta.vintage) == (
-        datetime(2026, 10, 23, tzinfo=UTC),
+        PackagedList.load(PACKAGE, "Reporters").fetched,
         None,
     )
     germany = tasks.list_reporters(search="GERMANY").data
