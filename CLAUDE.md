@@ -142,10 +142,11 @@ the USA alone: none). `primaryValueDisc` equals (mirror − value) / value in ev
 row and `mirror2*` is empty or 0; upstream states neither meaning. Its envelope's
 `timestampRequested` is UTC per the spec and its `note` counts the partners with a data gap
 and their share of world trade, naming none, in wording that varies; the task returns both
-with the rows as one `BilateralData` (`note`, `timestamp_requested`, `data`), the one task
-whose result is not a list, so the note that qualifies the mirror values reaches the agent
-(Johannes, 2026-10-28). Over MCP, core's result cap cuts only a top-level list: an answer
-above 64 KB (about 40 rows) arrives as a text preview.
+with the rows as one `BilateralData` (`note`, `timestamp_requested`, `data`), not a list,
+so the note that qualifies the mirror values reaches the agent (Johannes, 2026-10-28);
+`get_mirror_flows`' `MirrorFlows` has the same shape. Over MCP, core's result cap cuts
+only a top-level list: an answer above 64 KB (about 40 rows of `BilateralData`, 60 of
+`MirrorFlows`) arrives as a text preview.
 
 The task-shaped slices (wave 2: `get_bilateral_flows`, `get_commodity_series`,
 `get_world_trade`, `get_top_partners`) call `data/v1/get` through `api.get` with
@@ -165,6 +166,22 @@ periods 12 per call, in the order given, and sorts the joined rows by period.
 `get_top_partners` drops partner 0, World, because it is the total over all partners, not a
 partner, and ranks the rest by `primary_value` here; `get_world_trade` sorts the same way,
 so a capped MCP result (104 of 167 rows for HS 27 imports 2023) keeps the largest.
+
+The mirror slice, `get_mirror_flows`, calls `tools/v1/getBilateralData` through
+`api.get_bilateral_data` instead, with `params.validate_mirror_flows`: `validate_slice`'s
+resolution and checks, one flow of `TOOLS_FLOW_CODES`, at most 12 periods (the slices'
+bound, though upstream answered 13), `typeCode` C and no `includeDesc`, which filled no
+description. It is bounded by product codes × periods like `get_bilateral_flows`, keeps
+its rows in upstream's order (period order in both recordings: one call, nothing to
+join, unlike the series), projects them into `MirrorFlowRecord` (the identity fields,
+the reported figures and their mirrors, `primary_value_disc` and `mirror2_primary_value`
+as sent; the empty `mirror2*` quantities left out) and returns them with upstream's note
+as one `MirrorFlows`. Recorded on 2026-10-28 for Switzerland's
+chapter 27 exports to the USA (`ch_us_27_2022_2023_x.json`, `ch_us_27_202301_x.json`
+under `tests/fixtures/get_bilateral_data/`): chapter rows and monthly periods are
+answered, the note found no gap, and the reported values equal `data/v1/get`'s
+(`get/bilateral_ch_us_2022_2023.json`) while the USA's mirror is far smaller
+(`6444455.0` against `126191129.831` in 2023).
 
 ## Layout
 
@@ -189,7 +206,7 @@ src/xippios/comtrade/
                    and validate_bilateral_data() (TOOLS_FLOW_CODES); for the slices
                    validate_slice()
                    (areas by code or ISO alpha-3, periods of one format), SLICE_PINS
-                   and MAX_SERIES_PERIODS
+                   and MAX_SERIES_PERIODS; for the mirror slice validate_mirror_flows()
   enums.py         StrEnums generated from the packaged lists; never edited by hand
   reference/       packaged lists and tables, reference/<name>.json, read with
                    PackagedList.load, plus README with provenance
@@ -232,6 +249,6 @@ Only its `uv run pytest -m live --tb=short` step sees the key, from the org secr
 
 ## UN Comtrade specifics
 
-The live run costs twelve keyed calls and four keyless requests (`tests/test_live.py`, whose
-docstring counts them): the reachability probe sends no key, and the list tasks fetch the
-public reference files without it. A Basic Individual key allows 500 calls a day.
+The live run costs thirteen keyed calls and four keyless requests (`tests/test_live.py`,
+whose docstring counts them): the reachability probe sends no key, and the list tasks fetch
+the public reference files without it. A Basic Individual key allows 500 calls a day.

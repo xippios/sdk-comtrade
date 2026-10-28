@@ -68,6 +68,8 @@ from xippios.comtrade.models import (
     CountryAreaCodeIso,
     LiveUpdateRecord,
     MetadataDataset,
+    MirrorFlowRecord,
+    MirrorFlows,
     PartnerArea,
     ReferenceCode,
     Reporter,
@@ -85,6 +87,7 @@ from xippios.comtrade.params import (
     classification_files,
     validate_bilateral_data,
     validate_get,
+    validate_mirror_flows,
     validate_slice,
     validate_trade_balance,
 )
@@ -2323,7 +2326,7 @@ def test_get_bilateral_data_puts_the_mirror_beside_the_reported_figures(
     assert result.meta.total == 1
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
     body = _tools_body("get_bilateral_data", "ch_us_exports_2023_include_desc")
-    assert isinstance(result.data, BilateralData), "the one task whose result is not a list"
+    assert isinstance(result.data, BilateralData), "not a list: the note travels with the rows"
     assert_projection(result.data, BilateralDataResponse.model_validate(body))
     assert result.data.timestamp_requested == datetime(2026, 10, 28, 16, 14, 25, 593000, tzinfo=UTC)
     assert result.data.note == body["note"]
@@ -2563,3 +2566,267 @@ def test_tools_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
         )
         assert refused.status_code == 422
     assert balance_route.call_count == bilateral_route.call_count == 1
+
+
+# The mirror slice, get_mirror_flows, over tools/v1/getBilateralData: Switzerland's exports
+# of HS chapter 27 to the USA, recorded on 2026-10-28 under
+# tests/fixtures/get_bilateral_data/ (ch_us_27_2022_2023_x, ch_us_27_202301_x).
+
+MIRROR_REQUEST: dict[str, Any] = {
+    "type_code": "C", "freq_code": "A", "cl_code": "HS", "reporter_code": "757",
+    "period": "2022,2023", "partner_code": "842", "cmd_code": "27", "flow_code": "X",
+}  # fmt: skip
+"""What get_mirror_flows("CHE", "USA", "27", "2022,2023", "X") sends, resolved."""
+
+MIRROR_ARGUMENTS: dict[str, Any] = {
+    "reporter": "CHE", "partner": "USA", "commodities": "27", "periods": "2022,2023", "flow": "X",
+}  # fmt: skip
+
+
+def test_mirror_flows_put_the_partners_report_beside_the_reporters(
+    replay_fixture: ReplayFixture,
+) -> None:
+    route = replay_fixture("get_bilateral_data", "ch_us_27_2022_2023_x", match_params=BY_AREAS)
+    result = tasks.get_mirror_flows("757", "842", "27", "2022,2023", "X")
+    assert httpx.URL(sent_urls(route)[-1]).path == "/tools/v1/getBilateralData/C/A/HS"
+    sent = sent_query(route)
+    assert sent == _recorded("get_bilateral_data", "ch_us_27_2022_2023_x")
+    assert sent == {
+        "reporterCode": "757", "period": "2022,2023", "partnerCode": "842", "cmdCode": "27",
+        "flowCode": "X",
+    }  # fmt: skip
+    assert "includeDesc" not in sent, "it filled no description when recorded"
+    assert result.meta.endpoint == "tools/v1/getBilateralData"
+    assert result.meta.request == MIRROR_REQUEST
+    assert validate_bilateral_data(**result.meta.request) == MIRROR_REQUEST, "repeatable"
+    assert result.meta.total == 2
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    body = _tools_body("get_bilateral_data", "ch_us_27_2022_2023_x")
+    response = BilateralDataResponse.model_validate(body)
+    assert isinstance(result.data, MirrorFlows), "not a list: the note travels with the rows"
+    assert set(MirrorFlows.model_fields) == {"timestamp_requested", "note", "data"}
+    assert result.data.timestamp_requested == datetime(2026, 10, 28, 20, 7, 35, 661000, tzinfo=UTC)
+    assert result.data.note == body["note"]
+    assert result.data.note is not None
+    assert result.data.note.startswith("EXPERIMENTAL: We have good news! There is no data gap")
+    assert [(row.period, row.cmd_code) for row in result.data.data] == [
+        ("2022", "27"),
+        ("2023", "27"),
+    ], "upstream's order, kept: period order, as in every recording"
+    for row, raw in zip(result.data.data, response.data, strict=True):
+        assert isinstance(row, MirrorFlowRecord)
+        assert_projection(row, raw)
+    latest = result.data.data[1]
+    assert (latest.reporter_code, latest.partner_code, latest.flow_code) == (757, 842, "X")
+    assert latest.primary_value == latest.fobvalue == Decimal("126191129.831")
+    assert latest.mirror_primary_value == Decimal("6444455.0")
+    assert latest.primary_value_disc == Decimal("-0.948930998489112")
+    relative = (latest.mirror_primary_value - latest.primary_value) / latest.primary_value
+    assert float(latest.primary_value_disc) == pytest.approx(float(relative), rel=1e-12), (
+        "observed, not stated: a relative difference, passed through"
+    )
+    assert latest.mirror2_primary_value == 0
+    assert (latest.reporter_desc, latest.partner_desc, latest.cmd_desc) == (None, None, None)
+    assert (latest.is_reported, latest.is_aggregate) == (False, True)
+    assert (latest.qty, latest.mirror_qty) == (Decimal(0), Decimal(0))
+    assert (latest.qty_unit_code, latest.mirror_qty_unit_code) == (-1, -1), "no quantity"
+    pinned = {"type_code", "customs_code", "mot_code", "mos_code"}
+    empty = {"mirror2_qty", "mirror2_net_wgt", "mirror2_qty_unit_code", "aggr_level", "is_leaf"}
+    assert not (pinned | empty) & set(MirrorFlowRecord.model_fields)
+
+
+def test_the_reported_side_is_get_datas_figure(
+    replay_fixture: ReplayFixture, fixtures_dir: Path
+) -> None:
+    """getBilateralData's reported values are ``data/v1/get``'s for the same pair."""
+    replay_fixture("get_bilateral_data", "ch_us_27_2022_2023_x", match_params=BY_AREAS)
+    mirror = tasks.get_mirror_flows(**MIRROR_ARGUMENTS).data.data
+    flows = {
+        row["period"]: Decimal(str(row["primaryValue"]))
+        for row in _rows(fixtures_dir, "bilateral_ch_us_2022_2023")
+        if row["cmdCode"] == "27"
+    }
+    assert {row.period: row.primary_value for row in mirror} == flows
+    assert all(row.mirror_primary_value < row.primary_value for row in mirror), (
+        "the USA reported far less of chapter 27 from Switzerland than Switzerland exported"
+    )
+
+
+def test_mirror_flows_resolve_iso3_codes_and_ask_monthly_data_for_months(
+    replay_fixture: ReplayFixture,
+) -> None:
+    route = replay_fixture("get_bilateral_data", "ch_us_27_202301_x", match_params=BY_AREAS)
+    by_iso3 = tasks.get_mirror_flows("CHE", "USA", "27", "202301", "X")
+    by_code = tasks.get_mirror_flows("757", "842", "27", "202301", "X")
+    assert route.call_count == 2
+    assert httpx.URL(sent_urls(route)[-1]).path == "/tools/v1/getBilateralData/C/M/HS"
+    assert sent_query(route) == _recorded("get_bilateral_data", "ch_us_27_202301_x")
+    assert by_iso3.meta.request == by_code.meta.request == {
+        **MIRROR_REQUEST, "freq_code": "M", "period": "202301",
+    }  # fmt: skip
+    assert by_iso3.data == by_code.data
+    [row] = by_iso3.data.data
+    assert (row.freq_code, row.period, row.ref_year, row.ref_month) == ("M", "202301", 2023, 1)
+    assert (row.primary_value, row.mirror_primary_value) == (
+        Decimal("9765705.308"),
+        Decimal("246935.0"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("call", "expected"),
+    [
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27", "2023", "M,X"),
+            "flow 'M,X' must be one flow, 'M' or 'X': getBilateralData refuses several in one "
+            "call (HTTP 400), so call it once per flow",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27", "2023", "RX"),
+            "flow 'RX' is not a flowCode getBilateralData takes; closest: 'X'. Valid values: M, X",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27", THIRTEEN, "X"),
+            "periods has 13 values; get_mirror_flows takes at most 12 per call, the bound of "
+            "the slices; split the periods (get_bilateral_data takes more)",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "AG2", "2023", "X"),
+            "commodities 'AG2' expands to many product codes",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27??", "2023", "X"),
+            "commodities '27??' expands to many product codes",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27", "2023,202301", "X"),
+            "periods '2023,202301' mixes years (2023) and months (202301)",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA,DEU", "27", "2023", "X"),
+            "partner 'USA,DEU' must be one area, e.g. '757' or 'CHE'",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27", "2023", "X", cl_code="BE5"),
+            "cl_code 'BE5' is not a UN Comtrade clCode value",
+        ),
+    ],
+)
+def test_mirror_flow_arguments_are_refused_before_any_call(
+    respx_mock: respx.MockRouter, call: Callable[[], object], expected: str
+) -> None:
+    assert expected in _slice_refused(respx_mock, call)
+
+
+def test_mirror_flow_problems_are_named_together(respx_mock: respx.MockRouter) -> None:
+    message = _slice_refused(
+        respx_mock, lambda: tasks.get_mirror_flows("CHE", "USA", "AG2", THIRTEEN, "M,X")
+    )
+    assert message.startswith("flow 'M,X' must be one flow")
+    assert "commodities 'AG2' expands to many product codes" in message
+    assert "periods has 13 values" in message
+
+
+@pytest.mark.parametrize(
+    ("arguments", "param", "value", "expected"),
+    [
+        (
+            ("CHE", "US"), "partner", "US",
+            "'US' is not a partner in the packaged partnerAreas list (fetched {fetched}). "
+            "Did you mean 842 (USA)?",
+        ),
+        (
+            ("CHF", "USA"), "reporter", "CHF",
+            "'CHF' is not a reporter in the packaged Reporters list (fetched {fetched}).",
+        ),
+        (
+            ("756", "USA"), "reporter", "756",
+            "'756' is not a reporter in the packaged Reporters list (fetched {fetched}). "
+            "Did you mean 757 (Switzerland)?",
+        ),
+    ],
+)  # fmt: skip
+def test_a_mirror_flow_area_the_packaged_tables_lack_is_an_unknown_code(
+    respx_mock: respx.MockRouter,
+    arguments: tuple[str, str],
+    param: str,
+    value: str,
+    expected: str,
+) -> None:
+    """As a code or an ISO alpha-3 code: ``UnknownCode`` before any call (conventions §5).
+
+    The fetch date is read from the packaged table, so a refresh of it breaks no test.
+    """
+    with pytest.raises(UnknownCode) as info:
+        tasks.get_mirror_flows(*arguments, "27", "2023", "X")
+    assert not respx_mock.calls
+    assert (info.value.param, info.value.value) == (param, value)
+    fetched = PackagedList.load(PACKAGE, info.value.list_name).fetched
+    assert info.value.list_name == ("partnerAreas" if param == "partner" else "Reporters")
+    assert info.value.fetched == fetched
+    assert expected.format(fetched=f"{fetched:%Y-%m-%d}") in str(info.value)
+
+
+def test_a_mirror_flow_bound_over_the_limit_is_refused_without_a_call(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """8,334 product codes over 12 periods could return 100,008 rows: refused, not sent."""
+    codes = ",".join(f"{code:06d}" for code in range(8334))
+    periods = ",".join(str(year) for year in range(2012, 2024))
+    with pytest.raises(QueryTooLarge) as info:
+        tasks.get_mirror_flows("757", "842", codes, periods, "X")
+    assert not respx_mock.calls
+    assert (info.value.count, info.value.bound) == (8334 * 12, True)
+    assert "query could return up to 100,008 records" in str(info.value)
+    request = validate_mirror_flows(
+        "HS", "X", reporter="757", partner="842", commodities=codes[:-7], periods=periods
+    )
+    assert len(request["cmd_code"].split(",")) * 12 == 99_996 < RECORD_LIMIT, "one code fewer"
+
+
+@pytest.mark.anyio
+async def test_mirror_flows_end_to_end_over_mcp(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get_bilateral_data", "ch_us_27_2022_2023_x", match_params=BY_AREAS)
+    answer = json.loads(await mcp_call_text(server, "comtrade_get_mirror_flows", MIRROR_ARGUMENTS))
+    assert set(answer["data"]) == {"timestamp_requested", "note", "data"}
+    assert answer["data"]["note"].startswith("EXPERIMENTAL: We have good news!")
+    assert answer["data"]["timestamp_requested"] == "2026-10-28T20:07:35.661000Z"
+    rows = answer["data"]["data"]
+    assert [row["period"] for row in rows] == ["2022", "2023"]
+    assert (rows[1]["primary_value"], rows[1]["mirror_primary_value"]) == (
+        126191129.831,
+        6444455.0,
+    )
+    assert rows[1]["primary_value_disc"] == -0.948930998489112
+    assert answer["meta"]["request"] == MIRROR_REQUEST
+    assert answer["meta"]["total"] == 2
+    assert "note" not in answer, "within the cap: nothing cut"
+    refused = await mcp_call_text(
+        server, "comtrade_get_mirror_flows", {**MIRROR_ARGUMENTS, "flow": "M,X"}
+    )
+    assert refused.startswith("error: InvalidRequestError: flow 'M,X' must be one flow")
+
+
+def test_mirror_flows_route_end_to_end(replay_fixture: ReplayFixture) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    route = replay_fixture("get_bilateral_data", "ch_us_27_2022_2023_x", match_params=BY_AREAS)
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as http:
+        answer = http.get("/comtrade/get_mirror_flows", params=MIRROR_ARGUMENTS)
+        assert answer.status_code == 200
+        body = answer.json()
+        assert body["data"]["data"][1]["mirror_primary_value"] == 6444455.0
+        assert body["data"]["note"].startswith("EXPERIMENTAL: We have good news!")
+        assert body["meta"]["request"] == MIRROR_REQUEST
+        assert route.call_count == 1
+        refused = http.get(
+            "/comtrade/get_mirror_flows", params={**MIRROR_ARGUMENTS, "partner": "US"}
+        )
+        assert refused.status_code == 422
+        assert "Did you mean 842 (USA)?" in refused.json()["detail"]
+    assert route.call_count == 1, "refused before any call"
