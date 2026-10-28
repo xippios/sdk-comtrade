@@ -1,8 +1,6 @@
-"""Typed client, MCP tools and HTTP routes for UN Comtrade.
+"""Public API: ``__version__`` and the task functions re-exported here (conventions §2).
 
-Distribution ``xippios-comtrade``. Public API: ``__version__`` and the task
-functions re-exported here. Endpoint wrappers under ``api/`` and the configured client
-in ``_client`` are internal.
+Upstream: UN Comtrade.
 """
 
 from xippios.comtrade._version import __version__

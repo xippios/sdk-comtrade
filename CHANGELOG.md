@@ -39,8 +39,8 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   100 KB, and reach an agent whole; `list_commodities` the same, its note saying to
   search (`MCP_CAPS`).
 - The packaged files are `reference/<name>.json` packaged lists, `{"param",
-  "endpoint", "fetched", "records", "note"}`, the four tables included (the CSV files
-  and `tables.json` are gone); `params.packaged_values`, `packaged_table`,
+  "endpoint", "fetched", "records"}` and an optional `"note"`, the four tables included
+  (the CSV files and `tables.json` are gone); `params.packaged_values`, `packaged_table`,
   `packaged_table_info`, `PackagedValues`, `PackagedTable` and `ListException` give way
   to `xippios.core.PackagedList.load("xippios.comtrade", name)`, and
   `params.CL_CODES_FROM_SPEC` names the `clCode` values without a classification file.
