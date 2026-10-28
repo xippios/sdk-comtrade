@@ -60,7 +60,9 @@ from xippios.comtrade._client import (
 from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.mcp import server
 from xippios.comtrade.models import (
+    BilateralData,
     BilateralDataRecord,
+    BilateralDataResponse,
     Commodity,
     CountryAreaCodeIso,
     LiveUpdateRecord,
@@ -2296,8 +2298,15 @@ def test_get_bilateral_data_puts_the_mirror_beside_the_reported_figures(
     assert result.meta.request == {**CH_US_EXPORTS_2023, "include_desc": True}
     assert result.meta.total == 1
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
-    [row] = result.data
-    [raw] = _tools_body("get_bilateral_data", "ch_us_exports_2023_include_desc")["data"]
+    body = _tools_body("get_bilateral_data", "ch_us_exports_2023_include_desc")
+    assert isinstance(result.data, BilateralData), "the one task whose result is not a list"
+    assert_projection(result.data, BilateralDataResponse.model_validate(body))
+    assert result.data.timestamp_requested == datetime(2026, 10, 28, 16, 14, 25, 593000, tzinfo=UTC)
+    assert result.data.note == body["note"]
+    assert result.data.note is not None
+    assert result.data.note.startswith("EXPERIMENTAL: We have good news! There is no data gap")
+    [row] = result.data.data
+    [raw] = body["data"]
     assert isinstance(row, BilateralDataRecord)
     assert_projection(row, BilateralDataRecord.model_validate(raw))
     assert (row.reporter_code, row.partner_code, row.flow_code, row.period) == (
@@ -2334,7 +2343,8 @@ def test_bilateral_include_desc_changes_nothing(replay_fixture: ReplayFixture) -
     plain = tasks.get_bilateral_data(**CH_US_EXPORTS_2023).data
     assert with_desc.call_count == without.call_count == 1
     assert sent_query(without) == _recorded("get_bilateral_data", "ch_us_exports_2023")
-    assert described == plain
+    assert (described.data, described.note) == (plain.data, plain.note)
+    assert described.timestamp_requested != plain.timestamp_requested, "two answers"
 
 
 def test_a_partner_that_has_not_reported_gives_a_mirror_of_zero(
@@ -2343,8 +2353,12 @@ def test_a_partner_that_has_not_reported_gives_a_mirror_of_zero(
     """Afghanistan's 2023 imports are not reported: its mirror is 0, not "no trade"."""
     replay_fixture("get_bilateral_data", "ch_us_kp_af_exports_2023", match_params=BY_QUERY)
     result = tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "partner_code": "842,408,4"})
-    assert [row.partner_code for row in result.data] == [842, 4], "no row for 408"
-    afghanistan = result.data[1]
+    assert result.data.note is not None
+    assert "we've identified a data gap for 2 partner(s)" in result.data.note, (
+        "the note that qualifies the mirror"
+    )
+    assert [row.partner_code for row in result.data.data] == [842, 4], "no row for 408"
+    afghanistan = result.data.data[1]
     assert afghanistan.primary_value == Decimal("5718328.953")
     assert afghanistan.mirror_primary_value == 0
     assert afghanistan.primary_value_disc == -1
@@ -2360,7 +2374,9 @@ def test_a_pair_without_data_has_no_row(replay_fixture: ReplayFixture, fixtures_
     result = tasks.get_bilateral_data(
         **{**CH_US_EXPORTS_2023, "partner_code": "408"}, include_desc=True
     )
-    assert (result.data, result.meta.total) == ([], 0)
+    assert (result.data.data, result.meta.total) == ([], 0)
+    assert result.data.note is not None
+    assert "we've identified a data gap for 1 partner(s)" in result.data.note
     assert sent_query(route) == _recorded("get_bilateral_data", "ch_kp_exports_2023_include_desc")
     assert _rows(fixtures_dir, "ch_kp_exports_2023_totals") == []
 
@@ -2371,9 +2387,11 @@ def test_bilateral_data_takes_more_than_12_periods(replay_fixture: ReplayFixture
     )
     result = tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "period": THIRTEEN})
     assert route.call_count == 1
-    assert [row.period for row in result.data] == THIRTEEN.split(",")
+    assert [row.period for row in result.data.data] == THIRTEEN.split(",")
     assert result.meta.total == 13
-    assert {row.classification_code for row in result.data} == {"H3", "H4", "H5", "H6"}
+    assert {row.classification_code for row in result.data.data} == {"H3", "H4", "H5", "H6"}
+    assert result.data.note is not None
+    assert result.data.note.startswith("EXPERIMENTAL: We have good news!")
 
 
 def test_bilateral_data_takes_one_flow(respx_mock: respx.MockRouter) -> None:
@@ -2425,6 +2443,16 @@ async def test_the_bilateral_envelope_has_a_utc_timestamp_and_a_note(
     assert no_gap["timestampRequested"] == "2026-10-28 16:15:58.965"
 
 
+def test_a_bilateral_answer_without_note_or_timestamp_reads_none() -> None:
+    """Constructed, not recorded: every recorded answer carried both; the spec requires neither."""
+    body = _tools_body("get_bilateral_data", "ch_us_exports_2023")
+    bare = {key: value for key, value in body.items() if key not in {"note", "timestampRequested"}}
+    projected = BilateralData.project(BilateralDataResponse.model_validate(bare))
+    assert (projected.note, projected.timestamp_requested) == (None, None)
+    assert len(projected.data) == 1
+    assert set(BilateralData.model_fields) == {"timestamp_requested", "note", "data"}
+
+
 @pytest.mark.anyio
 async def test_tools_end_to_end_over_mcp(replay_fixture: ReplayFixture) -> None:
     replay_fixture(
@@ -2450,9 +2478,13 @@ async def test_tools_end_to_end_over_mcp(replay_fixture: ReplayFixture) -> None:
     bilateral = json.loads(
         await mcp_call_text(server, "comtrade_get_bilateral_data", CH_US_EXPORTS_2023)
     )
-    [row] = bilateral["data"]
+    assert set(bilateral["data"]) == {"timestamp_requested", "note", "data"}
+    assert bilateral["data"]["note"].startswith("EXPERIMENTAL: We have good news!")
+    assert bilateral["data"]["timestamp_requested"] == "2026-10-28T16:15:58.965000Z"
+    [row] = bilateral["data"]["data"]
     assert (row["primary_value"], row["mirror_primary_value"]) == (62852531481.607, 52815436548.0)
     assert bilateral["meta"]["request"] == CH_US_EXPORTS_2023
+    assert "note" not in bilateral, "within the cap: nothing cut"
     refused = await mcp_call_text(
         server, "comtrade_get_trade_balance", {**CH_WORLD_2023, "reporter_code": "756"}
     )
@@ -2492,8 +2524,11 @@ def test_tools_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
         )
         bilateral = http.get("/comtrade/get_bilateral_data", params=CH_US_EXPORTS_2023)
         assert bilateral.status_code == 200
-        assert bilateral.json()["data"][0]["primary_value_disc"] == -0.15969277126959047
-        assert bilateral.json()["meta"]["total"] == 1
+        body = bilateral.json()
+        assert body["data"]["data"][0]["primary_value_disc"] == -0.15969277126959047
+        assert body["data"]["note"].startswith("EXPERIMENTAL: We have good news!")
+        assert body["data"]["timestamp_requested"] == "2026-10-28T16:15:58.965000Z"
+        assert body["meta"]["total"] == 1
         refused = http.get(
             "/comtrade/get_bilateral_data", params={**CH_US_EXPORTS_2023, "flow_code": "M,X"}
         )

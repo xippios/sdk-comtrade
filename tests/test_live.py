@@ -168,7 +168,10 @@ async def test_get_bilateral_data_live() -> None:
         "C", "A", "HS", reporter_code="757", period="2023", partner_code="842",
         cmd_code="TOTAL", flow_code="X",
     )  # fmt: skip
-    [row] = result.data
+    assert result.data.note, "upstream's data-gap note"
+    assert result.data.timestamp_requested is not None
+    assert result.data.timestamp_requested.tzinfo is not None
+    [row] = result.data.data
     assert (row.reporter_code, row.partner_code, row.flow_code) == (757, 842, "X")
     assert isinstance(row.mirror_primary_value, Decimal)
     assert row.primary_value > 0

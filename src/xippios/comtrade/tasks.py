@@ -35,7 +35,7 @@ from xippios.comtrade.api.get_metadata import ENDPOINT as GET_METADATA
 from xippios.comtrade.api.get_trade_balance import ENDPOINT as GET_TRADE_BALANCE
 from xippios.comtrade.errors import MAX_PERIODS, RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.models import (
-    BilateralDataRecord,
+    BilateralData,
     Commodity,
     DataAvailability,
     LiveUpdateRecord,
@@ -550,12 +550,16 @@ async def get_bilateral_data_async(
     cmd_code: str | None = None,
     flow_code: str | None = None,
     include_desc: bool | None = None,
-) -> Result[list[BilateralDataRecord]]:
+) -> Result[BilateralData]:
     """Compare a reporter's trade figures with its partners' mirror figures, row by row.
 
     Upstream's ``getBilateralData``, which its spec marks "EXPERIMENTAL - USE SPARINGLY":
     one keyed call, "basic trade data joined with mirror partner data", useful to analyse
-    bilateral trade asymmetries. Each row, a ``BilateralDataRecord``, is one reporter,
+    bilateral trade asymmetries. It is the one task whose result is not a list:
+    ``data`` is a ``BilateralData`` holding upstream's ``note``, its
+    ``timestamp_requested`` and the rows, ``data.data``, because the note says which
+    partners have data gaps, and that qualifies their mirror values. Each row, a
+    ``BilateralDataRecord``, is one reporter,
     partner, product code, flow and period at the total of every breakdown
     (``customs_code`` ``"C00"``, ``mot_code`` 0): the reporter's figures
     (``primary_value``, ``qty``, ``net_wgt``, ...) beside the mirror
@@ -569,8 +573,9 @@ async def get_bilateral_data_async(
     (``-0.16`` for Switzerland's 2023 exports to the USA, ``-1.0`` where the mirror is 0).
     The ``mirror2_*`` fields are not described upstream and were ``None`` or 0 in every
     recorded row. A pair upstream holds nothing for has no row. ``meta.total`` is
-    upstream's ``count``. Upstream's envelope also carries a note on partners with data
-    gaps, which this task does not return. The query must name ``reporter_code`` or
+    upstream's ``count``. Over MCP the rows are not cut to the result cap one by one: an
+    answer above it (about 40 rows) comes as a preview of its text, so name a few
+    partners or periods per call. The query must name ``reporter_code`` or
     ``partner_code``, and ``cmd_code``: upstream offers no count to check a query's size
     before the call (it ignores ``countOnly``), so a broader query is refused before it is
     sent. Arguments are checked before the call; an unknown reporter or partner code
@@ -624,7 +629,7 @@ async def get_bilateral_data_async(
     meta = ResultMeta(
         source=SOURCE, endpoint=GET_BILATERAL_DATA, request=request, total=response.count
     )
-    return Result(data=response.data, meta=meta)
+    return Result(data=BilateralData.project(response), meta=meta)
 
 
 async def get_bilateral_flows_async(
