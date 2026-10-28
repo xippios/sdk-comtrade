@@ -77,10 +77,12 @@ def _quota_reset(text: str) -> float | None:
 def _refusal(payload: dict[str, object]) -> str:
     message = f"UN Comtrade refused the request (HTTP 400): {payload['error']}"
     details = payload.get("details")
+    # data/v1/get spells the detail's key errorMessage, as the spec's ValidationError
+    # does; the Tools operations spell it ErrorMessage (ch_us_2023_flow_code_m_x.json).
     notes = [
-        str(item.get("errorMessage", ""))
+        str(item.get("errorMessage") or item.get("ErrorMessage"))
         for item in (details if isinstance(details, list) else [])
-        if isinstance(item, dict) and item.get("errorMessage")
+        if isinstance(item, dict) and (item.get("errorMessage") or item.get("ErrorMessage"))
     ]
     if notes:
         message += " (" + "; ".join(notes) + ")"
@@ -93,8 +95,12 @@ def classify(response: httpx.Response) -> XippiosError | None:
     - HTTP 400 with the backend's ``ErrorResponse`` body ``{"error": ..., "details": ...}``
       (``components.schemas.ErrorResponse``; "Invalid or missing parameters." in the spec)
       is a caller mistake upstream caught: ``InvalidRequestError`` with upstream's text.
-      Observed: ``Maximum number of periods is 12`` (``count_13_periods.json``) and
-      ``Invalid parameter value`` naming ``clCode`` (``count_cl_code_be5.json``).
+      Observed: ``Maximum number of periods is 12`` (``count_13_periods.json``, and on
+      ``tools/v1/getTradeBalance`` ``ch_world_13_periods.json``) and ``Invalid parameter
+      value`` naming ``clCode`` (``count_cl_code_be5.json``). The Tools operations spell
+      a detail's keys ``MemberNames``/``ErrorMessage`` where ``data/v1/get`` and the
+      spec's ``ValidationError`` spell them ``memberNames``/``errorMessage``; both are
+      read (``tools/v1/getBilateralData``'s ``ch_us_2023_flow_code_m_x.json``).
     - HTTP 403 whose body mentions a quota is the daily call quota of the key:
       ``RateLimitError``, with ``retry_after`` read from API Management's standard text
       "Out of call volume quota. Quota will be replenished in HH:MM:SS." The spec's 403
