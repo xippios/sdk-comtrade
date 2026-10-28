@@ -1,0 +1,65 @@
+{
+  "recorded_at": "2026-10-28T16:15:53.978219Z",
+  "request": {
+    "body": null,
+    "body_base64": false,
+    "content_type": null,
+    "method": "GET",
+    "url": "https://comtradeapi.un.org/tools/v1/getTradeBalance/C/A/HS?reporterCode=757&period=2010%2C2011%2C2012%2C2013%2C2014%2C2015%2C2016%2C2017%2C2018%2C2019%2C2020%2C2021%2C2022&partnerCode=0&cmdCode=TOTAL&breakdownMode=classic"
+  },
+  "response": {
+    "body": "{\"error\":\"Maximum number of periods is 12\",\"details\":null}",
+    "body_base64": false,
+    "headers": [
+      [
+        "x-frame-options",
+        "deny"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-xss-protection",
+        "1;mode=block"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000;includeSubDomains"
+      ],
+      [
+        "content-security-policy",
+        "frame-src 'self'"
+      ],
+      [
+        "x-permitted-cross-domain-policies",
+        "none"
+      ],
+      [
+        "referrer-policy",
+        "no-referrer-when-downgrade"
+      ],
+      [
+        "permissions-policy",
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "0"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1"
+      ],
+      [
+        "request-context",
+        "appId=cid-v1:9b6e1d5a-3728-46ff-b743-6d33d23e54a6"
+      ],
+      [
+        "date",
+        "Wed, 28 Oct 2026 16:15:52 GMT"
+      ]
+    ],
+    "status": 400
+  }
+}

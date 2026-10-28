@@ -43,6 +43,7 @@ from xippios.core.testing import (
     recorded_query,
     response_from_fixture,
     sent_query,
+    sent_urls,
 )
 
 from xippios.comtrade import api, enums, tasks
@@ -60,16 +61,25 @@ from xippios.comtrade._client import (
 from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.mcp import server
 from xippios.comtrade.models import (
+    BilateralData,
+    BilateralDataRecord,
+    BilateralDataResponse,
     Commodity,
+    ComtradeRelease,
     CountryAreaCodeIso,
+    DataAvailability,
     LiveUpdateRecord,
     MetadataDataset,
+    MirrorFlowRecord,
+    MirrorFlows,
     PartnerArea,
     ReferenceCode,
     Reporter,
+    TradeBalanceRecord,
     TradeDataItem,
     TradeDataRecord,
     TradeFlowRecord,
+    WorldShare,
 )
 from xippios.comtrade.params import (
     CL_CODES_FROM_SPEC,
@@ -77,9 +87,14 @@ from xippios.comtrade.params import (
     PACKAGE,
     PACKAGED_LISTS,
     PACKAGED_TABLES,
+    RECENT,
     classification_files,
+    validate_bilateral_data,
     validate_get,
+    validate_mirror_flows,
     validate_slice,
+    validate_trade_balance,
+    validate_world_share,
 )
 
 TASKS = [getattr(tasks, name) for name in tasks.__all__]
@@ -830,7 +845,8 @@ def test_the_spec_lists_name_the_operation_they_were_read_from() -> None:
         assert packaged.note is not None
         assert packaged.note.startswith(
             "Read from docs/upstream/apidocs/comtrade.json, the snapshot of "
-            "files/v1/app/apim/comtrade.json fetched 2026-10-23: operation get, the "
+            f"files/v1/app/apim/comtrade.json fetched {packaged.fetched:%Y-%m-%d}: operation "
+            "get, the "
         ), name
 
 
@@ -2281,3 +2297,1069 @@ def test_slice_route_end_to_end(replay_fixture: ReplayFixture) -> None:
         assert refused.status_code == 422
         assert "Did you mean 842 (USA)?" in refused.json()["detail"]
         assert route.call_count == 1, "refused before any call"
+
+
+# The Tools operations, tools/v1/getTradeBalance and tools/v1/getBilateralData, recorded
+# on 2026-10-28 under tests/fixtures/get_trade_balance/ and get_bilateral_data/.
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+BY_QUERY = ["reporterCode", "period", "partnerCode", "cmdCode"]
+"""``match_params`` of a Tools fixture: the areas, periods and product the test sends."""
+
+CH_WORLD_2023: dict[str, Any] = {
+    "type_code": "C",
+    "freq_code": "A",
+    "cl_code": "HS",
+    "reporter_code": "757",
+    "period": "2023",
+    "partner_code": "0",
+    "cmd_code": "TOTAL",
+}
+"""Switzerland's trade with the World in 2023, all goods, as ``get_trade_balance`` takes it."""
+
+CH_US_EXPORTS_2023: dict[str, Any] = {
+    "type_code": "C",
+    "freq_code": "A",
+    "cl_code": "HS",
+    "reporter_code": "757",
+    "period": "2023",
+    "partner_code": "842",
+    "cmd_code": "TOTAL",
+    "flow_code": "X",
+}
+"""Switzerland's 2023 exports to the USA, all goods, as ``get_bilateral_data`` takes it."""
+
+
+def _tools_body(wrapper: str, case: str) -> dict[str, Any]:
+    """The decoded body of a recorded Tools answer."""
+    body: dict[str, Any] = json.loads(
+        load_fixture(FIXTURES / wrapper / f"{case}.json").response.body
+    )
+    return body
+
+
+def _recorded(wrapper: str, case: str) -> dict[str, str]:
+    return recorded_query(load_fixture(FIXTURES / wrapper / f"{case}.json"))
+
+
+def _total_row[R: (TradeBalanceRecord, TradeDataRecord)](rows: list[R]) -> R:
+    return next(
+        row for row in rows if (row.customs_code, row.mot_code, row.partner2_code) == TOTAL_ROW
+    )
+
+
+def test_get_trade_balance_puts_exports_beside_imports(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get_trade_balance", "ch_world_2023_include_desc", match_params=BY_QUERY)
+    result = tasks.get_trade_balance(**CH_WORLD_2023, include_desc=True)
+    assert route.call_count == 1
+    assert httpx.URL(sent_urls(route)[-1]).path == "/tools/v1/getTradeBalance/C/A/HS"
+    assert sent_query(route) == _recorded("get_trade_balance", "ch_world_2023_include_desc")
+    assert result.meta.source == "comtrade"
+    assert result.meta.endpoint == "tools/v1/getTradeBalance"
+    assert result.meta.request == {**CH_WORLD_2023, "include_desc": True}
+    assert result.meta.total == len(result.data) == 48
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    raw = _tools_body("get_trade_balance", "ch_world_2023_include_desc")["data"]
+    for row, record in zip(result.data, raw, strict=True):
+        assert isinstance(row, TradeBalanceRecord)
+        assert_projection(row, TradeBalanceRecord.model_validate(record))
+    total = _total_row(result.data)
+    assert total.primary_value_x == total.fobvalue_x == Decimal("419922543423.509")
+    assert total.primary_value_m == total.cifvalue_m == Decimal("365372487609.004")
+    assert (total.cifvalue_x, total.fobvalue_m) == (None, None)
+    assert total.primary_value_bal == Decimal("54550055814.504944")
+    assert total.primary_value_bal != total.primary_value_x - total.primary_value_m, (
+        "upstream's value, passed through, not computed"
+    )
+    assert (total.reporter_iso, total.reporter_desc) == ("CHE", "Switzerland")
+    assert (total.partner_desc, total.cmd_desc, total.customs_desc) == (
+        "World",
+        "All Commodities",
+        "TOTAL CPC",
+    )
+    assert (total.is_reported, total.is_aggregate) == (False, True)
+    assert "flow_code" not in TradeBalanceRecord.model_fields
+
+
+def test_trade_balance_exports_are_get_datas_exports(fixtures_dir: Path) -> None:
+    """Same query, same reporter: the X column is ``data/v1/get``'s export total."""
+    tools = [
+        TradeBalanceRecord.model_validate(row)
+        for row in _tools_body("get_trade_balance", "ch_world_2023_include_desc")["data"]
+    ]
+    exports = _total_row(_records(fixtures_dir, "ch_exports_2023"))
+    assert _total_row(tools).primary_value_x == exports.primary_value
+
+
+def test_trade_balance_without_breakdown_mode_gives_every_breakdown(
+    replay_fixture: ReplayFixture,
+) -> None:
+    classic = replay_fixture(
+        "get_trade_balance",
+        "ch_world_2023_include_desc_breakdown_mode_classic",
+        match_params=["breakdownMode"],
+    )
+    default = replay_fixture(
+        "get_trade_balance", "ch_world_2023_include_desc", match_params=BY_QUERY
+    )
+    every = tasks.get_trade_balance(**CH_WORLD_2023, include_desc=True).data
+    [total] = tasks.get_trade_balance(
+        **CH_WORLD_2023, breakdown_mode="classic", include_desc=True
+    ).data
+    assert classic.call_count == default.call_count == 1
+    assert "breakdownMode" not in sent_query(default)
+    assert sent_query(classic)["breakdownMode"] == "classic"
+    assert len({(row.customs_code, row.mot_code, row.partner2_code) for row in every}) == 48
+    assert (total.customs_code, total.mot_code, total.partner2_code) == TOTAL_ROW
+    assert total == _total_row(every)
+
+
+def test_trade_balance_nothing_matches_is_an_empty_list(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get_trade_balance", "ch_world_1900_empty", match_params=BY_QUERY)
+    result = tasks.get_trade_balance(**{**CH_WORLD_2023, "period": "1900"})
+    assert (result.data, result.meta.total) == ([], 0)
+    assert sent_query(route) == _recorded("get_trade_balance", "ch_world_1900_empty")
+
+
+def _tools_refused(respx_mock: respx.MockRouter, call: Callable[[], object]) -> str:
+    with pytest.raises(InvalidRequestError) as info:
+        call()
+    assert not respx_mock.calls, "refused before any call"
+    return str(info.value)
+
+
+THIRTEEN = ",".join(str(year) for year in range(2010, 2023))
+
+
+def test_trade_balance_takes_12_periods(respx_mock: respx.MockRouter) -> None:
+    message = _tools_refused(
+        respx_mock, lambda: tasks.get_trade_balance(**{**CH_WORLD_2023, "period": THIRTEEN})
+    )
+    assert "period has 13 values; UN Comtrade takes at most 12 per call" in message
+
+
+@pytest.mark.anyio
+async def test_upstream_refuses_13_periods_on_trade_balance(replay_fixture: ReplayFixture) -> None:
+    """Layer 1, past the task's check: HTTP 400, as ``data/v1/get`` answers."""
+    replay_fixture("get_trade_balance", "ch_world_13_periods", match_params=["period"])
+    with pytest.raises(InvalidRequestError, match="Maximum number of periods is 12"):
+        await api.get_trade_balance(
+            "C", "A", "HS", reporter_code="757", period=THIRTEEN, partner_code="0",
+            cmd_code="TOTAL", breakdown_mode="classic",
+        )  # fmt: skip
+
+
+def test_count_only_counts_nothing_on_the_tools() -> None:
+    """``countOnly``, which the Tools spec does not list: no count on either operation."""
+    counted = _tools_body("get_trade_balance", "count_only_ch_world_2023")
+    rows = _tools_body("get_trade_balance", "ch_world_2023_include_desc")
+    assert _recorded("get_trade_balance", "count_only_ch_world_2023")["countOnly"] == "true"
+    assert (counted["count"], counted["error"]) == (0, "")
+    assert isinstance(counted["data"], dict), "a placeholder record, as data/v1/get's count"
+    assert rows["count"] == 48, "the same query answers 48 rows"
+    ignored = _tools_body("get_bilateral_data", "count_only_ch_us_exports_2023")
+    plain = _tools_body("get_bilateral_data", "ch_us_exports_2023")
+    assert _recorded("get_bilateral_data", "count_only_ch_us_exports_2023")["countOnly"] == "true"
+    assert (ignored["count"], ignored["data"]) == (plain["count"], plain["data"])
+
+
+def test_tools_queries_name_an_area_and_a_product(respx_mock: respx.MockRouter) -> None:
+    """No count to check a query's size first, so the arguments bound it."""
+    balance = _tools_refused(
+        respx_mock, lambda: tasks.get_trade_balance("C", "A", "HS", period="2023", cmd_code="TOTAL")
+    )
+    assert balance.startswith("get_trade_balance needs reporter_code or partner_code, and cmd_code")
+    assert "countOnly answered 0 for a query of 48 rows" in balance
+    bilateral = _tools_refused(
+        respx_mock, lambda: tasks.get_bilateral_data("C", "A", "HS", reporter_code="757")
+    )
+    assert bilateral.startswith("get_bilateral_data needs reporter_code or partner_code")
+    by_partner = validate_bilateral_data(**{**CH_US_EXPORTS_2023, "reporter_code": None})
+    assert "reporter_code" not in by_partner, "a partner bounds it too"
+
+
+@pytest.mark.parametrize(
+    ("argument", "value", "list_name"),
+    [
+        ("customs_code", "C00,C16", "customsCode"),
+        ("mot_code", "0,9", "motCode"),
+        ("partner2_code", "0,9999", "partnerAreas"),
+    ],
+)
+def test_trade_balance_refuses_an_unknown_dimension_code(
+    argument: str, value: str, list_name: str
+) -> None:
+    """``validate_get``'s ``UnknownCode`` for the breakdowns getTradeBalance takes too."""
+    with pytest.raises(UnknownCode) as info:
+        validate_trade_balance(**{**CH_WORLD_2023, argument: value})
+    unknown = value.split(",")[-1]
+    assert (info.value.param, info.value.value, info.value.list_name) == (
+        argument,
+        unknown,
+        list_name,
+    )
+    assert info.value.fetched == PackagedList.load(PACKAGE, list_name).fetched
+
+
+def test_tools_refuse_an_unknown_area_before_the_call(respx_mock: respx.MockRouter) -> None:
+    with pytest.raises(UnknownCode) as balance:
+        tasks.get_trade_balance(**{**CH_WORLD_2023, "reporter_code": "756"})
+    assert str(balance.value) == REFUSED_756
+    with pytest.raises(UnknownCode) as bilateral:
+        tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "partner_code": "842,9999"})
+    assert (bilateral.value.param, bilateral.value.value, bilateral.value.list_name) == (
+        "partner_code",
+        "9999",
+        "partnerAreas",
+    )
+    assert not respx_mock.calls
+
+
+@pytest.mark.parametrize("cl_code", ["BE4", "BE5", "EBSDMX"])
+def test_tools_check_the_classification_against_the_packaged_list(cl_code: str) -> None:
+    """In the Tools spec's enum, not in the package's list: refused before the call."""
+    for validate in (validate_trade_balance, validate_bilateral_data):
+        with pytest.raises(InvalidRequestError, match=f"cl_code '{cl_code}' is not a UN Comtrade"):
+            validate(**{**CH_WORLD_2023, "cl_code": cl_code})
+
+
+def test_tools_take_the_editions_the_tools_spec_does_not_list() -> None:
+    assert validate_trade_balance(**{**CH_WORLD_2023, "cl_code": "H6"})["cl_code"] == "H6"
+    assert validate_bilateral_data(**{**CH_US_EXPORTS_2023, "cl_code": "B5"})["cl_code"] == "B5"
+
+
+def test_get_bilateral_data_puts_the_mirror_beside_the_reported_figures(
+    replay_fixture: ReplayFixture,
+) -> None:
+    route = replay_fixture(
+        "get_bilateral_data",
+        "ch_us_exports_2023_include_desc",
+        match_params=[*BY_QUERY, "flowCode"],
+    )
+    result = tasks.get_bilateral_data(**CH_US_EXPORTS_2023, include_desc=True)
+    assert httpx.URL(sent_urls(route)[-1]).path == "/tools/v1/getBilateralData/C/A/HS"
+    assert sent_query(route) == _recorded("get_bilateral_data", "ch_us_exports_2023_include_desc")
+    assert result.meta.endpoint == "tools/v1/getBilateralData"
+    assert result.meta.request == {**CH_US_EXPORTS_2023, "include_desc": True}
+    assert result.meta.total == 1
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    body = _tools_body("get_bilateral_data", "ch_us_exports_2023_include_desc")
+    assert isinstance(result.data, BilateralData), "not a list: the note travels with the rows"
+    assert_projection(result.data, BilateralDataResponse.model_validate(body))
+    assert result.data.timestamp_requested == datetime(2026, 10, 28, 16, 14, 25, 593000, tzinfo=UTC)
+    assert result.data.note == body["note"]
+    assert result.data.note is not None
+    assert result.data.note.startswith("EXPERIMENTAL: We have good news! There is no data gap")
+    [row] = result.data.data
+    [raw] = body["data"]
+    assert isinstance(row, BilateralDataRecord)
+    assert_projection(row, BilateralDataRecord.model_validate(raw))
+    assert (row.reporter_code, row.partner_code, row.flow_code, row.period) == (
+        757,
+        842,
+        "X",
+        "2023",
+    )
+    assert row.primary_value == row.fobvalue == Decimal("62852531481.607")
+    assert row.mirror_primary_value == Decimal("52815436548.0")
+    assert row.primary_value_disc == Decimal("-0.15969277126959047")
+    relative = (row.mirror_primary_value - row.primary_value) / row.primary_value
+    assert float(row.primary_value_disc) == pytest.approx(float(relative), rel=1e-12), (
+        "observed, not stated: a relative difference, passed through"
+    )
+    assert (row.mirror2_primary_value, row.mirror2_qty, row.mirror2_qty_unit_code) == (
+        Decimal(0),
+        None,
+        None,
+    )
+    assert (row.customs_code, row.mot_code) == ("C00", 0), "classic mode only"
+    assert (row.reporter_iso, row.reporter_desc, row.partner_desc) == (None, None, None)
+    assert (row.is_extended_partner_code, row.is_extended_partner2_code) == (True, False)
+
+
+def test_bilateral_include_desc_changes_nothing(replay_fixture: ReplayFixture) -> None:
+    with_desc = replay_fixture(
+        "get_bilateral_data", "ch_us_exports_2023_include_desc", match_params=["includeDesc"]
+    )
+    without = replay_fixture(
+        "get_bilateral_data", "ch_us_exports_2023", match_params=[*BY_QUERY, "flowCode"]
+    )
+    described = tasks.get_bilateral_data(**CH_US_EXPORTS_2023, include_desc=True).data
+    plain = tasks.get_bilateral_data(**CH_US_EXPORTS_2023).data
+    assert with_desc.call_count == without.call_count == 1
+    assert sent_query(without) == _recorded("get_bilateral_data", "ch_us_exports_2023")
+    assert (described.data, described.note) == (plain.data, plain.note)
+    assert described.timestamp_requested != plain.timestamp_requested, "two answers"
+
+
+def test_a_partner_with_a_data_gap_has_a_mirror_of_zero(replay_fixture: ReplayFixture) -> None:
+    """The note counts the partners with a gap and names none; the mirror of 0 shows one.
+
+    That Afghanistan is one of the two is inferred from the counts, not stated: DPRK alone
+    counts 1, the USA alone none.
+    """
+    replay_fixture("get_bilateral_data", "ch_us_kp_af_exports_2023", match_params=BY_QUERY)
+    result = tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "partner_code": "842,408,4"})
+    assert result.data.note is not None
+    assert "we've identified a data gap for 2 partner(s)" in result.data.note
+    assert "Afghanistan" not in result.data.note, "no partner named"
+    kp_alone = _tools_body("get_bilateral_data", "ch_kp_exports_2023_include_desc")["note"]
+    us_alone = _tools_body("get_bilateral_data", "ch_us_exports_2023")["note"]
+    assert "a data gap for 1 partner(s)" in kp_alone
+    assert "There is no data gap" in us_alone
+    assert [row.partner_code for row in result.data.data] == [842, 4], "no row for 408"
+    afghanistan = result.data.data[1]
+    assert afghanistan.primary_value == Decimal("5718328.953")
+    assert afghanistan.mirror_primary_value == 0
+    assert afghanistan.primary_value_disc == -1
+    assert (afghanistan.mirror_qty, afghanistan.mirror_qty_unit_code) == (None, None)
+    assert afghanistan.is_extended_partner_code is False
+
+
+def test_a_pair_without_data_has_no_row(replay_fixture: ReplayFixture, fixtures_dir: Path) -> None:
+    """Switzerland reported no 2023 exports to DPRK (408): ``data/v1/get`` answers none too."""
+    route = replay_fixture(
+        "get_bilateral_data", "ch_kp_exports_2023_include_desc", match_params=BY_QUERY
+    )
+    result = tasks.get_bilateral_data(
+        **{**CH_US_EXPORTS_2023, "partner_code": "408"}, include_desc=True
+    )
+    assert (result.data.data, result.meta.total) == ([], 0)
+    assert result.data.note is not None
+    assert "we've identified a data gap for 1 partner(s)" in result.data.note
+    assert sent_query(route) == _recorded("get_bilateral_data", "ch_kp_exports_2023_include_desc")
+    assert _rows(fixtures_dir, "ch_kp_exports_2023_totals") == []
+
+
+def test_bilateral_data_takes_more_than_12_periods(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture(
+        "get_bilateral_data", "ch_us_exports_13_periods", match_params=["period"]
+    )
+    result = tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "period": THIRTEEN})
+    assert route.call_count == 1
+    assert [row.period for row in result.data.data] == THIRTEEN.split(",")
+    assert result.meta.total == 13
+    assert {row.classification_code for row in result.data.data} == {"H3", "H4", "H5", "H6"}
+    assert result.data.note is not None
+    assert result.data.note.startswith("EXPERIMENTAL: We have good news!")
+
+
+def test_bilateral_data_takes_one_flow(respx_mock: respx.MockRouter) -> None:
+    both = _tools_refused(
+        respx_mock,
+        lambda: tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "flow_code": "M,X"}),
+    )
+    assert "flow_code 'M,X' must be one flow, 'M' or 'X'" in both
+    re_exports = _tools_refused(
+        respx_mock,
+        lambda: tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "flow_code": "RX"}),
+    )
+    assert "flow_code 'RX' is not a flowCode getBilateralData takes" in re_exports
+    assert "Valid values: M, X" in re_exports
+
+
+@pytest.mark.anyio
+async def test_upstream_refuses_two_flows_on_bilateral_data(replay_fixture: ReplayFixture) -> None:
+    """Layer 1: the spec's description reads csv, its enum and upstream take one flow."""
+    replay_fixture("get_bilateral_data", "ch_us_2023_flow_code_m_x", match_params=["flowCode"])
+    with pytest.raises(InvalidRequestError) as info:
+        await api.get_bilateral_data(
+            "C", "A", "HS", reporter_code="757", period="2023", partner_code="842",
+            cmd_code="TOTAL", flow_code="M,X",
+        )  # fmt: skip
+    assert "Invalid parameter value" in str(info.value)
+    assert "The field flowCode is invalid" in str(info.value)
+
+
+@pytest.mark.anyio
+async def test_the_bilateral_envelope_has_a_utc_timestamp_and_a_note(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Layer 1: ``timestampRequested`` is UTC per the spec; the note's wording varies."""
+    replay_fixture("get_bilateral_data", "ch_us_kp_af_exports_2023", match_params=BY_QUERY)
+    gap = await api.get_bilateral_data(
+        "C", "A", "HS", reporter_code="757", period="2023", partner_code="842,408,4",
+        cmd_code="TOTAL", flow_code="X",
+    )  # fmt: skip
+    assert gap.timestamp_requested == datetime(2026, 10, 28, 16, 17, 21, 134000, tzinfo=UTC)
+    assert gap.note is not None
+    assert gap.note.startswith(
+        "EXPERIMENTAL: In reviewing the selection criteria, we've identified a data gap for "
+        "2 partner(s)"
+    )
+    assert (gap.count, len(gap.data), gap.error) == (2, 2, "")
+    no_gap = _tools_body("get_bilateral_data", "ch_us_exports_2023")
+    assert no_gap["note"].startswith("EXPERIMENTAL: We have good news! There is no data gap")
+    assert no_gap["timestampRequested"] == "2026-10-28 16:15:58.965"
+
+
+def test_a_bilateral_answer_without_note_or_timestamp_reads_none() -> None:
+    """Constructed, not recorded: every recorded answer carried both; the spec requires neither."""
+    body = _tools_body("get_bilateral_data", "ch_us_exports_2023")
+    bare = {key: value for key, value in body.items() if key not in {"note", "timestampRequested"}}
+    projected = BilateralData.project(BilateralDataResponse.model_validate(bare))
+    assert (projected.note, projected.timestamp_requested) == (None, None)
+    assert len(projected.data) == 1
+    assert set(BilateralData.model_fields) == {"timestamp_requested", "note", "data"}
+
+
+@pytest.mark.anyio
+async def test_tools_end_to_end_over_mcp(replay_fixture: ReplayFixture) -> None:
+    replay_fixture(
+        "get_trade_balance",
+        "ch_world_2023_include_desc_breakdown_mode_classic",
+        match_params=["breakdownMode"],
+    )
+    replay_fixture("get_bilateral_data", "ch_us_exports_2023", match_params=BY_QUERY)
+    balance = json.loads(
+        await mcp_call_text(
+            server,
+            "comtrade_get_trade_balance",
+            {**CH_WORLD_2023, "breakdown_mode": "classic", "include_desc": True},
+        )
+    )
+    [total] = balance["data"]
+    assert total["primary_value_x"] == 419922543423.509
+    assert total["primary_value_bal"] == 54550055814.504944
+    assert (balance["meta"]["endpoint"], balance["meta"]["total"]) == (
+        "tools/v1/getTradeBalance",
+        1,
+    )
+    bilateral = json.loads(
+        await mcp_call_text(server, "comtrade_get_bilateral_data", CH_US_EXPORTS_2023)
+    )
+    assert set(bilateral["data"]) == {"timestamp_requested", "note", "data"}
+    assert bilateral["data"]["note"].startswith("EXPERIMENTAL: We have good news!")
+    assert bilateral["data"]["timestamp_requested"] == "2026-10-28T16:15:58.965000Z"
+    [row] = bilateral["data"]["data"]
+    assert (row["primary_value"], row["mirror_primary_value"]) == (62852531481.607, 52815436548.0)
+    assert bilateral["meta"]["request"] == CH_US_EXPORTS_2023
+    assert "note" not in bilateral, "within the cap: nothing cut"
+    refused = await mcp_call_text(
+        server, "comtrade_get_trade_balance", {**CH_WORLD_2023, "reporter_code": "756"}
+    )
+    assert refused == f"error: UnknownCode: {REFUSED_756}"
+    two_flows = await mcp_call_text(
+        server, "comtrade_get_bilateral_data", {**CH_US_EXPORTS_2023, "flow_code": "M,X"}
+    )
+    assert two_flows.startswith("error: InvalidRequestError: flow_code 'M,X' must be one flow")
+
+
+def test_tools_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    balance_route = replay_fixture(
+        "get_trade_balance",
+        "ch_world_2023_include_desc_breakdown_mode_classic",
+        match_params=["breakdownMode"],
+    )
+    bilateral_route = replay_fixture(
+        "get_bilateral_data", "ch_us_exports_2023", match_params=BY_QUERY
+    )
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as http:
+        balance = http.get(
+            "/comtrade/get_trade_balance",
+            params={**CH_WORLD_2023, "breakdown_mode": "classic", "include_desc": "true"},
+        )
+        assert balance.status_code == 200
+        [total] = balance.json()["data"]
+        assert (total["primary_value_m"], total["reporter_desc"]) == (
+            365372487609.004,
+            "Switzerland",
+        )
+        bilateral = http.get("/comtrade/get_bilateral_data", params=CH_US_EXPORTS_2023)
+        assert bilateral.status_code == 200
+        body = bilateral.json()
+        assert body["data"]["data"][0]["primary_value_disc"] == -0.15969277126959047
+        assert body["data"]["note"].startswith("EXPERIMENTAL: We have good news!")
+        assert body["data"]["timestamp_requested"] == "2026-10-28T16:15:58.965000Z"
+        assert body["meta"]["total"] == 1
+        refused = http.get(
+            "/comtrade/get_bilateral_data", params={**CH_US_EXPORTS_2023, "flow_code": "M,X"}
+        )
+        assert refused.status_code == 422
+    assert balance_route.call_count == bilateral_route.call_count == 1
+
+
+# The mirror slice, get_mirror_flows, over tools/v1/getBilateralData: Switzerland's exports
+# of HS chapter 27 to the USA, recorded on 2026-10-28 under
+# tests/fixtures/get_bilateral_data/ (ch_us_27_2022_2023_x, ch_us_27_202301_x).
+
+MIRROR_REQUEST: dict[str, Any] = {
+    "type_code": "C", "freq_code": "A", "cl_code": "HS", "reporter_code": "757",
+    "period": "2022,2023", "partner_code": "842", "cmd_code": "27", "flow_code": "X",
+}  # fmt: skip
+"""What get_mirror_flows("CHE", "USA", "27", "2022,2023", "X") sends, resolved."""
+
+MIRROR_ARGUMENTS: dict[str, Any] = {
+    "reporter": "CHE", "partner": "USA", "commodities": "27", "periods": "2022,2023", "flow": "X",
+}  # fmt: skip
+
+
+def test_mirror_flows_put_the_partners_report_beside_the_reporters(
+    replay_fixture: ReplayFixture,
+) -> None:
+    route = replay_fixture("get_bilateral_data", "ch_us_27_2022_2023_x", match_params=BY_AREAS)
+    result = tasks.get_mirror_flows("757", "842", "27", "2022,2023", "X")
+    assert httpx.URL(sent_urls(route)[-1]).path == "/tools/v1/getBilateralData/C/A/HS"
+    sent = sent_query(route)
+    assert sent == _recorded("get_bilateral_data", "ch_us_27_2022_2023_x")
+    assert sent == {
+        "reporterCode": "757", "period": "2022,2023", "partnerCode": "842", "cmdCode": "27",
+        "flowCode": "X",
+    }  # fmt: skip
+    assert "includeDesc" not in sent, "it filled no description when recorded"
+    assert result.meta.endpoint == "tools/v1/getBilateralData"
+    assert result.meta.request == MIRROR_REQUEST
+    assert validate_bilateral_data(**result.meta.request) == MIRROR_REQUEST, "repeatable"
+    assert result.meta.total == 2
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    body = _tools_body("get_bilateral_data", "ch_us_27_2022_2023_x")
+    response = BilateralDataResponse.model_validate(body)
+    assert isinstance(result.data, MirrorFlows), "not a list: the note travels with the rows"
+    assert set(MirrorFlows.model_fields) == {"timestamp_requested", "note", "data"}
+    assert result.data.timestamp_requested == datetime(2026, 10, 28, 20, 7, 35, 661000, tzinfo=UTC)
+    assert result.data.note == body["note"]
+    assert result.data.note is not None
+    assert result.data.note.startswith("EXPERIMENTAL: We have good news! There is no data gap")
+    assert [(row.period, row.cmd_code) for row in result.data.data] == [
+        ("2022", "27"),
+        ("2023", "27"),
+    ], "upstream's order, kept: period order, as in every recording"
+    for row, raw in zip(result.data.data, response.data, strict=True):
+        assert isinstance(row, MirrorFlowRecord)
+        assert_projection(row, raw)
+    latest = result.data.data[1]
+    assert (latest.reporter_code, latest.partner_code, latest.flow_code) == (757, 842, "X")
+    assert latest.primary_value == latest.fobvalue == Decimal("126191129.831")
+    assert latest.mirror_primary_value == Decimal("6444455.0")
+    assert latest.primary_value_disc == Decimal("-0.948930998489112")
+    relative = (latest.mirror_primary_value - latest.primary_value) / latest.primary_value
+    assert float(latest.primary_value_disc) == pytest.approx(float(relative), rel=1e-12), (
+        "observed, not stated: a relative difference, passed through"
+    )
+    assert latest.mirror2_primary_value == 0
+    assert (latest.reporter_desc, latest.partner_desc, latest.cmd_desc) == (None, None, None)
+    assert (latest.is_reported, latest.is_aggregate) == (False, True)
+    assert (latest.qty, latest.mirror_qty) == (Decimal(0), Decimal(0))
+    assert (latest.qty_unit_code, latest.mirror_qty_unit_code) == (-1, -1), "no quantity"
+    pinned = {"type_code", "customs_code", "mot_code", "mos_code"}
+    empty = {"mirror2_qty", "mirror2_net_wgt", "mirror2_qty_unit_code", "aggr_level", "is_leaf"}
+    assert not (pinned | empty) & set(MirrorFlowRecord.model_fields)
+
+
+def test_the_reported_side_is_get_datas_figure(
+    replay_fixture: ReplayFixture, fixtures_dir: Path
+) -> None:
+    """getBilateralData's reported values are ``data/v1/get``'s for the same pair."""
+    replay_fixture("get_bilateral_data", "ch_us_27_2022_2023_x", match_params=BY_AREAS)
+    mirror = tasks.get_mirror_flows(**MIRROR_ARGUMENTS).data.data
+    flows = {
+        row["period"]: Decimal(str(row["primaryValue"]))
+        for row in _rows(fixtures_dir, "bilateral_ch_us_2022_2023")
+        if row["cmdCode"] == "27"
+    }
+    assert {row.period: row.primary_value for row in mirror} == flows
+    assert all(row.mirror_primary_value < row.primary_value for row in mirror), (
+        "the USA reported far less of chapter 27 from Switzerland than Switzerland exported"
+    )
+
+
+def test_mirror_flows_resolve_iso3_codes_and_ask_monthly_data_for_months(
+    replay_fixture: ReplayFixture,
+) -> None:
+    route = replay_fixture("get_bilateral_data", "ch_us_27_202301_x", match_params=BY_AREAS)
+    by_iso3 = tasks.get_mirror_flows("CHE", "USA", "27", "202301", "X")
+    by_code = tasks.get_mirror_flows("757", "842", "27", "202301", "X")
+    assert route.call_count == 2
+    assert httpx.URL(sent_urls(route)[-1]).path == "/tools/v1/getBilateralData/C/M/HS"
+    assert sent_query(route) == _recorded("get_bilateral_data", "ch_us_27_202301_x")
+    assert by_iso3.meta.request == by_code.meta.request == {
+        **MIRROR_REQUEST, "freq_code": "M", "period": "202301",
+    }  # fmt: skip
+    assert by_iso3.data == by_code.data
+    [row] = by_iso3.data.data
+    assert (row.freq_code, row.period, row.ref_year, row.ref_month) == ("M", "202301", 2023, 1)
+    assert (row.primary_value, row.mirror_primary_value) == (
+        Decimal("9765705.308"),
+        Decimal("246935.0"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("call", "expected"),
+    [
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27", "2023", "M,X"),
+            "flow 'M,X' must be one flow, 'M' or 'X': getBilateralData refuses several in one "
+            "call (HTTP 400), so call it once per flow",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27", "2023", "RX"),
+            "flow 'RX' is not a flowCode getBilateralData takes; closest: 'X'. Valid values: M, X",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27", THIRTEEN, "X"),
+            "periods has 13 values; get_mirror_flows takes at most 12 per call, the bound of "
+            "the slices; split the periods (get_bilateral_data takes more)",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "AG2", "2023", "X"),
+            "commodities 'AG2' expands to many product codes",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27??", "2023", "X"),
+            "commodities '27??' expands to many product codes",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27", "2023,202301", "X"),
+            "periods '2023,202301' mixes years (2023) and months (202301)",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA,DEU", "27", "2023", "X"),
+            "partner 'USA,DEU' must be one area, e.g. '757' or 'CHE'",
+        ),
+        (
+            lambda: tasks.get_mirror_flows("CHE", "USA", "27", "2023", "X", cl_code="BE5"),
+            "cl_code 'BE5' is not a UN Comtrade clCode value",
+        ),
+    ],
+)
+def test_mirror_flow_arguments_are_refused_before_any_call(
+    respx_mock: respx.MockRouter, call: Callable[[], object], expected: str
+) -> None:
+    assert expected in _slice_refused(respx_mock, call)
+
+
+def test_mirror_flow_problems_are_named_together(respx_mock: respx.MockRouter) -> None:
+    message = _slice_refused(
+        respx_mock, lambda: tasks.get_mirror_flows("CHE", "USA", "AG2", THIRTEEN, "M,X")
+    )
+    assert message.startswith("flow 'M,X' must be one flow")
+    assert "commodities 'AG2' expands to many product codes" in message
+    assert "periods has 13 values" in message
+
+
+@pytest.mark.parametrize(
+    ("arguments", "param", "value", "expected"),
+    [
+        (
+            ("CHE", "US"), "partner", "US",
+            "'US' is not a partner in the packaged partnerAreas list (fetched {fetched}). "
+            "Did you mean 842 (USA)?",
+        ),
+        (
+            ("CHF", "USA"), "reporter", "CHF",
+            "'CHF' is not a reporter in the packaged Reporters list (fetched {fetched}).",
+        ),
+        (
+            ("756", "USA"), "reporter", "756",
+            "'756' is not a reporter in the packaged Reporters list (fetched {fetched}). "
+            "Did you mean 757 (Switzerland)?",
+        ),
+    ],
+)  # fmt: skip
+def test_a_mirror_flow_area_the_packaged_tables_lack_is_an_unknown_code(
+    respx_mock: respx.MockRouter,
+    arguments: tuple[str, str],
+    param: str,
+    value: str,
+    expected: str,
+) -> None:
+    """As a code or an ISO alpha-3 code: ``UnknownCode`` before any call (conventions §5).
+
+    The fetch date is read from the packaged table, so a refresh of it breaks no test.
+    """
+    with pytest.raises(UnknownCode) as info:
+        tasks.get_mirror_flows(*arguments, "27", "2023", "X")
+    assert not respx_mock.calls
+    assert (info.value.param, info.value.value) == (param, value)
+    fetched = PackagedList.load(PACKAGE, info.value.list_name).fetched
+    assert info.value.list_name == ("partnerAreas" if param == "partner" else "Reporters")
+    assert info.value.fetched == fetched
+    assert expected.format(fetched=f"{fetched:%Y-%m-%d}") in str(info.value)
+
+
+def test_a_mirror_flow_bound_over_the_limit_is_refused_without_a_call(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """8,334 product codes over 12 periods could return 100,008 rows: refused, not sent."""
+    codes = ",".join(f"{code:06d}" for code in range(8334))
+    periods = ",".join(str(year) for year in range(2012, 2024))
+    with pytest.raises(QueryTooLarge) as info:
+        tasks.get_mirror_flows("757", "842", codes, periods, "X")
+    assert not respx_mock.calls
+    assert (info.value.count, info.value.bound) == (8334 * 12, True)
+    assert "query could return up to 100,008 records" in str(info.value)
+    request = validate_mirror_flows(
+        "HS", "X", reporter="757", partner="842", commodities=codes[:-7], periods=periods
+    )
+    assert len(request["cmd_code"].split(",")) * 12 == 99_996 < RECORD_LIMIT, "one code fewer"
+
+
+@pytest.mark.anyio
+async def test_mirror_flows_end_to_end_over_mcp(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get_bilateral_data", "ch_us_27_2022_2023_x", match_params=BY_AREAS)
+    answer = json.loads(await mcp_call_text(server, "comtrade_get_mirror_flows", MIRROR_ARGUMENTS))
+    assert set(answer["data"]) == {"timestamp_requested", "note", "data"}
+    assert answer["data"]["note"].startswith("EXPERIMENTAL: We have good news!")
+    assert answer["data"]["timestamp_requested"] == "2026-10-28T20:07:35.661000Z"
+    rows = answer["data"]["data"]
+    assert [row["period"] for row in rows] == ["2022", "2023"]
+    assert (rows[1]["primary_value"], rows[1]["mirror_primary_value"]) == (
+        126191129.831,
+        6444455.0,
+    )
+    assert rows[1]["primary_value_disc"] == -0.948930998489112
+    assert answer["meta"]["request"] == MIRROR_REQUEST
+    assert answer["meta"]["total"] == 2
+    assert "note" not in answer, "within the cap: nothing cut"
+    refused = await mcp_call_text(
+        server, "comtrade_get_mirror_flows", {**MIRROR_ARGUMENTS, "flow": "M,X"}
+    )
+    assert refused.startswith("error: InvalidRequestError: flow 'M,X' must be one flow")
+
+
+def test_mirror_flows_route_end_to_end(replay_fixture: ReplayFixture) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    route = replay_fixture("get_bilateral_data", "ch_us_27_2022_2023_x", match_params=BY_AREAS)
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as http:
+        answer = http.get("/comtrade/get_mirror_flows", params=MIRROR_ARGUMENTS)
+        assert answer.status_code == 200
+        body = answer.json()
+        assert body["data"]["data"][1]["mirror_primary_value"] == 6444455.0
+        assert body["data"]["note"].startswith("EXPERIMENTAL: We have good news!")
+        assert body["meta"]["request"] == MIRROR_REQUEST
+        assert route.call_count == 1
+        refused = http.get(
+            "/comtrade/get_mirror_flows", params={**MIRROR_ARGUMENTS, "partner": "US"}
+        )
+        assert refused.status_code == 422
+        assert "Did you mean 842 (USA)?" in refused.json()["detail"]
+    assert route.call_count == 1, "refused before any call"
+
+
+# Public operations: getComtradeReleases and getWorldShare. Keyless (auth=None), uncached.
+
+BY_WORLD_SHARE = ["period", "reporterCode"]
+"""``match_params`` of a world share fixture for one reporter: several share one path."""
+
+CH_WORLD_SHARE_2023: dict[str, Any] = {
+    "type_code": "C",
+    "freq_code": "A",
+    "period": "2023",
+    "reporter_code": "757",
+}
+"""Switzerland's share of world goods trade in 2023, ``get_world_share/ch_2023.json``."""
+
+KEY_HEADER = "Ocp-Apim-Subscription-Key"
+
+
+def _raw_rows(fixtures_dir: Path, endpoint: str, case: str) -> list[dict[str, Any]]:
+    body = load_fixture(fixtures_dir / endpoint / f"{case}.json").response.body
+    rows: list[dict[str, Any]] = json.loads(body)["data"]
+    return rows
+
+
+def test_get_comtrade_releases(replay_fixture: ReplayFixture, fixtures_dir: Path) -> None:
+    route = replay_fixture("get_comtrade_releases", "calendar")
+    result = tasks.get_comtrade_releases()
+    assert route.calls.last.request.url.path == "/public/v1/getComtradeReleases"
+    assert not sent_query(route)
+    assert KEY_HEADER not in route.calls.last.request.headers
+    assert result.meta.endpoint == "public/v1/getComtradeReleases"
+    assert result.meta.request == {}
+    assert result.meta.total == len(result.data) == 38
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    raw = _raw_rows(fixtures_dir, "get_comtrade_releases", "calendar")
+    for row, upstream in zip(result.data, raw, strict=True):
+        assert_projection(row, ComtradeRelease.model_validate(upstream))
+    newest = result.data[0]
+    assert (newest.reporter_code, newest.flag_code, newest.nr) == (51, "AM", "N")
+    assert newest.dataset_desc == "Armenia CM 202607"
+    assert newest.date_release == datetime(2026, 10, 28)
+    assert newest.date_release.tzinfo is None
+    released = [row.date_release for row in result.data]
+    assert released == sorted(released, reverse=True), "newest first"
+    assert (released[-1], released[0]) == (datetime(2026, 10, 22), datetime(2026, 10, 28))
+    assert all((day.hour, day.minute, day.second) == (0, 0, 0) for day in released)
+    assert {row.nr for row in result.data} == {"N", "R"}
+    switzerland = [row.dataset_desc for row in result.data if row.reporter_code == 757]
+    assert switzerland == ["Switzerland CM 202601", "Switzerland CM 202602"]
+    assert {row.flag_code for row in result.data if row.reporter_code == 757} == {"CH"}
+
+
+def test_public_answers_are_never_cached(replay_fixture: ReplayFixture) -> None:
+    """The cache keeps the reference files only: a calendar always comes from upstream."""
+    releases = replay_fixture("get_comtrade_releases", "calendar")
+    share = replay_fixture("get_world_share", "ch_2023", match_params=BY_WORLD_SHARE)
+    for _ in range(2):
+        tasks.get_comtrade_releases()
+        tasks.get_world_share(**CH_WORLD_SHARE_2023)
+    assert (releases.call_count, share.call_count) == (2, 2)
+
+
+def test_the_public_operations_send_no_key(replay_fixture: ReplayFixture) -> None:
+    """auth=None: a keyed call sends the placeholder, these send no key at all."""
+    releases = replay_fixture("get_comtrade_releases", "calendar")
+    share = replay_fixture("get_world_share", "ch_2023", match_params=BY_WORLD_SHARE)
+    tasks.get_comtrade_releases()
+    tasks.get_world_share(**CH_WORLD_SHARE_2023)
+    for route in (releases, share):
+        assert KEY_HEADER not in route.calls.last.request.headers
+        assert "subscription-key" not in sent_query(route)
+
+
+def test_get_world_share_for_one_reporter_and_period(
+    replay_fixture: ReplayFixture, fixtures_dir: Path
+) -> None:
+    route = replay_fixture("get_world_share", "ch_2023", match_params=BY_WORLD_SHARE)
+    result = tasks.get_world_share("C", "A", period="2023", reporter_code="757")
+    assert route.calls.last.request.url.path == "/public/v1/getWorldShare/C/A"
+    assert sent_query(route) == recorded_query(
+        load_fixture(fixtures_dir / "get_world_share" / "ch_2023.json")
+    )
+    assert KEY_HEADER not in route.calls.last.request.headers
+    assert result.meta.endpoint == "public/v1/getWorldShare"
+    assert result.meta.request == CH_WORLD_SHARE_2023
+    assert result.meta.total == 1
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    [row] = result.data
+    [upstream] = _raw_rows(fixtures_dir, "get_world_share", "ch_2023")
+    assert_projection(row, WorldShare.model_validate(upstream))
+    assert (row.type_code, row.freq_code, row.period, row.year, row.month) == (
+        "C", "A", 2023, 2023, 52,
+    )  # fmt: skip
+    assert (row.reporter_code, row.reporter_iso, row.reporter_desc) == (757, "CHE", "Switzerland")
+    assert row.dataset_desc == "Switzerland CA 2023"
+    assert isinstance(row.world_share, Decimal)
+    assert row.world_share == Decimal("0.01651852126450239")
+    assert (row.is_available, row.data_count) == (True, 1)
+    assert row.first_released == datetime(2024, 2, 2, 4, 52, 35, 216666)
+    assert row.last_released == datetime(2024, 6, 7, 17, 13, 50, 536666)
+    assert row.created == datetime(2024, 5, 13, 21, 12, 45, 566666)
+    assert row.updated == datetime(2026, 7, 28, 18, 4, 8, 320000)
+    times = (row.first_released, row.last_released, row.created, row.updated)
+    assert all(time.tzinfo is None for time in times), "no zone stated, none attached"
+
+
+def test_world_shares_release_times_are_get_das(fixtures_dir: Path) -> None:
+    """Recorded five days apart, getWorldShare and getDa give Switzerland 2023 the same times."""
+    [share] = _raw_rows(fixtures_dir, "get_world_share", "ch_2023")
+    [dataset] = _raw_rows(fixtures_dir, "get_da", "ch_2023")
+    row, availability = WorldShare.model_validate(share), DataAvailability.model_validate(dataset)
+    assert (row.first_released, row.last_released) == (
+        availability.first_released, availability.last_released,
+    )  # fmt: skip
+
+
+def test_world_share_for_every_reporter(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get_world_share", "all_reporters_2023", match_params=["period"])
+    result = tasks.get_world_share("C", "A", period="2023")
+    assert sent_query(route) == {"period": "2023"}
+    assert result.meta.request == {"type_code": "C", "freq_code": "A", "period": "2023"}
+    assert result.meta.total == len(result.data) == 214
+    assert len({row.reporter_code for row in result.data}) == 214
+    shares = [row.world_share for row in result.data if row.world_share is not None]
+    assert len(shares) == 214
+    assert abs(sum(shares, Decimal(0)) - 1) < Decimal("1e-12"), "one period's shares sum to 1"
+    missing = [row for row in result.data if not row.is_available]
+    assert len(missing) == 47
+    assert all(row.first_released == row.last_released == datetime(1, 1, 1) for row in missing)
+    assert all(row.first_released.year > 1 for row in result.data if row.is_available)
+    assert [row.is_available for row in result.data] == [True] * 167 + [False] * 47
+
+
+def test_world_share_for_every_period(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get_world_share", "ch_every_period", match_params=["reporterCode"])
+    result = tasks.get_world_share("C", "A", reporter_code="757")
+    assert sent_query(route) == {"reporterCode": "757"}
+    assert [row.period for row in result.data] == list(range(1962, 2026))
+    assert {row.reporter_code for row in result.data} == {757}
+    assert result.meta.total == 64
+
+
+def test_monthly_world_share(replay_fixture: ReplayFixture, fixtures_dir: Path) -> None:
+    route = replay_fixture("get_world_share", "ch_202301", match_params=BY_WORLD_SHARE)
+    result = tasks.get_world_share("C", "M", period="202301", reporter_code="757")
+    assert route.calls.last.request.url.path == "/public/v1/getWorldShare/C/M"
+    assert sent_query(route) == recorded_query(
+        load_fixture(fixtures_dir / "get_world_share" / "ch_202301.json")
+    )
+    [row] = result.data
+    assert (row.freq_code, row.period, row.year, row.month) == ("M", 202301, 2023, 1)
+    assert row.dataset_desc == "Switzerland CM 2023-01"
+
+
+def test_a_period_nobody_reported_has_no_world_share(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get_world_share", "ch_1900_empty", match_params=BY_WORLD_SHARE)
+    result = tasks.get_world_share("C", "A", period="1900", reporter_code="757")
+    assert result.data == []
+    assert result.meta.total == 0
+
+
+@pytest.mark.anyio
+async def test_recent_is_answered_with_a_server_error(replay_fixture: ReplayFixture) -> None:
+    """The spec lists 'recent'; upstream answered HTTP 500 to all three tries (2026-10-28)."""
+    route = replay_fixture("get_world_share", "ch_recent", match_params=BY_WORLD_SHARE)
+    with pytest.raises(UpstreamError) as info:
+        await tasks.get_world_share_async("C", "A", period=RECENT, reporter_code="757")
+    assert info.value.status == 500
+    assert "Something went wrong" in str(info.value)
+    assert route.call_count == config.retry.max_attempts == 4
+    assert sent_query(route) == {"period": "recent", "reporterCode": "757"}
+    everyone = replay_fixture("get_world_share", "all_reporters_recent", match_params=["period"])
+    with pytest.raises(UpstreamError, match="Something went wrong"):
+        await tasks.get_world_share_async("C", "A", period=RECENT)
+    assert sent_query(everyone) == {"period": "recent"}
+
+
+@pytest.mark.anyio
+async def test_get_world_share_refuses_a_malformed_period_upstream(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Layer 1: upstream's 400 spells its detail ErrorMessage; the refusal names the field."""
+    replay_fixture("get_world_share", "period_malformed")
+    with pytest.raises(InvalidRequestError, match=r"\(The field period is invalid\)"):
+        await api.get_world_share("C", "A", period="2023-01", reporter_code="757")
+
+
+def test_classify_reads_both_spellings_of_the_refusals_detail(fixtures_dir: Path) -> None:
+    public = load_fixture(fixtures_dir / "get_world_share" / "period_malformed.json")
+    data = load_fixture(fixtures_dir / "get" / "count_period_malformed.json")
+    refusals = [classify(response_from_fixture(fixture)) for fixture in (public, data)]
+    assert all(isinstance(refusal, InvalidRequestError) for refusal in refusals)
+    expected = (
+        "UN Comtrade refused the request (HTTP 400): Invalid parameter value "
+        "(The field period is invalid)"
+    )
+    assert [str(refusal) for refusal in refusals] == [expected, expected]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "fragment"),
+    [
+        (
+            {"period": "2023-01"},
+            "period '2023-01' is neither a year (YYYY, e.g. '2023') nor a month (YYYYMM, "
+            "e.g. '202305'), nor 'recent' alone",
+        ),
+        ({"period": "Recent"}, "period 'Recent' is neither a year"),
+        ({"period": "recent,2023"}, "period 'recent' is neither a year"),
+        ({"period": "202313"}, "period '202313' is neither a year"),
+        ({"period": "2022, 2023"}, "must be values separated by commas, without spaces"),
+        ({"type_code": "X"}, "type_code 'X' is not a UN Comtrade typeCode value"),
+        ({"freq_code": "Q"}, "freq_code 'Q' is not a UN Comtrade freqCode value"),
+        ({"reporter_code": "CHE"}, "reporter_code 'CHE' is not a numeric UN Comtrade area code"),
+    ],
+)
+def test_world_share_arguments_are_checked_before_the_call(
+    respx_mock: respx.MockRouter, arguments: dict[str, str], fragment: str
+) -> None:
+    query = {"type_code": "C", "freq_code": "A", **arguments}
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.get_world_share(**query)
+    assert not isinstance(info.value, UnknownCode)
+    assert fragment in str(info.value)
+    assert not respx_mock.calls
+
+
+def test_an_unknown_reporter_is_refused_before_the_world_share_call(
+    respx_mock: respx.MockRouter,
+) -> None:
+    with pytest.raises(UnknownCode) as info:
+        tasks.get_world_share("C", "A", period="2023", reporter_code="757,756")
+    assert str(info.value) == REFUSED_756
+    assert not respx_mock.calls
+
+
+def test_world_share_takes_any_number_of_periods_and_recent_alone() -> None:
+    years = ",".join(str(year) for year in range(2000, 2024))
+    assert validate_world_share("C", "A", period=years)["period"] == years
+    assert validate_world_share("C", "A", period=RECENT, reporter_code="757,842") == {
+        "type_code": "C", "freq_code": "A", "period": "recent", "reporter_code": "757,842",
+    }  # fmt: skip
+    assert validate_world_share("S", "M") == {"type_code": "S", "freq_code": "M"}
+
+
+@pytest.mark.anyio
+async def test_public_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
+    replay_fixture("get_comtrade_releases", "calendar")
+    replay_fixture("get_world_share", "ch_2023", match_params=BY_WORLD_SHARE)
+    replay_fixture("get_world_share", "all_reporters_2023", match_params=["period"])
+    releases = await mcp_call(server, "comtrade_get_comtrade_releases", {})
+    assert len(releases["data"]) == releases["meta"]["total"] == 38
+    assert releases["data"][0]["date_release"] == "2026-10-28T00:00:00"
+    assert "note" not in releases, "the calendar fits the default cap"
+    share = await mcp_call(server, "comtrade_get_world_share", CH_WORLD_SHARE_2023)
+    [row] = share["data"]
+    assert row["world_share"] == 0.01651852126450239
+    assert row["first_released"] == "2024-02-02T04:52:35.216666"
+    assert share["meta"]["endpoint"] == "public/v1/getWorldShare"
+    assert share["meta"]["published_at"] is None
+    refused = await mcp_call_text(
+        server, "comtrade_get_world_share", {**CH_WORLD_SHARE_2023, "reporter_code": "756"}
+    )
+    assert refused == f"error: UnknownCode: {REFUSED_756}"
+
+
+def test_world_share_has_a_cap_of_its_own() -> None:
+    """ADR-0016: one period for every reporter (214 rows, 88.5 KB) reaches an agent whole."""
+    cap = tasks.MCP_CAPS["get_world_share"]
+    assert (cap.max_rows, cap.max_bytes) == (400, 100_000)
+    assert cap.note is not None
+    assert "reporter_code" in cap.note
+    assert "period" in cap.note
+    assert "get_comtrade_releases" not in tasks.MCP_CAPS, "the calendar fits the default cap"
+
+
+@pytest.mark.anyio
+async def test_one_period_for_every_reporter_reaches_an_agent_whole(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """The default cap cut it at 157 rows, dropping the USA (842); the tool's own cap does not."""
+    replay_fixture("get_world_share", "all_reporters_2023", match_params=["period"])
+    text = await mcp_call_text(
+        server, "comtrade_get_world_share", {"type_code": "C", "freq_code": "A", "period": "2023"}
+    )
+    payload = json.loads(text)
+    assert "note" not in payload, "no cap note: nothing was cut"
+    assert len(payload["data"]) == payload["meta"]["total"] == 214
+    assert 842 in {row["reporter_code"] for row in payload["data"]}
+    assert len(text.encode()) <= tasks.MCP_CAPS["get_world_share"].max_bytes
+
+
+def test_public_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    replay_fixture("get_comtrade_releases", "calendar")
+    replay_fixture("get_world_share", "ch_2023", match_params=BY_WORLD_SHARE)
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as http:
+        releases = http.get("/comtrade/get_comtrade_releases")
+        assert releases.status_code == 200
+        assert releases.json()["meta"]["total"] == 38
+        share = http.get("/comtrade/get_world_share", params=CH_WORLD_SHARE_2023)
+        assert share.status_code == 200
+        assert share.json()["data"][0]["world_share"] == 0.01651852126450239
+        assert share.json()["data"][0]["updated"] == "2026-07-28T18:04:08.320000"
+        refused = http.get(
+            "/comtrade/get_world_share", params={**CH_WORLD_SHARE_2023, "period": "2023-01"}
+        )
+        assert refused.status_code == 422

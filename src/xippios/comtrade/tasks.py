@@ -2,19 +2,24 @@
 
 ``/add-endpoint`` adds them.
 
-``meta.endpoint`` is the operation as the Help Center names it (``data/v1/get``), or the
+``meta.endpoint`` is the operation as the Help Center names it (``data/v1/get``), or as
+the Tools spec's server path and summary do (``tools/v1/getTradeBalance``), its path under
+the spec's server where no article names it (``public/v1/getWorldShare``), or the
 reference file a list comes from (``files/v1/app/reference/Reporters.json``), and
 ``meta.request`` the task's own arguments that were set, so ``get_data(**meta.request)``
 repeats the call. The task-shaped slices (``get_bilateral_flows``,
 ``get_commodity_series``, ``get_world_trade``, ``get_top_partners``) put the resolved
 ``get_data`` arguments there instead, pins included (``params.SLICE_PINS``); a commodity
 series lists every period, though it sent them 12 per call, and ``get_top_partners``
-adds ``n``.
+adds ``n``. The mirror slice, ``get_mirror_flows``, puts the resolved
+``get_bilateral_data`` arguments there.
 
 ``meta.published_at`` stays ``None`` on every task. Data rows carry no publication date,
 and where upstream does publish release dates it publishes one per reporter and period
-(``getDa``, ``getMetadata``, ``getLiveUpdate``); a single value for a whole result would
-be a guess. The lists packaged with this version (``list_reporters``, ``list_partners``,
+(``getDa``, ``getMetadata``, ``getWorldShare``) or per release (``getComtradeReleases``),
+each printed without a zone; ``getLiveUpdate`` carries pipeline times, not a publication
+date. A single value for a whole result would be a guess.
+The lists packaged with this version (``list_reporters``, ``list_partners``,
 ``list_codes``, ``list_classifications``) carry the time the package fetched them as
 ``meta.retrieved_at``, and ``meta.vintage`` stays ``None``: upstream gives the files no
 release identifier (ADR-0022, rule 1).
@@ -28,43 +33,62 @@ from xippios.core import PackagedList, Result, ResultCap, ResultMeta, matches, s
 from xippios.comtrade import api
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.api.get import ENDPOINT
+from xippios.comtrade.api.get_bilateral_data import ENDPOINT as GET_BILATERAL_DATA
+from xippios.comtrade.api.get_comtrade_releases import ENDPOINT as GET_COMTRADE_RELEASES
 from xippios.comtrade.api.get_da import ENDPOINT as GET_DA
 from xippios.comtrade.api.get_live_update import ENDPOINT as GET_LIVE_UPDATE
 from xippios.comtrade.api.get_metadata import ENDPOINT as GET_METADATA
+from xippios.comtrade.api.get_trade_balance import ENDPOINT as GET_TRADE_BALANCE
+from xippios.comtrade.api.get_world_share import ENDPOINT as GET_WORLD_SHARE
 from xippios.comtrade.errors import MAX_PERIODS, RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.models import (
+    BilateralData,
     CodeValue,
     Commodity,
+    ComtradeRelease,
     DataAvailability,
     LiveUpdateRecord,
     MetadataDataset,
+    MirrorFlowRecord,
+    MirrorFlows,
     PartnerArea,
     Reference,
     Reporter,
+    TradeBalanceRecord,
     TradeDataRecord,
     TradeFlowRecord,
+    WorldShare,
 )
 from xippios.comtrade.params import (
     MAX_SERIES_PERIODS,
     PACKAGE,
     PACKAGED_LISTS,
+    validate_bilateral_data,
     validate_classification_file,
     validate_code_list,
     validate_datasets,
     validate_get,
+    validate_mirror_flows,
     validate_reference_category,
     validate_slice,
+    validate_trade_balance,
+    validate_world_share,
 )
 
 __all__ = [
+    "get_bilateral_data",
     "get_bilateral_flows",
     "get_commodity_series",
+    "get_comtrade_releases",
     "get_counts",
     "get_data",
     "get_data_availability",
     "get_live_update",
     "get_metadata",
+    "get_mirror_flows",
     "get_top_partners",
+    "get_trade_balance",
+    "get_world_share",
     "get_world_trade",
     "list_classifications",
     "list_codes",
@@ -78,7 +102,11 @@ BULK_TASKS: frozenset[str] = frozenset()
 
 # Result caps of their own, keyed by the task function's name (conventions §8, ADR-0016):
 # the reporter (255) and partner (310) tables reach an agent whole; a classification file
-# (8,262 HS codes) cannot, and its note tells the agent to search.
+# (8,262 HS codes) cannot, and its note tells the agent to search. One period's world share
+# for every reporter (214 rows, 88.5 KB for 2023) reaches an agent whole too, where the
+# default cap cut it at 157 rows, dropping the USA (842): upstream sends the available rows
+# first, by reporter code, then the unavailable ones in an order the recording does not
+# explain.
 MCP_CAPS: Mapping[str, ResultCap] = {
     "list_reporters": ResultCap(max_rows=400, max_bytes=100_000),
     "list_partners": ResultCap(max_rows=400, max_bytes=100_000),
@@ -86,6 +114,11 @@ MCP_CAPS: Mapping[str, ResultCap] = {
         max_rows=400,
         max_bytes=100_000,
         note='search by code or text, e.g. search="0901" or search="coffee", to see the rest',
+    ),
+    "get_world_share": ResultCap(
+        max_rows=400,
+        max_bytes=100_000,
+        note='narrow by reporter_code (e.g. "842") or period (e.g. "2023") to see the rest',
     ),
 }
 
@@ -431,6 +464,291 @@ async def get_live_update_async() -> Result[list[LiveUpdateRecord]]:
     return Result(data=response.data, meta=meta)
 
 
+async def get_trade_balance_async(
+    type_code: str,
+    freq_code: str,
+    cl_code: str,
+    *,
+    reporter_code: str | None = None,
+    period: str | None = None,
+    partner_code: str | None = None,
+    partner2_code: str | None = None,
+    cmd_code: str | None = None,
+    customs_code: str | None = None,
+    mot_code: str | None = None,
+    aggregate_by: str | None = None,
+    breakdown_mode: str | None = None,
+    include_desc: bool | None = None,
+) -> Result[list[TradeBalanceRecord]]:
+    """Fetch UN Comtrade trade data with a reporter's exports and imports side by side.
+
+    Upstream's ``getTradeBalance``, which its spec marks "EXPERIMENTAL - USE SPARINGLY":
+    one keyed call, no count first. Each row, a ``TradeBalanceRecord``, holds a reporter's
+    exports (``*_x``: ``primary_value_x``, ``qty_x``, ``net_wgt_x``, ...) and imports
+    (``*_m``) with one partner, second partner, product code, customs procedure, mode of
+    transport and period, and ``primary_value_bal``, which the spec defines as "X - M":
+    upstream's value, passed through (``54550055814.504944`` for Switzerland and the World
+    in 2023). Without ``breakdown_mode`` upstream answers every breakdown (48 rows for
+    Switzerland and the World, 2023, all goods); ``breakdown_mode="classic"`` returns the
+    total row alone. A query nothing matches returns an empty list. ``meta.total`` is
+    upstream's ``count``. The query must name ``reporter_code`` or ``partner_code``, and
+    ``cmd_code``: upstream offers no count to check a query's size before the call
+    (``countOnly`` answered 0 for those 48 rows), so a broader query is refused before it
+    is sent. Arguments are checked before the call; an unknown reporter, partner, customs
+    or transport code raises ``UnknownCode``, an ``InvalidRequestError`` naming the
+    packaged list and the closest code, another mistake ``InvalidRequestError`` naming the
+    closest valid value. The spec says a free-tier key that is not on UN Comtrade's
+    allow-list is refused with HTTP 403 "User not allowed" (``AuthError``); the key the
+    package was recorded with was answered (2026-10-28).
+
+    Args:
+        type_code: ``"C"`` goods or ``"S"`` services.
+        freq_code: ``"A"`` annual or ``"M"`` monthly.
+        cl_code: Product classification, checked against the package's list: ``"HS"``
+            (all HS editions as reported, the one recorded here; rows name the edition in
+            ``classification_code``, e.g. ``"H6"``), an edition ``"H0"`` to ``"H6"``,
+            SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC ``"B4"``, ``"B5"``, ``"BE"``,
+            ``"TM"``, for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``, ``"EB10S"``.
+            The Tools spec lists ``HS``, ``S1`` to ``S4``, ``BE4``, ``BE5``, ``EB``,
+            ``EB02``, ``EB10`` and ``EBSDMX``; ``BE4``, ``BE5`` and ``EBSDMX`` are not in
+            the package's list (upstream refused ``BE5`` on ``data/v1/get`` and
+            ``EBSDMX`` on ``getDa``) and are refused before the call.
+        reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
+            e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
+            ``"757,842"``, as ``list_reporters`` lists them. Some differ from ISO numeric
+            codes: Switzerland is 757, not 756. Required unless ``partner_code`` is given.
+        period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), at most 12
+            comma-separated, e.g. ``"2021,2022,2023"``.
+        partner_code: Partner areas, comma-separated, as ``list_partners`` lists them:
+            ``"0"`` World (the total over all partners), ``"276"`` Germany. Required
+            unless ``reporter_code`` is given; omitted, upstream's default applies, which
+            on ``get_data`` is every partner, one row each.
+        partner2_code: Second partner (consignment) areas, comma-separated, codes of
+            ``list_partners``; ``"0"`` is the total.
+        cmd_code: Product codes of ``cl_code``, comma-separated, as
+            ``list_commodities(cl_code)`` lists them: ``"TOTAL"`` for all goods,
+            ``"AG2"`` for every chapter, codes such as ``"27"``, ``"0901"`` or
+            ``"090111"``, wildcards such as ``"27??"``.
+        customs_code: Customs procedures, comma-separated: ``"C00"`` the total, ``"C01"``
+            clearance for home use, ``"C03"`` outright exportation. Omit for every
+            procedure, one row each.
+        mot_code: Modes of transport, comma-separated: ``"0"`` the total, ``"1000"`` air,
+            ``"2100"`` sea, ``"3100"`` railway, ``"3200"`` road, ``"9100"`` pipelines and
+            cables. Omit for every mode, one row each.
+        aggregate_by: Upstream parameters to aggregate the results over, comma-separated
+            from ``cmdCode``, ``period``, ``partnerCode``, ``partner2Code``,
+            ``reporterCode``, ``customsCode``, ``motCode``, e.g. ``"cmdCode"``; sent on as
+            given (not recorded on this operation; on ``get_data`` the aggregated
+            parameters come back as ``-2``).
+        breakdown_mode: Omitted, upstream's default: every customs procedure, mode of
+            transport and second partner, one row each. ``"classic"``: the total row only
+            (``customs_code`` ``"C00"``, ``mot_code`` 0, ``partner2_code`` 0). ``"plus"``,
+            the spec's other value, gives every breakdown on ``get_data``.
+        include_desc: Upstream's ``includeDesc``, "Include descriptions of data
+            variables": with it the recorded rows have ``reporter_iso``/``reporter_desc``,
+            the partner and second partner ones, ``cmd_desc``, ``customs_desc``,
+            ``mot_desc``, the quantity unit abbreviations, ``aggr_level`` and ``is_leaf``
+            filled; no answer with rows was recorded without it.
+    """
+    request = validate_trade_balance(
+        type_code,
+        freq_code,
+        cl_code,
+        reporter_code=reporter_code,
+        period=period,
+        partner_code=partner_code,
+        partner2_code=partner2_code,
+        cmd_code=cmd_code,
+        customs_code=customs_code,
+        mot_code=mot_code,
+        aggregate_by=aggregate_by,
+        breakdown_mode=breakdown_mode,
+        include_desc=include_desc,
+    )
+    response = await api.get_trade_balance(**request)
+    meta = ResultMeta(
+        source=SOURCE, endpoint=GET_TRADE_BALANCE, request=request, total=response.count
+    )
+    return Result(data=response.data, meta=meta)
+
+
+async def get_bilateral_data_async(
+    type_code: str,
+    freq_code: str,
+    cl_code: str,
+    *,
+    reporter_code: str | None = None,
+    period: str | None = None,
+    partner_code: str | None = None,
+    cmd_code: str | None = None,
+    flow_code: str | None = None,
+    include_desc: bool | None = None,
+) -> Result[BilateralData]:
+    """Compare a reporter's trade figures with its partners' mirror figures, row by row.
+
+    Upstream's ``getBilateralData``, which its spec marks "EXPERIMENTAL - USE SPARINGLY":
+    one keyed call, "basic trade data joined with mirror partner data", useful to analyse
+    bilateral trade asymmetries. Its result is not a list, nor is ``get_mirror_flows``':
+    ``data`` is a ``BilateralData`` holding upstream's ``note``, its
+    ``timestamp_requested`` and the rows, ``data.data``, because the note qualifies the
+    mirror values. It counts the partners with a data gap and gives their share of world
+    trade without naming them ("a data gap for 2 partner(s) ... approximately 0.015% of the
+    accumulated world's share").
+    Each row, a ``BilateralDataRecord``, is one reporter, partner, product code, flow and
+    period at the total of every breakdown (``customs_code`` ``"C00"``, ``mot_code`` 0): the
+    reporter's figures (``primary_value``, ``qty``, ``net_wgt``, ...) beside the mirror
+    (``mirror_primary_value``, ``mirror_qty``, ...), for a reporter's exports "the import
+    data reported by" its partners, as UN Comtrade's Help Center puts it. It warns that "the
+    outcome of the mirror data depends on the availability of other reporters rather than
+    no-trade": a mirror of 0 is no evidence of no trade. For Switzerland's 2023 exports
+    Afghanistan's mirror of 0 showed which partner the gap was, inferred from the counts
+    (DPRK alone: 1, the USA alone: none, the three together: 2), not stated. That is no
+    general rule: the note speaks of a gap "during specific periods" and says "the
+    calculation of mirror data may be incomplete", and a mirror of 0 can also be a partner
+    that reported no such imports. ``primary_value_disc`` is upstream's, its meaning not
+    stated; in every recorded row it equals ``(mirror_primary_value - primary_value) /
+    primary_value``, a relative difference (``-0.16`` for Switzerland's 2023 exports to the
+    USA, ``-1.0`` where the mirror is 0). The ``mirror2_*`` fields are not described
+    upstream and were ``None`` or 0 in every recorded row. A pair upstream holds nothing for
+    has no row. ``meta.total`` is upstream's ``count``. Over MCP the rows are not cut to the
+    result cap one by one: an answer above it (about 40 rows) comes as a preview of its
+    text, so name a few partners or periods per call. The query must name ``reporter_code``
+    or ``partner_code``, and ``cmd_code``: upstream offers no count to check a query's size
+    before the call (it ignores ``countOnly``), so a broader query is refused before it is
+    sent. Arguments are checked before the call; an unknown reporter or partner code raises
+    ``UnknownCode``, an ``InvalidRequestError`` naming the packaged list and the closest
+    area, another mistake ``InvalidRequestError`` naming the closest valid value.
+
+    Args:
+        type_code: ``"C"`` goods or ``"S"`` services.
+        freq_code: ``"A"`` annual or ``"M"`` monthly.
+        cl_code: Product classification, checked against the package's list: ``"HS"``
+            (all HS editions as reported, the one recorded here; rows name the edition in
+            ``classification_code``, e.g. ``"H6"``), an edition ``"H0"`` to ``"H6"``,
+            SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC ``"B4"``, ``"B5"``, ``"BE"``,
+            ``"TM"``, for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``, ``"EB10S"``.
+            The Tools spec lists ``HS``, ``S1`` to ``S4``, ``BE4``, ``BE5``, ``EB``,
+            ``EB02``, ``EB10`` and ``EBSDMX``; ``BE4``, ``BE5`` and ``EBSDMX`` are not in
+            the package's list (upstream refused ``BE5`` on ``data/v1/get`` and
+            ``EBSDMX`` on ``getDa``) and are refused before the call.
+        reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
+            e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
+            ``"757,842"``, as ``list_reporters`` lists them. Some differ from ISO numeric
+            codes: Switzerland is 757, not 756. Required unless ``partner_code`` is given.
+        period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly),
+            comma-separated, e.g. ``"2021,2022,2023"``; unlike ``get_data``, more than 12
+            are accepted (13 answered 13 rows).
+        partner_code: Partner areas, comma-separated, as ``list_partners`` lists them:
+            ``"842"`` USA, ``"276"`` Germany, ``"842,276"``, one row each. Required
+            unless ``reporter_code`` is given.
+        cmd_code: Product codes of ``cl_code``, comma-separated, as
+            ``list_commodities(cl_code)`` lists them: ``"TOTAL"`` for all goods,
+            ``"AG2"`` for every chapter, codes such as ``"27"``, ``"0901"`` or
+            ``"090111"``, wildcards such as ``"27??"``.
+        flow_code: One trade flow: ``"X"`` exports or ``"M"`` imports; upstream refuses
+            both in one call (``"M,X"``), so call once per flow.
+        include_desc: Upstream's ``includeDesc``, sent on as given: the recorded answers
+            carry no descriptions with or without it (the ``*_iso`` and ``*_desc`` fields
+            stay ``None``); ``list_reporters`` and ``list_partners`` name the codes.
+    """
+    request = validate_bilateral_data(
+        type_code,
+        freq_code,
+        cl_code,
+        reporter_code=reporter_code,
+        period=period,
+        partner_code=partner_code,
+        cmd_code=cmd_code,
+        flow_code=flow_code,
+        include_desc=include_desc,
+    )
+    response = await api.get_bilateral_data(**request)
+    meta = ResultMeta(
+        source=SOURCE, endpoint=GET_BILATERAL_DATA, request=request, total=response.count
+    )
+    return Result(data=BilateralData.project(response), meta=meta)
+
+
+async def get_comtrade_releases_async() -> Result[list[ComtradeRelease]]:
+    """List UN Comtrade's recent data releases: which reporter's dataset came out when.
+
+    Upstream's public ``getComtradeReleases``, "the list of the recent releases, the same
+    with the UI live update page" (https://comtradeplus.un.org/RecentReleases); the spec
+    calls each row "A recent or upcoming dataset release". Keyless: no key is sent and no
+    daily quota is spent, but the call shares the client's pace (the Public tier allows 1
+    call per second) and its quota policy, so once upstream has said the key's daily quota
+    is spent it is held back too; the Public tier's preview API's 500 records a call is far
+    above the rows recorded. One row per release: ``reporter_code`` (UN Comtrade's code,
+    e.g. 757 Switzerland), ``dataset_desc`` (e.g. ``"Switzerland CM 202601"``),
+    ``flag_code`` and ``nr``, whose meanings upstream does not state (recorded: two letters,
+    ``"CH"`` for 757; ``"N"`` or ``"R"``), and ``date_release``, a naive datetime: upstream
+    prints it without a UTC offset and states no zone, so none is attached. When recorded on
+    2026-10-28 it listed 38 releases from 2026-10-22 to 2026-10-28, newest first, every one
+    at midnight, none in the future; the spec states no order. UN Comtrade keeps one version
+    of each dataset, so a revised release replaces the earlier data, which is not archived.
+    ``meta.total`` is upstream's count; ``meta.published_at`` stays ``None``, since each row
+    has its own date. No arguments, one call; ``get_data_availability`` gives a dataset's
+    first and latest release.
+    """
+    response = await api.get_comtrade_releases()
+    meta = ResultMeta(source=SOURCE, endpoint=GET_COMTRADE_RELEASES, total=response.count)
+    return Result(data=response.data, meta=meta)
+
+
+async def get_world_share_async(
+    type_code: str,
+    freq_code: str,
+    *,
+    period: str | None = None,
+    reporter_code: str | None = None,
+) -> Result[list[WorldShare]]:
+    """List each reporter's share of world trade per period, with its release dates.
+
+    Upstream's public ``getWorldShare``, "Get the World Share (including estimates)"; the
+    spec calls a row "A reporter's share of world trade for one period". The spec states
+    neither whether ``world_share`` (a ``Decimal``) is a fraction or a percentage nor of
+    which trade; when recorded, the 214 values for 2023 (annual goods, every reporter) sum
+    to 1.0 and Switzerland's is 0.0165. A row with ``is_available`` false (47 of those 214)
+    still carries a ``world_share``, but ``first_released`` and ``last_released`` read
+    ``0001-01-01T00:00:00``, upstream's placeholder on unavailable datasets, kept as sent,
+    not a release; upstream states no meaning for ``is_available`` or ``data_count``. The
+    four times (``first_released``, ``last_released``, ``created``, ``updated``) are naive
+    datetimes: upstream prints them without a UTC offset and states no zone, so none is
+    attached. Keyless: no key is sent and no daily quota is spent, but the call shares the
+    client's pace (the Public tier allows 1 call per second) and its quota policy, so once
+    upstream has said the key's daily quota is spent it is held back too. Upstream's
+    subscription page limits the Public tier's preview API to 500 records a call; whether
+    that binds this operation is not stated, and the recorded answers (214 rows at most) did
+    not reach it. One call, rows in upstream's order; a period nobody reported returns an
+    empty list. The MCP tool returns up to 400 rows or 100 KB, so the whole 214-row answer
+    for one period reaches an agent; beyond that its note says to narrow by
+    ``reporter_code`` or ``period``. Arguments are checked before the call; an unknown
+    reporter code raises ``UnknownCode``, an ``InvalidRequestError`` naming the packaged
+    list and the closest area, another mistake ``InvalidRequestError``.
+
+    Args:
+        type_code: ``"C"`` goods or ``"S"`` services.
+        freq_code: ``"A"`` annual or ``"M"`` monthly.
+        period: Years ``"2023"`` (annual) or months ``"202301"`` (monthly),
+            comma-separated, e.g. ``"2022,2023"``. The spec also lists ``"recent"``, which
+            is accepted, but upstream answered it with HTTP 500 on all three tries on
+            2026-10-28, with and without a reporter (``ch_recent.json``,
+            ``all_reporters_recent.json``): the client makes 4 attempts (3 retries) on a
+            5xx and then raises ``UpstreamError``, and what ``"recent"`` selects is
+            unknown, so name the periods. Omit for every period (64 annual rows for
+            Switzerland, 1962 to 2025).
+        reporter_code: Reporters, comma-separated, as ``list_reporters`` lists them:
+            ``"757"`` Switzerland, ``"842"`` USA, ``"156"`` China, ``"757,842"``. Omit for
+            every reporter (214 rows for 2023, annual goods).
+    """
+    request = validate_world_share(type_code, freq_code, period=period, reporter_code=reporter_code)
+    response = await api.get_world_share(**request)
+    meta = ResultMeta(
+        source=SOURCE, endpoint=GET_WORLD_SHARE, request=request, total=response.count
+    )
+    return Result(data=response.data, meta=meta)
+
+
 async def get_bilateral_flows_async(
     reporter: str,
     partner: str,
@@ -659,6 +977,97 @@ async def get_top_partners_async(
     return Result(data=rows[:n], meta=_meta({**request, "n": n}))
 
 
+async def get_mirror_flows_async(
+    reporter: str,
+    partner: str,
+    commodities: str,
+    periods: str,
+    flow: str,
+    *,
+    cl_code: str = "HS",
+) -> Result[MirrorFlows]:
+    """A reporter's reported trade with one partner beside the partner's reported mirror of it.
+
+    The two sides of one trade, per product code and period: what the reporter reported
+    (``primary_value``, its quantities and weights) and what the partner reported for the
+    same trade (``mirror_primary_value``, ``mirror_qty``, ...): for a reporter's exports,
+    "the import data reported by" the partner. UN Comtrade's Help Center calls the tool
+    Bilateral Data Comparison, which "puts the reported data and its mirror data
+    side-by-side, allowing the analysis of bilateral trade asymmetries"
+    (``un-comtrade-tools.md``); the two sides differ for documented reasons, imports valued
+    CIF and exports FOB, partner attribution, time lags, goods passing through third
+    countries (``bilateral-asymmetries.md``). One call of upstream's ``getBilateralData``
+    for goods (``typeCode`` C), which its spec marks "EXPERIMENTAL - USE SPARINGLY"; it
+    answers at the total of every breakdown (classic mode). ``data`` is one
+    ``MirrorFlows``, not a list: upstream's ``note``, its ``timestamp_requested`` (UTC) and
+    the rows, ``data.data``, one ``MirrorFlowRecord`` per product code and period, in
+    upstream's order (period order in every recording); a code or period upstream holds
+    nothing for has no row.
+    The note qualifies the mirror: it counts the partners with a data gap and gives their
+    share of world trade without naming them, and "the outcome of the mirror data depends
+    on the availability of other reporters rather than no-trade", so a mirror of 0 is no
+    evidence of no trade. For Switzerland's 2023 exports Afghanistan's mirror of 0 showed
+    which partner the gap was, inferred from the counts, not stated; that is no general
+    rule. ``primary_value_disc`` is upstream's, its meaning not stated: in every recorded
+    row it equals ``(mirror_primary_value - primary_value) / primary_value`` (``-0.949``
+    for Switzerland's 2023 exports of HS chapter 27 to the USA). ``mirror2_primary_value``
+    is not described upstream and was 0 in every recorded row; the other ``mirror2``
+    fields are left out (empty in every recording; ``get_bilateral_data`` carries them).
+    Descriptions are ``None``: getBilateralData filled none even with ``includeDesc``, so
+    it is not sent; ``list_reporters`` and ``list_partners`` name the codes. Bounded by
+    construction at product codes times periods rows, so there is no count call (upstream
+    offers none here); a bound above 100,000 raises ``QueryTooLarge`` before the call.
+    Over MCP a result above 64 KB (about 60 rows) reaches the agent as a preview of its
+    text, so name a few product codes or periods per call. Arguments are resolved and
+    checked before the call; an unknown area raises ``UnknownCode``, an
+    ``InvalidRequestError`` naming the packaged list and the closest area, another mistake
+    ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds the
+    ``get_bilateral_data`` arguments that were sent, codes resolved; ``meta.total`` is
+    upstream's ``count``.
+
+    Args:
+        reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:
+            ``"757"`` or ``"CHE"`` Switzerland, ``"842"`` or ``"USA"``, ``"276"`` or ``"DEU"``
+            Germany, ``"156"`` or ``"CHN"`` China; ``list_reporters(search=...)`` finds them.
+            Codes are UN Comtrade's, not ISO numeric (Switzerland is 757, not 756).
+        partner: The partner area whose report is the mirror, as code or ISO alpha-3
+            code: ``"842"`` or ``"USA"`` (842, the code the USA reports under, not 840),
+            ``"757"`` or ``"CHE"``, ``"276"`` or ``"DEU"``; ``list_partners(search=...)``
+            finds them. ``"0"`` World is passed on, upstream's answer to it unrecorded.
+        commodities: Product codes of ``cl_code``, comma-separated, each naming one code:
+            ``"TOTAL"`` all goods, an HS chapter ``"27"``, headings ``"2709,2710"``.
+            Levels such as ``"AG2"`` and wildcards such as ``"27??"`` are refused (one row
+            per code and period bounds the call). ``list_commodities("HS", search="crude")``
+            finds codes.
+        periods: Years ``"2022,2023"`` (annual data) or months ``"202301"`` (monthly
+            data), comma-separated, one format: the format sets ``freqCode``. At most 12,
+            the bound of the slices, though getBilateralData answered 13
+            (``get_bilateral_data`` takes more).
+        flow: The reporter's flow, one of the two getBilateralData takes: ``"X"`` exports,
+            whose mirror is the partner's reported imports, or ``"M"`` imports, the spec's
+            other value (not recorded here).
+        cl_code: Product classification, ``"HS"`` by default and the one recorded: all HS
+            editions as each reporter reported them (rows name the edition in
+            ``classification_code``, e.g. ``"H6"``). Checked against the package's list:
+            an edition ``"H0"`` to ``"H6"``, SITC ``"SS"`` or ``"S1"`` to ``"S4"``, BEC
+            ``"B4"``, ``"B5"`` are accepted but untested here; the Tools spec's ``"BE4"``,
+            ``"BE5"`` and ``"EBSDMX"`` are refused before the call. EBOPS ``"EB"``,
+            ``"EB02"``, ``"EB10"``, ``"EB10S"`` (services), ``"BE"`` and ``"TM"`` are
+            accepted but untested with the pinned ``typeCode`` C.
+    """
+    request = validate_mirror_flows(
+        cl_code, flow, reporter=reporter, partner=partner, commodities=commodities,
+        periods=periods,
+    )  # fmt: skip
+    _bounded(len(request["cmd_code"].split(",")) * len(request["period"].split(",")))
+    response = await api.get_bilateral_data(**request)
+    rows = [MirrorFlowRecord.project(record) for record in response.data]
+    meta = ResultMeta(
+        source=SOURCE, endpoint=GET_BILATERAL_DATA, request=request, total=response.count
+    )
+    return Result(data=MirrorFlows.project(response, data=rows), meta=meta)
+
+
 async def list_reporters_async(search: str | None = None) -> Result[list[Reporter]]:
     """List the reporters UN Comtrade has trade data from, with the codes reporter_code takes.
 
@@ -826,14 +1235,19 @@ async def list_classifications_async(category: str | None = None) -> Result[list
     return Result(data=rows, meta=packaged.meta(SOURCE, request=request))
 
 
+get_bilateral_data = sync(get_bilateral_data_async)
 get_bilateral_flows = sync(get_bilateral_flows_async)
 get_commodity_series = sync(get_commodity_series_async)
+get_comtrade_releases = sync(get_comtrade_releases_async)
 get_counts = sync(get_counts_async)
 get_data = sync(get_data_async)
 get_data_availability = sync(get_data_availability_async)
 get_live_update = sync(get_live_update_async)
 get_metadata = sync(get_metadata_async)
+get_mirror_flows = sync(get_mirror_flows_async)
 get_top_partners = sync(get_top_partners_async)
+get_trade_balance = sync(get_trade_balance_async)
+get_world_share = sync(get_world_share_async)
 get_world_trade = sync(get_world_trade_async)
 list_classifications = sync(list_classifications_async)
 list_codes = sync(list_codes_async)

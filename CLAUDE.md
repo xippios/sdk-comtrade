@@ -13,7 +13,7 @@ the family rules every source shares are in `.claude/family.md`, which the next 
 | Upstream | UN Comtrade, https://comtradeplus.un.org |
 | API base URL | `https://comtradeapi.un.org` |
 | Documentation | https://comtradeplus.un.org/ApiDocs, snapshotted in `docs/upstream/` |
-| Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header |
+| Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header; never to the public operations or the reference files |
 | Rate limit | 1 per second documented; the client spaces calls 1.5 s apart (40 per minute), no burst; 500 calls a day, which the client does not count: `policy`, a `QuotaPolicy`, holds calls back once upstream answers that the quota is spent (`_client.py`, ADR-0015) |
 | Write tools | no, this package is read-only |
 
@@ -51,7 +51,8 @@ and how `_client.py` treats them:
   2026-10-23 for a query counted at 5,006,385). `get_data` counts first and raises
   `QueryTooLarge` before any data call.
 - **12 periods per call.** A 13th gets HTTP 400 "Maximum number of periods is 12";
-  `params.validate_get` refuses it before the call.
+  `params.validate_get` refuses it before the call. `tools/v1/getTradeBalance` answers the
+  same; `data/v1/getDa` and `tools/v1/getBilateralData` take more.
 - **Slow counts.** A broad count can take over a minute, so the read timeout is 180 s
   (`TIMEOUTS`), and a timed-out attempt that core retries counts against the quota each
   time; so does each retry of a 5xx.
@@ -66,6 +67,43 @@ them with `auth=None`, without the key, and its cache, narrowed to those paths b
 time its file was stored. So `scripts/refresh_reference.py` and `list_commodities` need
 no key and cost no quota; a reference fetch still takes the 1.5 s pace, and a spent quota
 holds it back too.
+
+The public operations under `public/v1`, `getComtradeReleases` and `getWorldShare`
+(`docs/upstream/apidocs/public.json`, whose `security` is `[{}, apiKeyHeader,
+apiKeyQuery]`, a key optional, and whose `info` says "No subscription key required"), go
+through the same client with `auth=None` too: `get_comtrade_releases` and
+`get_world_share` send no key and spend no daily quota, but they share `RATE_LIMIT`'s pace
+(the Public tier allows 1 call per second) and `policy`, so a spent key quota holds them
+back too, as it does the reference files. `cache_filter` keeps their answers out of the
+cache, so a release calendar always comes from upstream. Their operationIds are opaque hex
+ids, so the wrappers are named after the paths (conventions §2). What the keyless
+recordings of 2026-10-28 established (`tests/fixtures/get_comtrade_releases/`,
+`get_world_share/`):
+
+- `getComtradeReleases`: 38 rows, `count` 38, 4.5 KB, released from 2026-10-22 to
+  2026-10-28, newest first when recorded (the spec states no order), every `dateRelease`
+  a midnight and none after the recording day; `nr` `N` (12) or `R` (26) and `flagCode`
+  two letters (`CH` for 757), neither meaning stated. It fits the default MCP cap, so it
+  has no cap of its own.
+- `getWorldShare`: one row per reporter and period. Without `period` every period
+  (Switzerland: 64 annual rows, 1962 to 2025), without `reporterCode` every reporter
+  (2023: 214 rows, 88.5 KB; the default MCP cap cut it at 157, dropping the USA, row
+  161, so `MCP_CAPS` gives `get_world_share` 400 rows or 100 KB and the whole period
+  reaches an agent). The 214 values of 2023 sum to 1.0; whether a fraction or a
+  percentage, and of which trade, is not stated. 47 of them have `isAvailable` false, a
+  `worldShare` all the same and `0001-01-01T00:00:00` as both release times, upstream's
+  placeholder on unavailable datasets, kept as sent, a naive datetime. Switzerland 2023's
+  `firstReleased`/`lastReleased` equal `getDa`'s. `period=1900` answers 200, `count` 0.
+  `period=2023-01` answered HTTP 400 "Invalid parameter value" with its detail spelt
+  `MemberNames`/`ErrorMessage` and no `Content-Type`; `classify` reads its
+  `ErrorMessage`.
+- `period=recent` stays accepted, as the spec lists it and as `H6` stayed in 0.1.0, though
+  upstream answered it with HTTP 500 "Something went wrong" (`count` -1, `error` an
+  object) on all three tries, with `reporterCode` and without: the client makes 4 attempts
+  and raises `UpstreamError`, and what `recent` selects is unknown.
+- Every time field is printed without a UTC offset and no zone is stated: the models keep
+  them naive, none attached, and the tasks leave `meta.published_at` `None`.
+
 Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757 in
 `Reporters.json`. Upstream answers 756, which is no reporter, with count 0; the tasks
 refuse it before the call with core's `UnknownCode` (conventions §5), naming the packaged
@@ -99,13 +137,16 @@ call, without `search` and without a cap of their own: the largest list has 41 r
 unknown `customs_code` or `mot_code` names the closest codes with their text (core's
 `closest` by code and by text, else the most similar code).
 
-`MCP_CAPS` in `tasks.py` gives three list tasks result caps of their own (ADR-0016):
-400 rows or 100 KB, so `list_reporters` (255 rows, 69 KB) and `list_partners` (310,
-83 KB) reach an agent whole, past Switzerland and the USA, where the default cap of 200
-rows cut them in upstream's alphabetical order. A classification does not fit (8,262 HS
-codes); the cap's note tells the agent to search. All three take `search`, a
-case-insensitive substring of the code, the ISO alpha-3 (reporters, partners) or the
-text.
+`MCP_CAPS` in `tasks.py` gives four tasks result caps of their own (ADR-0016), each 400
+rows or 100 KB: three list tasks and `get_world_share`. `list_reporters` (255 rows,
+69 KB) and `list_partners` (310, 83 KB) reach an agent whole, past Switzerland and the
+USA, where the default cap of 200 rows cut them in upstream's alphabetical order. A
+classification does not fit (8,262 HS codes); the cap's note tells the agent to search.
+Those three take `search`, a case-insensitive substring of the code, the ISO alpha-3
+(reporters, partners) or the text. One period of `get_world_share` for every
+reporter (214 rows, 88.5 KB for 2023) reaches an agent whole, where the default cap cut
+it at 157 rows and dropped the USA; its note says to narrow by `reporter_code` or
+`period`.
 
 When recording fixtures, budget the calls. The package client retries 429, 5xx and
 transport errors up to four attempts, each a keyed call (`clCode=H6` on `data/v1/get`
@@ -138,6 +179,33 @@ What the recorded answers established (2026-10-23). The fixtures are named in
   `comtradeapicall` sends; answers `H6` like `HS`.
 - `data/v1/getLiveUpdate`: 50 rows but `count` 174; no `publishedDate` field.
 
+The two Tools operations (`docs/upstream/apidocs/comtradeTools.json`, both marked
+"EXPERIMENTAL - USE SPARINGLY") are `get_trade_balance` and `get_bilateral_data`, recorded
+on 2026-10-28 under `tests/fixtures/get_trade_balance/` and `get_bilateral_data/`, Switzerland
+and `TOTAL`. Both answered the package's key; the spec's 403 for a free-tier key not on
+getTradeBalance's allow-list ("User not allowed", `AuthError` by core's mapping) did not
+occur, and no other 403 was seen. `countOnly`, not in the spec, counts nothing:
+getTradeBalance answers `count` 0 and a placeholder for a query of 48 rows, getBilateralData
+ignores it; so the tasks count nothing first and require `reporter_code` or `partner_code`,
+and `cmd_code`. getTradeBalance without `breakdownMode` answers every breakdown (48 rows
+with the World in 2023), `classic` the total row; it refuses a 13th period. getBilateralData
+takes 13 periods and one `flowCode` (only `X` was recorded, `M` is the spec's other value;
+`M,X`: HTTP 400, its detail's message spelt `ErrorMessage`, which `classify` reads), fills
+no description with `includeDesc`, and answers in classic mode (`customsCode` C00,
+`motCode` 0). Its mirror columns are, per the Help Center, the partners' reported imports
+for a reporter's exports, and "depend on the availability of other reporters rather than
+no-trade": for Switzerland's 2023 exports Afghanistan's mirror is 0, and it is inferred,
+not stated, to be one of the two partners the note counts with a data gap (DPRK alone: 1,
+the USA alone: none). `primaryValueDisc` equals (mirror − value) / value in every recorded
+row and `mirror2*` is empty or 0; upstream states neither meaning. Its envelope's
+`timestampRequested` is UTC per the spec and its `note` counts the partners with a data gap
+and their share of world trade, naming none, in wording that varies; the task returns both
+with the rows as one `BilateralData` (`note`, `timestamp_requested`, `data`), not a list,
+so the note that qualifies the mirror values reaches the agent (Johannes, 2026-10-28);
+`get_mirror_flows`' `MirrorFlows` has the same shape. Over MCP, core's result cap cuts
+only a top-level list: an answer above 64 KB (about 40 rows of `BilateralData`, 60 of
+`MirrorFlows`) arrives as a text preview.
+
 The task-shaped slices (wave 2: `get_bilateral_flows`, `get_commodity_series`,
 `get_world_trade`, `get_top_partners`) call `data/v1/get` through `api.get` with
 `params.SLICE_PINS`: `typeCode` C, `breakdownMode` classic, `partner2Code` 0, `motCode` 0,
@@ -157,6 +225,22 @@ periods 12 per call, in the order given, and sorts the joined rows by period.
 partner, and ranks the rest by `primary_value` here; `get_world_trade` sorts the same way,
 so a capped MCP result (104 of 167 rows for HS 27 imports 2023) keeps the largest.
 
+The mirror slice, `get_mirror_flows`, calls `tools/v1/getBilateralData` through
+`api.get_bilateral_data` instead, with `params.validate_mirror_flows`: `validate_slice`'s
+resolution and checks, one flow of `TOOLS_FLOW_CODES`, at most 12 periods (the slices'
+bound, though upstream answered 13), `typeCode` C and no `includeDesc`, which filled no
+description. It is bounded by product codes × periods like `get_bilateral_flows`, keeps
+its rows in upstream's order (period order in both recordings: one call, nothing to
+join, unlike the series), projects them into `MirrorFlowRecord` (the identity fields,
+the reported figures and their mirrors, `primary_value_disc` and `mirror2_primary_value`
+as sent; the empty `mirror2*` quantities left out) and returns them with upstream's note
+as one `MirrorFlows`. Recorded on 2026-10-28 for Switzerland's
+chapter 27 exports to the USA (`ch_us_27_2022_2023_x.json`, `ch_us_27_202301_x.json`
+under `tests/fixtures/get_bilateral_data/`): chapter rows and monthly periods are
+answered, the note found no gap, and the reported values equal `data/v1/get`'s
+(`get/bilateral_ch_us_2022_2023.json`) while the USA's mirror is far smaller
+(`6444455.0` against `126191129.831` in 2023).
+
 ## Layout
 
 ```
@@ -170,15 +254,18 @@ src/xippios/comtrade/
   models.py        pydantic models mirroring upstream payloads (UpstreamModel)
   api/             endpoint wrappers, one module per upstream operation
   tasks.py         task functions; __all__ is what the adapters register, but BULK_TASKS,
-                   the Python-only ones; MCP_CAPS the caps of three list tasks
+                   the Python-only ones; MCP_CAPS the result caps of three list tasks
+                   and get_world_share
   mcp.py           xippios-comtrade-mcp entry point
   http.py          FastAPI router
   params.py        packaged lists and tables: PACKAGED_LISTS, PACKAGED_TABLES,
                    CL_CODES_FROM_SPEC, classification_files(); checks run before a
                    call: validate_get(), validate_datasets(),
-                   validate_classification_file(); for the slices validate_slice()
+                   validate_classification_file(), for the Tools validate_trade_balance()
+                   and validate_bilateral_data() (TOOLS_FLOW_CODES); for the slices
+                   validate_slice()
                    (areas by code or ISO alpha-3, periods of one format), SLICE_PINS
-                   and MAX_SERIES_PERIODS
+                   and MAX_SERIES_PERIODS; for the mirror slice validate_mirror_flows()
   enums.py         StrEnums generated from the packaged lists; never edited by hand
   reference/       packaged lists and tables, reference/<name>.json, read with
                    PackagedList.load, plus README with provenance
@@ -221,6 +308,7 @@ Only its `uv run pytest -m live --tb=short` step sees the key, from the org secr
 
 ## UN Comtrade specifics
 
-The live run costs ten keyed calls and six keyless requests (`tests/test_live.py`, whose
-docstring counts them): the reachability probe sends no key, and the list tasks fetch the
-public reference files without it. A Basic Individual key allows 500 calls a day.
+The live run costs thirteen keyed calls and eight keyless requests (`tests/test_live.py`,
+whose docstring counts them): the reachability probe sends no key, the list tasks fetch
+the public reference files without it, and the two public operations send none. A Basic
+Individual key allows 500 calls a day.
