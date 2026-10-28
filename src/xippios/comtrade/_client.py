@@ -1,18 +1,19 @@
 """The configured ``xippios.core`` client for UN Comtrade.
 
-One ``AsyncClient`` carries the subscription key for the data API: task functions share
-its rate limiter, and the same instance serves the sync facades and the MCP server. The
-public reference files go through ``reference_client``, which never sends the key and
-keeps every file it fetched for the life of the process (``REFERENCE_CACHE``).
+One ``AsyncClient`` serves every call. It carries the subscription key for the data API;
+the public reference files go through it with ``auth=None`` per request, so they never
+send the key, and its cache keeps those files, and nothing else, for the life of the
+process (``cache_filter``). Task functions share its rate limiter, and the same instance
+serves the sync facades and the MCP server.
 
 Limits of a Basic Individual (free) key, ``docs/upstream/help/subscriptions.md``: 1 call
 per second, 500 calls per day, 100,000 records per call. Upstream's own headers agree
 (``x-ratelimit-limit: 1`` and ``x-ratelimit-operation-limit: 60`` on the recorded backend
 answers). The bucket below spaces calls 1.5 s apart (``RATE_LIMIT``). The daily quota is
-not enforced here; ``countOnly`` calls count against it.
+kept by ``policy``: once upstream answers 403 "Quota will be replenished in HH:MM:SS",
+no call is sent until then; ``countOnly`` calls count against it.
 """
 
-import dataclasses
 import re
 
 import httpx
@@ -22,6 +23,7 @@ from xippios.core import (
     HeaderKeyAuth,
     InvalidRequestError,
     MemoryCache,
+    QuotaPolicy,
     RateLimit,
     RateLimitError,
     Timeouts,
@@ -33,6 +35,8 @@ from xippios.comtrade._version import __version__
 SOURCE = "comtrade"
 BASE_URL = "https://comtradeapi.un.org"
 API_KEY_ENV = "COMTRADE_API_KEY"  # pragma: allowlist secret (a variable name, not a key)
+# Paced within the limit upstream documents (ADR-0010 decision 1): 1 call per second, 60
+# per minute, documented; 40 per minute chosen after the recorded 429s at 1.0 s (D41).
 RATE_LIMIT = RateLimit(per_minute=40, burst=1)
 """One call every 1.5 s, no burst: upstream's 1 call per second with a margin.
 
@@ -114,42 +118,78 @@ def classify(response: httpx.Response) -> XippiosError | None:
     return None
 
 
-config = ClientConfig(
+def _quota_spent(response: httpx.Response) -> float | None:
+    """Seconds until the daily quota is back, from a 403 that names it; else ``None``.
+
+    The ``spent`` hook of ``policy``. Only a 403 is read, so a reference file of 2 MB is
+    never decoded for it; the time comes from the text ``classify`` reads as well.
+    """
+    if response.status_code != 403:
+        return None
+    text = response.text
+    if "quota" not in text.lower():
+        return None
+    return _quota_reset(text)
+
+
+policy = QuotaPolicy(
+    limit_header=None,
+    remaining_header=None,
+    window=86_400.0,
+    spent=_quota_spent,
     source=SOURCE,
-    version=__version__,
-    base_url=BASE_URL,
-    timeouts=TIMEOUTS,
-    rate_limit=RATE_LIMIT,
-    classify=classify,
 )
-# The key is read from the environment on the first request, never at import.
-auth = HeaderKeyAuth("Ocp-Apim-Subscription-Key", API_KEY_ENV, source=SOURCE)
-client = AsyncClient(config, auth=auth)
+"""The daily quota of 500 calls (ADR-0010, ADR-0015): no call into a quota known to be spent.
 
-REFERENCE_CACHE = MemoryCache(ttl=None, maxsize=64)
-"""Core's GET cache for ``reference_client``: a file is fetched once per process.
-
-The files change rarely (``ListofReferences.json`` was last modified 2025-11-12 when the
-snapshot was taken) and the classification files are large (``HS.json`` is about 2 MB,
-8,262 codes), so ``list_commodities`` keeps what it fetched. No TTL; 64 entries hold every
-file ``ListofReferences.json`` lists. Only HTTP 200 answers are kept.
+Upstream's ``x-ratelimit-*`` headers describe the per-second pace, not the daily quota, so
+neither is read. API Management's 403 "Out of call volume quota. Quota will be replenished
+in HH:MM:SS." marks the quota spent for that long (``_quota_spent``), cut to the window of
+a day; a 429 marks it spent until its ``Retry-After``, upstream's ``1`` for the pace
+refusal. A wait within ``pause_cap`` (30 s) is waited out, a longer one is refused with
+``RateLimitError`` before anything is sent. ``classify`` still maps the 403 itself.
 """
 
-# The reference files under files/v1/app/reference/ are public: the Help Center links
-# them without a key and scripts/refresh_upstream.py fetches them without one. They are
-# fetched keyless so a reference refresh never sends the key or spends quota.
-reference_client = AsyncClient(dataclasses.replace(config, cache=REFERENCE_CACHE))
+_REFERENCE_FILES = "/files/v1/app/reference/"
+
+
+def _reference_file(request: httpx.Request) -> bool:
+    """The cache's filter: a request for a public reference file, and no other."""
+    return request.url.path.startswith(_REFERENCE_FILES)
+
+
+config = policy.install(
+    ClientConfig(
+        source=SOURCE,
+        version=__version__,
+        base_url=BASE_URL,
+        timeouts=TIMEOUTS,
+        rate_limit=RATE_LIMIT,
+        # The files change rarely (ListofReferences.json was last modified 2025-11-12 when
+        # the snapshot was taken) and the classification files are large (HS.json is about
+        # 2 MB, 8,262 codes), so a file is fetched once per process: no TTL, 64 entries for
+        # every file ListofReferences.json lists. Only HTTP 200 answers are kept.
+        cache=MemoryCache(ttl=None, maxsize=64),
+        cache_filter=_reference_file,
+        classify=classify,
+    )
+)
+# The key is read from the environment on the first request, never at import. The
+# reference files under files/v1/app/reference/ are public: the Help Center links them
+# without a key and scripts/refresh_upstream.py fetches them without one. api.reference
+# passes auth=None, so a reference refresh never sends the key or spends quota; it shares
+# RATE_LIMIT's pace, and once the quota is spent policy holds it back too.
+auth = HeaderKeyAuth("Ocp-Apim-Subscription-Key", API_KEY_ENV, source=SOURCE)
+client = AsyncClient(config, auth=auth)
 
 __all__ = [
     "API_KEY_ENV",
     "BASE_URL",
     "RATE_LIMIT",
-    "REFERENCE_CACHE",
     "SOURCE",
     "TIMEOUTS",
     "auth",
     "classify",
     "client",
     "config",
-    "reference_client",
+    "policy",
 ]
