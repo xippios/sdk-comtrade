@@ -3,14 +3,16 @@
 Small, stable upstream lists and tables ship inside the package under ``reference/`` so
 lookups and checks need no network call; ``scripts/refresh_reference.py`` writes them and
 the matching ``StrEnum`` classes in ``enums.py``, never by hand. ``reference/README.md``
-carries the provenance of every file. Value lists are ``<name>.json``
-(``packaged_values``); tables are ``<name>.csv`` with upstream's columns
-(``packaged_table``), their origin and fetch date in ``tables.json``. ``validate_get``
-checks the arguments of a ``data/v1/get`` call against them, and the free-form ones by
-shape, before anything is sent (ADR-0007); ``validate_datasets`` does the same for
-``data/v1/getDa`` and ``data/v1/getMetadata``; ``validate_slice`` resolves and checks the
-arguments of the task-shaped slices (an area as a code or ISO alpha-3, periods of one
-format) into a ``data/v1/get`` request with ``SLICE_PINS``.
+carries the provenance of every file. Each is a packaged-list file,
+``reference/<name>.json``, read with ``xippios.core.PackagedList.load(PACKAGE, name)``
+(ADR-0022): a value list's records carry one field named by the parameter
+(``PACKAGED_LISTS``), a table's records upstream's columns, parsed into its row model
+(``PACKAGED_TABLES``). ``validate_get`` checks the arguments of a ``data/v1/get`` call
+against them, and the free-form ones by shape, before anything is sent (ADR-0007);
+``validate_datasets`` does the same for ``data/v1/getDa`` and ``data/v1/getMetadata``;
+``validate_slice`` resolves and checks the arguments of the task-shaped slices (an area as
+a code or ISO alpha-3, periods of one format) into a ``data/v1/get`` request with
+``SLICE_PINS``.
 """
 
 import difflib
@@ -18,26 +20,21 @@ import functools
 import re
 from collections.abc import Mapping, Sequence
 from datetime import date
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
-from pydantic import Field
-from xippios.core import InvalidRequestError, UpstreamModel, load_json, load_table
+from xippios.core import InvalidRequestError, PackagedList, UpstreamModel
 
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.errors import MAX_PERIODS
 from xippios.comtrade.models import CountryAreaCodeIso, PartnerArea, Reporter, TradeDataItem
 
 __all__ = [
+    "CL_CODES_FROM_SPEC",
+    "PACKAGE",
     "PACKAGED_LISTS",
     "PACKAGED_TABLES",
     "SLICE_PINS",
-    "ListException",
-    "PackagedTable",
-    "PackagedValues",
     "classification_files",
-    "packaged_table",
-    "packaged_table_info",
-    "packaged_values",
     "validate_classification_file",
     "validate_datasets",
     "validate_get",
@@ -66,103 +63,29 @@ PACKAGED_TABLES: Mapping[str, type[UpstreamModel]] = {
     "country_area_code_iso": CountryAreaCodeIso,
     "TradeDataItems": TradeDataItem,
 }
-"""Tables that ship as ``reference/<name>.csv``, named after the upstream file, and their row
-model; keep in step with the refresh script."""
+"""Tables that ship as ``reference/<name>.json``, named after the upstream file, and their
+row model; keep in step with the refresh script."""
 
-TABLES_INDEX = "tables.json"
+CL_CODES_FROM_SPEC: tuple[str, ...] = ("BE", "TM")
+"""The ``clCode`` values the packaged list takes from the spec, not from ``ListofReferences.json``.
 
-
-class ListException(UpstreamModel):
-    """A value where a packaged list departs from its reference file, with the evidence.
-
-    Attributes:
-        value: The value.
-        decision: ``"added"``, ``"left out"``, ``"removed"`` or ``"kept"``.
-        evidence: Where the value is documented and what upstream answered to it.
-    """
-
-    value: str
-    decision: str
-    evidence: str
+The spec's ``clCode`` enum lists them and upstream accepted both on ``data/v1/get``
+(``count_cl_code_be.json``, ``count_cl_code_tm.json``), so ``clCode.json`` adds them, as
+its ``note`` records; upstream serves no classification file for them (``BE.json`` and
+``TM.json`` answered HTTP 404 ``BlobNotFound`` on 2026-10-23,
+``tests/fixtures/reference/be_absent.json``).
+"""
 
 
-class PackagedValues(UpstreamModel):
-    """One packaged value list: ``reference/<name>.json``.
-
-    Attributes:
-        param: The upstream parameter the values belong to.
-        fetched: Day the list was fetched (for lists read from the spec, the day the
-            snapshot was fetched).
-        origin: The reference file or snapshot entry the values come from.
-        note: What the values are and are not, where the list needs saying so.
-        exceptions: Values the refresh script reconciled with the spec, with evidence.
-        values: The values, as upstream lists them, reconciled values last.
-    """
-
-    param: str
-    fetched: date
-    origin: str | None = None
-    note: str | None = None
-    exceptions: list[ListException] = Field(default_factory=list)
-    values: list[str]
-
-
-class PackagedTable(UpstreamModel):
-    """Provenance of one packaged table: an entry of ``reference/tables.json``.
-
-    Attributes:
-        file: The CSV file under ``reference/``, e.g. ``"Reporters.csv"``.
-        origin: The upstream file it was written from.
-        fetched: Day it was fetched.
-        rows: Rows it holds.
-    """
-
-    file: str
-    origin: str
-    fetched: date
-    rows: int
-
-
-def packaged_values(name: str) -> PackagedValues | None:
-    """The packaged list ``name``, or ``None`` when it is not packaged."""
-    if name not in PACKAGED_LISTS:
-        return None
-    return PackagedValues.model_validate(load_json(PACKAGE, f"{name}.json"))
-
-
-def packaged_table_info(name: str) -> PackagedTable | None:
-    """Provenance of the packaged table ``name``, or ``None`` when it is not packaged."""
-    if name not in PACKAGED_TABLES:
-        return None
-    return PackagedTable.model_validate(load_json(PACKAGE, TABLES_INDEX)[name])
-
-
-@functools.cache
-def _table(name: str) -> tuple[UpstreamModel, ...]:
-    return tuple(load_table(PACKAGE, f"{name}.csv", PACKAGED_TABLES[name]))
-
-
-def packaged_table[M: UpstreamModel](name: str, model: type[M]) -> list[M]:
-    """Rows of the packaged table ``name`` (``reference/<name>.csv``) as ``model`` instances.
-
-    Args:
-        name: A key of ``PACKAGED_TABLES``, e.g. ``"Reporters"``.
-        model: Its row model, e.g. ``Reporter``.
-
-    Raises:
-        KeyError: When ``name`` is not packaged or ``model`` is not its row model.
-    """
-    if PACKAGED_TABLES.get(name) is not model:
-        raise KeyError(f"{name!r} is not a packaged table of {model.__name__} rows")
-    return list(cast(tuple[M, ...], _table(name)))
+def _rows[M: UpstreamModel](name: str, model: type[M]) -> list[M]:
+    """The packaged table ``name`` parsed into ``model``, its row model in ``PACKAGED_TABLES``."""
+    return PackagedList.load(PACKAGE, name).parse(model, source=SOURCE)
 
 
 @functools.cache
 def _allowed(name: str) -> tuple[str, ...]:
-    packaged = packaged_values(name)
-    if packaged is None:  # pragma: no cover - PACKAGED_LISTS and the files move together
-        raise KeyError(name)
-    return tuple(packaged.values)
+    """The values of the packaged list ``name``, in upstream order."""
+    return tuple(str(record[name]) for record in PackagedList.load(PACKAGE, name).records)
 
 
 _AREA = re.compile(r"\d+")
@@ -251,11 +174,11 @@ def _areas(kind: str) -> dict[str, tuple[str, str]]:
     if kind == "reporter":
         return {
             str(row.reporter_code): (row.reporter_desc.strip(), row.reporter_code_iso_alpha3)
-            for row in packaged_table("Reporters", Reporter)
+            for row in _rows("Reporters", Reporter)
         }
     return {
         str(row.partner_code): (row.partner_desc.strip(), row.partner_code_iso_alpha3)
-        for row in packaged_table("partnerAreas", PartnerArea)
+        for row in _rows("partnerAreas", PartnerArea)
     }
 
 
@@ -263,7 +186,7 @@ def _areas(kind: str) -> dict[str, tuple[str, str]]:
 def _iso3() -> dict[str, str]:
     return {
         str(row.country_area_code): row.iso3
-        for row in packaged_table("country_area_code_iso", CountryAreaCodeIso)
+        for row in _rows("country_area_code_iso", CountryAreaCodeIso)
     }
 
 
@@ -470,15 +393,10 @@ def classification_files() -> tuple[str, ...]:
     """The ``clCode`` values with a classification file ``<clCode>.json`` upstream.
 
     The ``cmd:<clCode>`` categories of ``ListofReferences.json``: the packaged ``clCode``
-    list without the values added from the spec (``BE`` and ``TM``), for which upstream
-    serves no file (``BE.json`` and ``TM.json`` answered HTTP 404 ``BlobNotFound`` on
-    2026-10-23, ``tests/fixtures/reference/be_absent.json``).
+    list without the values added from the spec, ``CL_CODES_FROM_SPEC``, for which
+    upstream serves no file.
     """
-    packaged = packaged_values("clCode")
-    if packaged is None:  # pragma: no cover - clCode is always packaged
-        raise KeyError("clCode")
-    added = {item.value for item in packaged.exceptions if item.decision == "added"}
-    return tuple(value for value in packaged.values if value not in added)
+    return tuple(value for value in _allowed("clCode") if value not in CL_CODES_FROM_SPEC)
 
 
 def validate_classification_file(cl_code: str) -> dict[str, Any]:
@@ -553,7 +471,7 @@ def _area_rows(kind: str) -> tuple[_Area, ...]:
                 iso3=row.reporter_code_iso_alpha3.strip(),
                 in_use=row.entry_expired_date is None,
             )
-            for row in packaged_table("Reporters", Reporter)
+            for row in _rows("Reporters", Reporter)
         )
     return tuple(
         _Area(
@@ -562,7 +480,7 @@ def _area_rows(kind: str) -> tuple[_Area, ...]:
             iso3=row.partner_code_iso_alpha3.strip(),
             in_use=row.entry_expired_date is None,
         )
-        for row in packaged_table("partnerAreas", PartnerArea)
+        for row in _rows("partnerAreas", PartnerArea)
     )
 
 
