@@ -10,13 +10,15 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
 
 ### Added
 
-- The upstream snapshot refreshed on 2026-10-28 (`docs/upstream/`), with six more Help
+- The upstream snapshot refreshed on 2026-10-28 (`docs/upstream/`), with eight more Help
   Center articles: `un-comtrade-tools` (the Trade Balance and Bilateral Data tools),
   `developer-tools`, `un-comtrade-data-pipeline` (releases and revisions),
   `bilateral-asymmetries`,
-  `how-to-retrieve-data-for-world-exports-to-a-country-in-un-comtrade` and
-  `how-should-i-interpret-and-use-quantity-data-in-un-comtrade`. The five ApiDocs product
-  files, the ten earlier articles and the two reference files are unchanged.
+  `how-to-retrieve-data-for-world-exports-to-a-country-in-un-comtrade`,
+  `how-should-i-interpret-and-use-quantity-data-in-un-comtrade`, and the two that state
+  the data's terms, `policy-on-comtrade-data-use` and `read-me-first-disclaimer`. The
+  five ApiDocs product files, the ten earlier articles and the two reference files are
+  unchanged.
 - `uv run scripts/refresh_upstream.py --check` fetches everything and compares it with
   the snapshot, writing nothing; exit 1 names the files that differ.
 
@@ -46,7 +48,9 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   `params.CL_CODES_FROM_SPEC` names the `clCode` values without a classification file.
 - `docs/upstream/FETCHED.md` takes the form of conventions §3: `Fetched` is the UTC time
   of the run with `Z`; an Attribution section quotes the Help Center's footer line,
-  `© 2026 UN Comtrade Help Center`, read from https://uncomtrade.org/; each row records
+  `© 2026 UN Comtrade Help Center`, read from https://uncomtrade.org/, and the data's
+  copyright and licence-agreement lines as the Policy on Comtrade Data Use and Read Me
+  First (Disclaimer) print them; each row records
   the HTTP status, size, sha256, ETag and Last-Modified (none of the four for a body
   that changes on every request, as four articles' do) and a note. The capture script
   stops before writing when a page states a copyright line, licence or terms of use it
