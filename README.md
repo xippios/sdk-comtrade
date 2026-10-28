@@ -59,9 +59,9 @@ list_commodities("HS", search="coffee").data  # from 8,262 HS codes, fetched key
 ```
 
 Four task-shaped slices on `data/v1/get` answer the common questions in one call each
-(the series in one call per 12 periods), at the total of every breakdown, one row per reporter × partner ×
-product code × period. Areas are UN Comtrade's codes or ISO alpha-3 codes; `YYYY` periods
-ask for annual data, `YYYYMM` for monthly:
+(the series in one call per 12 periods), at the total of every breakdown, one row per
+reporter × partner × product code × period. Areas are UN Comtrade's codes or ISO alpha-3
+codes; `YYYY` periods ask for annual data, `YYYYMM` for monthly:
 
 ```python
 from xippios.comtrade import (
@@ -179,8 +179,8 @@ instead of stdio.
 | `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
 
 The other twelve came with 0.1.0, the first release; `get_trade_balance`,
-`get_bilateral_data` and `get_mirror_flows` are not released yet. Alpha: the public surface may change
-in a minor version before 1.0; `CHANGELOG.md` lists every change.
+`get_bilateral_data` and `get_mirror_flows` are not released yet. Alpha: the public
+surface may change in a minor version before 1.0; `CHANGELOG.md` lists every change.
 
 ## Upstream terms and attribution
 
