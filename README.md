@@ -43,21 +43,31 @@ upstream's codes, several of them comma-separated as upstream takes them (`"757,
 Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757.
 Every argument is checked before the call: coded ones (`type_code`, `cl_code`,
 `flow_code`, `customs_code`, `mot_code`, `aggregate_by`, `breakdown_mode`) against
-the lists packaged from upstream's reference files and spec (`xippios.comtrade.enums`),
+the lists packaged from upstream's reference files and spec (`xippios.comtrade.enums`;
+`list_codes` gives each value with upstream's words for it),
 `reporter_code` against the packaged copy of upstream's `Reporters.json`
 (`reference/Reporters.json`) and `partner_code` and `partner2_code` against that of
 `partnerAreas.json`, the others by shape. An unknown area, customs or transport code
 raises `UnknownCode`, an `InvalidRequestError` naming the packaged list, its fetch date
-and the closest code (`756` names `757`, Switzerland); any other mistake raises
-`InvalidRequestError` naming the closest valid value.
+and the closest code (`756` names `757`, Switzerland; `C16` names `C15`, Relief
+consignments); any other mistake raises `InvalidRequestError` naming the closest valid
+value.
 
 ```python
-from xippios.comtrade import list_commodities, list_partners, list_reporters
+from xippios.comtrade import (
+    list_classifications,
+    list_codes,
+    list_commodities,
+    list_partners,
+    list_reporters,
+)
 
 list_reporters().data  # 255 reporters, packaged with this version: no call
 list_reporters(search="switz").data  # code, ISO alpha-3 or name, any case: 757
 list_partners().data  # 310 partner areas, 0 World among them
 list_commodities("HS", search="coffee").data  # from 8,262 HS codes, fetched keyless once
+list_codes("motCode").data[3]  # MotCodeValue(mot_code='2100', text='Sea'): packaged
+list_classifications("cmd:H6").data[0].variable  # 'Product [HS 2022]': upstream's index
 ```
 
 Four task-shaped slices on `data/v1/get` answer the common questions in one call each
@@ -194,11 +204,13 @@ HTTP instead of stdio.
 | `files/v1/app/reference/Reporters.json`, packaged | `list_reporters(search=None)` | `comtrade_list_reporters` | alpha |
 | `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(search=None)` | `comtrade_list_partners` | alpha |
 | `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
+| `files/v1/app/reference/` code lists and the spec's enums, packaged | `list_codes(param)` | `comtrade_list_codes` | alpha |
+| `files/v1/app/reference/ListofReferences.json`, packaged | `list_classifications(category=None)` | `comtrade_list_classifications` | alpha |
 
 Every task above came with 0.1.0, the first release, but `get_trade_balance`,
-`get_bilateral_data`, `get_mirror_flows`, `get_comtrade_releases` and `get_world_share`,
-which are unreleased. Alpha: the public surface may change in a minor version before 1.0;
-`CHANGELOG.md` lists every change.
+`get_bilateral_data`, `get_mirror_flows`, `get_comtrade_releases`, `get_world_share`,
+`list_codes` and `list_classifications`, which are unreleased. Alpha: the public surface
+may change in a minor version before 1.0; `CHANGELOG.md` lists every change.
 
 ## Upstream terms and attribution
 

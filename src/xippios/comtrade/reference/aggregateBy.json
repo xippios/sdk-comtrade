@@ -1,8 +1,8 @@
 {
   "param": "aggregateBy",
   "endpoint": "files/v1/app/apim/comtrade.json",
-  "fetched": "2026-10-23",
-  "note": "Read from docs/upstream/apidocs/comtrade.json, the snapshot of files/v1/app/apim/comtrade.json fetched 2026-10-23: operation get, the names the aggregateBy description lists.",
+  "fetched": "2026-10-28T14:38:34Z",
+  "note": "Read from docs/upstream/apidocs/comtrade.json, the snapshot of files/v1/app/apim/comtrade.json fetched 2026-10-28: operation get, the names the aggregateBy description lists, without wording.",
   "records": [
     {
       "aggregateBy": "cmdCode"

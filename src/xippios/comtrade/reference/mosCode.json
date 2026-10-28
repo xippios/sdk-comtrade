@@ -1,23 +1,28 @@
 {
   "param": "mosCode",
   "endpoint": "files/v1/app/reference/ModeOfSupply.json",
-  "fetched": "2026-10-23",
-  "note": "The ids of ModeOfSupply.json, not proven parameter values: data/v1/get, which takes mosCode though the spec does not list it, refused 'Mode 1' (HTTP 400, tests/fixtures/get/count_services_eb10_mos_code_mode_1.json) and accepted '0' and '1' (count_services_eb10_mos_code_0.json, count_services_eb10_mos_code_1.json). mosCode is not a parameter of the tasks; trade rows carry it as mos_code.",
+  "fetched": "2026-10-28T22:02:07Z",
+  "note": "The ids of ModeOfSupply.json with their text, not proven parameter values: data/v1/get, which takes mosCode though the spec does not list it, refused 'Mode 1' (HTTP 400, tests/fixtures/get/count_services_eb10_mos_code_mode_1.json) and accepted '0' and '1' (count_services_eb10_mos_code_0.json, count_services_eb10_mos_code_1.json). mosCode is not a parameter of the tasks; trade rows carry it as mos_code.",
   "records": [
     {
-      "mosCode": "0"
+      "mosCode": "0",
+      "text": "All Modes of Supply"
     },
     {
-      "mosCode": "Mode 1"
+      "mosCode": "Mode 1",
+      "text": "Cross-border"
     },
     {
-      "mosCode": "Mode 2"
+      "mosCode": "Mode 2",
+      "text": "Consumption abroad"
     },
     {
-      "mosCode": "Mode 3"
+      "mosCode": "Mode 3",
+      "text": "Commercial presence"
     },
     {
-      "mosCode": "Mode 4"
+      "mosCode": "Mode 4",
+      "text": "Presence of natural persons"
     }
   ]
 }

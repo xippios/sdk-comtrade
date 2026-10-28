@@ -1,62 +1,80 @@
 {
   "param": "motCode",
   "endpoint": "files/v1/app/reference/ModeOfTransportCodes.json",
-  "fetched": "2026-10-23",
-  "note": "The ids of ModeOfTransportCodes.json.",
+  "fetched": "2026-10-28T22:02:05Z",
+  "note": "The ids of ModeOfTransportCodes.json with their text.",
   "records": [
     {
-      "motCode": "0"
+      "motCode": "0",
+      "text": "TOTAL modes of transport"
     },
     {
-      "motCode": "1000"
+      "motCode": "1000",
+      "text": "Air"
     },
     {
-      "motCode": "2000"
+      "motCode": "2000",
+      "text": "Water"
     },
     {
-      "motCode": "2100"
+      "motCode": "2100",
+      "text": "Sea"
     },
     {
-      "motCode": "2200"
+      "motCode": "2200",
+      "text": "Inland waterway"
     },
     {
-      "motCode": "2900"
+      "motCode": "2900",
+      "text": "Water, not else classified"
     },
     {
-      "motCode": "3000"
+      "motCode": "3000",
+      "text": "Land"
     },
     {
-      "motCode": "3100"
+      "motCode": "3100",
+      "text": "Railway"
     },
     {
-      "motCode": "3200"
+      "motCode": "3200",
+      "text": "Road"
     },
     {
-      "motCode": "3900"
+      "motCode": "3900",
+      "text": "Land, not else classified"
     },
     {
-      "motCode": "9000"
+      "motCode": "9000",
+      "text": "Not elsewhere classified"
     },
     {
-      "motCode": "9100"
+      "motCode": "9100",
+      "text": "Pipelines and cables"
     },
     {
-      "motCode": "9110"
+      "motCode": "9110",
+      "text": "Pipelines"
     },
     {
-      "motCode": "9120"
+      "motCode": "9120",
+      "text": "Cables"
     },
     {
-      "motCode": "9190"
+      "motCode": "9190",
+      "text": "Pipelines and cables, not else classified"
     },
     {
-      "motCode": "9200"
+      "motCode": "9200",
+      "text": "Postal consignments, mail or courier shipment"
     },
     {
-      "motCode": "9300"
+      "motCode": "9300",
+      "text": "Self propelled goods"
     },
     {
-      "motCode": "9900"
+      "motCode": "9900",
+      "text": "Other"
     }
   ]
 }

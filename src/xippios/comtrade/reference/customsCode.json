@@ -1,59 +1,76 @@
 {
   "param": "customsCode",
   "endpoint": "files/v1/app/reference/CustomsCodes.json",
-  "fetched": "2026-10-23",
-  "note": "The ids of CustomsCodes.json.",
+  "fetched": "2026-10-28T22:02:04Z",
+  "note": "The ids of CustomsCodes.json with their text.",
   "records": [
     {
-      "customsCode": "C00"
+      "customsCode": "C00",
+      "text": "TOTAL customs procedure codes"
     },
     {
-      "customsCode": "C01"
+      "customsCode": "C01",
+      "text": "Clearance for home use"
     },
     {
-      "customsCode": "C02"
+      "customsCode": "C02",
+      "text": "Reimportation in the same state"
     },
     {
-      "customsCode": "C03"
+      "customsCode": "C03",
+      "text": "Outright exportation"
     },
     {
-      "customsCode": "C04"
+      "customsCode": "C04",
+      "text": "Customs warehouses"
     },
     {
-      "customsCode": "C05"
+      "customsCode": "C05",
+      "text": "Free zone"
     },
     {
-      "customsCode": "C06"
+      "customsCode": "C06",
+      "text": "Inward processing"
     },
     {
-      "customsCode": "C07"
+      "customsCode": "C07",
+      "text": "Outward processing"
     },
     {
-      "customsCode": "C08"
+      "customsCode": "C08",
+      "text": "Drawback"
     },
     {
-      "customsCode": "C09"
+      "customsCode": "C09",
+      "text": "Processing of goods for home use"
     },
     {
-      "customsCode": "C10"
+      "customsCode": "C10",
+      "text": "Carriage of goods coastwise"
     },
     {
-      "customsCode": "C11"
+      "customsCode": "C11",
+      "text": "Customs offences"
     },
     {
-      "customsCode": "C12"
+      "customsCode": "C12",
+      "text": "Travellers"
     },
     {
-      "customsCode": "C13"
+      "customsCode": "C13",
+      "text": "Postal traffic"
     },
     {
-      "customsCode": "C14"
+      "customsCode": "C14",
+      "text": "Stores"
     },
     {
-      "customsCode": "C15"
+      "customsCode": "C15",
+      "text": "Relief consignments"
     },
     {
-      "customsCode": "C20"
+      "customsCode": "C20",
+      "text": "CPC N.E.S."
     }
   ]
 }

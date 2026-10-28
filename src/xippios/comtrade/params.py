@@ -5,7 +5,8 @@ lookups and checks need no network call; ``scripts/refresh_reference.py`` writes
 the matching ``StrEnum`` classes in ``enums.py``, never by hand. ``reference/README.md``
 carries the provenance of every file. Each is a packaged-list file,
 ``reference/<name>.json``, read with ``xippios.core.PackagedList.load(PACKAGE, name)``
-(ADR-0022): a value list's records carry one field named by the parameter
+(ADR-0022): a list's records carry the value under the parameter's name and the fields
+upstream words it in, under upstream's names, parsed into the list's model
 (``PACKAGED_LISTS``), a table's records upstream's columns, parsed into its row model
 (``PACKAGED_TABLES``). ``validate_get`` checks the arguments of a ``data/v1/get`` call
 against them, and the free-form ones by shape, before anything is sent (ADR-0007);
@@ -25,11 +26,28 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any, NamedTuple
 
-from xippios.core import InvalidRequestError, PackagedList, UnknownCode, UpstreamModel
+from xippios.core import InvalidRequestError, PackagedList, UnknownCode, UpstreamModel, closest
 
 from xippios.comtrade._client import SOURCE
 from xippios.comtrade.errors import MAX_PERIODS
-from xippios.comtrade.models import CountryAreaCodeIso, PartnerArea, Reporter, TradeDataItem
+from xippios.comtrade.models import (
+    AggregateByValue,
+    BreakdownModeValue,
+    ClCodeValue,
+    CodeValue,
+    CountryAreaCodeIso,
+    CustomsCodeValue,
+    FlowCodeValue,
+    FreqCodeValue,
+    MosCodeValue,
+    MotCodeValue,
+    PartnerArea,
+    QtyUnitCodeValue,
+    Reference,
+    Reporter,
+    TradeDataItem,
+    TypeCodeValue,
+)
 
 __all__ = [
     "CL_CODES_FROM_SPEC",
@@ -42,9 +60,11 @@ __all__ = [
     "classification_files",
     "validate_bilateral_data",
     "validate_classification_file",
+    "validate_code_list",
     "validate_datasets",
     "validate_get",
     "validate_mirror_flows",
+    "validate_reference_category",
     "validate_slice",
     "validate_trade_balance",
     "validate_world_share",
@@ -52,25 +72,27 @@ __all__ = [
 
 PACKAGE = "xippios.comtrade"
 
-PACKAGED_LISTS: tuple[str, ...] = (
-    "typeCode",
-    "freqCode",
-    "clCode",
-    "flowCode",
-    "customsCode",
-    "motCode",
-    "aggregateBy",
-    "breakdownMode",
-    "mosCode",
-    "qtyUnitCode",
-)
-"""Names of the lists that ship inside the package; keep in step with the refresh script."""
+PACKAGED_LISTS: Mapping[str, type[CodeValue]] = {
+    "typeCode": TypeCodeValue,
+    "freqCode": FreqCodeValue,
+    "clCode": ClCodeValue,
+    "flowCode": FlowCodeValue,
+    "customsCode": CustomsCodeValue,
+    "motCode": MotCodeValue,
+    "aggregateBy": AggregateByValue,
+    "breakdownMode": BreakdownModeValue,
+    "mosCode": MosCodeValue,
+    "qtyUnitCode": QtyUnitCodeValue,
+}
+"""Lists that ship as ``reference/<name>.json``, named after the upstream parameter, and the
+model of their records; keep in step with the refresh script."""
 
 PACKAGED_TABLES: Mapping[str, type[UpstreamModel]] = {
     "Reporters": Reporter,
     "partnerAreas": PartnerArea,
     "country_area_code_iso": CountryAreaCodeIso,
     "TradeDataItems": TradeDataItem,
+    "ListofReferences": Reference,
 }
 """Tables that ship as ``reference/<name>.json``, named after the upstream file, and their
 row model; keep in step with the refresh script."""
@@ -95,6 +117,13 @@ def _rows[M: UpstreamModel](name: str, model: type[M]) -> list[M]:
 def _allowed(name: str) -> tuple[str, ...]:
     """The values of the packaged list ``name``, in upstream order."""
     return tuple(str(record[name]) for record in PackagedList.load(PACKAGE, name).records)
+
+
+@functools.cache
+def _texts(name: str) -> dict[str, str]:
+    """The values of the packaged list ``name`` that carry upstream's ``text``, to their text."""
+    records = PackagedList.load(PACKAGE, name).records
+    return {str(record[name]): record["text"] for record in records if "text" in record}
 
 
 _AREA = re.compile(r"\d+")
@@ -161,6 +190,21 @@ _UNKNOWN_DIMENSION = (
 """``UnknownCode``'s reason for a member of a ``_DIMENSIONS`` list."""
 
 
+def _closest_texts(member: str, upstream: str) -> list[tuple[str, str]]:
+    """The codes of ``upstream`` close to ``member``, with upstream's text, best first.
+
+    Core's ``closest``, by code and then by text (``"air"`` finds ``1000`` Air); where it
+    finds none, the one most similar code, as for an unknown area (``"9"`` finds
+    ``9900``).
+    """
+    texts = _texts(upstream)
+    near = closest(member, texts)
+    if near:
+        return near
+    code = _closest(member, list(texts))
+    return [(code, texts[code])] if code else []
+
+
 def _check_list(
     argument: str,
     value: str | None,
@@ -178,19 +222,18 @@ def _check_list(
     for member in members:
         if (member.upper() if case_insensitive else member) in known:
             continue
-        closest = _closest(member, allowed)
         if upstream in _DIMENSIONS:
             raise UnknownCode(
                 argument,
                 member,
                 list_name=upstream,
                 fetched=PackagedList.load(PACKAGE, upstream).fetched,
-                hint=(f"Did you mean {closest!r}? " if closest else "")
-                + f"Valid values: {', '.join(allowed)}.",
-                reason=f"{_UNKNOWN_DIMENSION} reference/{upstream}.json lists every code.",
+                closest=_closest_texts(member, upstream),
+                reason=f"{_UNKNOWN_DIMENSION} list_codes({upstream!r}) lists every code.",
                 source=SOURCE,
             )
-        hint = f"; closest: {closest!r}" if closest else ""
+        near = _closest(member, allowed)
+        hint = f"; closest: {near!r}" if near else ""
         problems.append(
             f"{argument} {member!r} is not a UN Comtrade {upstream} value{hint}. "
             f"Valid values: {', '.join(allowed)}"
@@ -743,6 +786,51 @@ def validate_classification_file(cl_code: str) -> dict[str, Any]:
             source=SOURCE,
         )
     return {"cl_code": cl_code}
+
+
+def validate_code_list(param: str) -> dict[str, Any]:
+    """Check that ``param`` names a packaged list before it is read.
+
+    Returns:
+        ``{"param": param}``, the arguments under the task's parameter names.
+
+    Raises:
+        InvalidRequestError: Naming the closest list and every one the package carries.
+    """
+    if param not in PACKAGED_LISTS:
+        near = _closest(param, list(PACKAGED_LISTS))
+        hint = f"; closest: {near!r}" if near else ""
+        raise InvalidRequestError(
+            f"param {param!r} is not a list the package carries{hint}. "
+            f"Valid values: {', '.join(PACKAGED_LISTS)}.",
+            source=SOURCE,
+        )
+    return {"param": param}
+
+
+def validate_reference_category(category: str | None) -> dict[str, Any]:
+    """Check that ``category`` is a category of the packaged ``ListofReferences.json``.
+
+    Returns:
+        ``{"category": category}``, or ``{}`` for ``None``, which keeps every row.
+
+    Raises:
+        InvalidRequestError: Naming the closest category and every one the index holds.
+    """
+    if category is None:
+        return {}
+    categories = [
+        str(record["category"]) for record in PackagedList.load(PACKAGE, "ListofReferences").records
+    ]
+    if category not in categories:
+        near = _closest(category, categories)
+        hint = f"; closest: {near!r}" if near else ""
+        raise InvalidRequestError(
+            f"category {category!r} is not a category of UN Comtrade's "
+            f"ListofReferences.json{hint}. Valid values: {', '.join(categories)}.",
+            source=SOURCE,
+        )
+    return {"category": category}
 
 
 SLICE_PINS: Mapping[str, Any] = {

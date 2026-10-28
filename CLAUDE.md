@@ -119,13 +119,31 @@ found; the first unknown code ends the checks, so other problems show once it is
 Both tables share one code space (a code in both is the same area) but differ: 0 World
 and 56 other areas are partners only, 97 European Union and 975 ASEAN reporters only.
 
+The packaged lists carry upstream's words beside each value, under upstream's names, as
+`scripts/refresh_reference.py` fetched them (2026-10-28, keyless): `text` from
+`tradeRegimes.json` (`flowCode`), `CustomsCodes.json`, `ModeOfTransportCodes.json` and
+`ModeOfSupply.json` (`mosCode`); `qtyAbbr` and `qtyDescription` from `QuantityUnits.json`
+(`qtyUnitCode`), which has no `text`; `variable` and `description` from the `cmd:<clCode>`
+entries of `ListofReferences.json` (`clCode`), which has no `id` or `text` either; and,
+as `text`, the wording the spec's description gives each value of `typeCode` and
+`freqCode` ("C for commodities"). A value the package adds from the spec stands alone
+(`MIF`, `XIF`, `BE`, `TM`), and so do `breakdownMode` and `aggregateBy`, whose
+descriptions word none. `ListofReferences.json`, the index of the reference files, is
+packaged as a table too. `list_codes(param)` returns a list's records as the model
+`params.PACKAGED_LISTS` names for it (`MotCodeValue`: `mot_code`, `text`), and
+`list_classifications(category=None)` the index's rows (`Reference`), both without a
+call, without `search` and without a cap of their own: the largest list has 41 rows
+(`qtyUnitCode`, about 4 KB) and the index 28 (about 6 KB), within the default cap. An
+unknown `customs_code` or `mot_code` names the closest codes with their text (core's
+`closest` by code and by text, else the most similar code).
+
 `MCP_CAPS` in `tasks.py` gives four tasks result caps of their own (ADR-0016), each 400
-rows or 100 KB: the three list tasks and `get_world_share`. `list_reporters` (255 rows,
+rows or 100 KB: three list tasks and `get_world_share`. `list_reporters` (255 rows,
 69 KB) and `list_partners` (310, 83 KB) reach an agent whole, past Switzerland and the
 USA, where the default cap of 200 rows cut them in upstream's alphabetical order. A
 classification does not fit (8,262 HS codes); the cap's note tells the agent to search.
-The three list tasks take `search`, a case-insensitive substring of the code, the ISO
-alpha-3 (reporters, partners) or the text. One period of `get_world_share` for every
+Those three take `search`, a case-insensitive substring of the code, the ISO alpha-3
+(reporters, partners) or the text. One period of `get_world_share` for every
 reporter (214 rows, 88.5 KB for 2023) reaches an agent whole, where the default cap cut
 it at 157 rows and dropped the USA; its note says to narrow by `reporter_code` or
 `period`.
@@ -236,7 +254,7 @@ src/xippios/comtrade/
   models.py        pydantic models mirroring upstream payloads (UpstreamModel)
   api/             endpoint wrappers, one module per upstream operation
   tasks.py         task functions; __all__ is what the adapters register, but BULK_TASKS,
-                   the Python-only ones; MCP_CAPS the result caps of the list tasks
+                   the Python-only ones; MCP_CAPS the result caps of three list tasks
                    and get_world_share
   mcp.py           xippios-comtrade-mcp entry point
   http.py          FastAPI router
@@ -290,7 +308,7 @@ Only its `uv run pytest -m live --tb=short` step sees the key, from the org secr
 
 ## UN Comtrade specifics
 
-The live run costs thirteen keyed calls and six keyless requests (`tests/test_live.py`,
+The live run costs thirteen keyed calls and eight keyless requests (`tests/test_live.py`,
 whose docstring counts them): the reachability probe sends no key, the list tasks fetch
 the public reference files without it, and the two public operations send none. A Basic
 Individual key allows 500 calls a day.

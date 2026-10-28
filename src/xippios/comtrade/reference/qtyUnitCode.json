@@ -1,131 +1,213 @@
 {
   "param": "qtyUnitCode",
   "endpoint": "files/v1/app/reference/QuantityUnits.json",
-  "fetched": "2026-10-23",
-  "note": "The qtyCode values of QuantityUnits.json, the codes qtyUnitCode and altQtyUnitCode carry on trade rows.",
+  "fetched": "2026-10-28T22:02:08Z",
+  "note": "The qtyCode values of QuantityUnits.json with their qtyAbbr and qtyDescription, the codes qtyUnitCode and altQtyUnitCode carry on trade rows.",
   "records": [
     {
-      "qtyUnitCode": "-1"
+      "qtyUnitCode": "-1",
+      "qtyAbbr": "N/A",
+      "qtyDescription": "Not available or not specified or no quantity."
     },
     {
-      "qtyUnitCode": "2"
+      "qtyUnitCode": "2",
+      "qtyAbbr": "m²",
+      "qtyDescription": "Area in square meters"
     },
     {
-      "qtyUnitCode": "3"
+      "qtyUnitCode": "3",
+      "qtyAbbr": "1000 kWh",
+      "qtyDescription": "Electrical energy in thousands of kilowatt-hours"
     },
     {
-      "qtyUnitCode": "4"
+      "qtyUnitCode": "4",
+      "qtyAbbr": "m",
+      "qtyDescription": "Length in meters"
     },
     {
-      "qtyUnitCode": "5"
+      "qtyUnitCode": "5",
+      "qtyAbbr": "u",
+      "qtyDescription": "Number of items"
     },
     {
-      "qtyUnitCode": "6"
+      "qtyUnitCode": "6",
+      "qtyAbbr": "2u",
+      "qtyDescription": "Number of pairs"
     },
     {
-      "qtyUnitCode": "7"
+      "qtyUnitCode": "7",
+      "qtyAbbr": "l",
+      "qtyDescription": "Volume in liters"
     },
     {
-      "qtyUnitCode": "8"
+      "qtyUnitCode": "8",
+      "qtyAbbr": "kg",
+      "qtyDescription": "Weight in kilograms"
     },
     {
-      "qtyUnitCode": "9"
+      "qtyUnitCode": "9",
+      "qtyAbbr": "1000u",
+      "qtyDescription": "Thousand of items"
     },
     {
-      "qtyUnitCode": "10"
+      "qtyUnitCode": "10",
+      "qtyAbbr": "U (jeu/pack)",
+      "qtyDescription": "Number of packages"
     },
     {
-      "qtyUnitCode": "11"
+      "qtyUnitCode": "11",
+      "qtyAbbr": "12u",
+      "qtyDescription": "Dozen of items"
     },
     {
-      "qtyUnitCode": "12"
+      "qtyUnitCode": "12",
+      "qtyAbbr": "m³",
+      "qtyDescription": "Volume in cubic meters"
     },
     {
-      "qtyUnitCode": "13"
+      "qtyUnitCode": "13",
+      "qtyAbbr": "carat",
+      "qtyDescription": "Weight in carats"
     },
     {
-      "qtyUnitCode": "14"
+      "qtyUnitCode": "14",
+      "qtyAbbr": "km",
+      "qtyDescription": "Length in Kilometers"
     },
     {
-      "qtyUnitCode": "15"
+      "qtyUnitCode": "15",
+      "qtyAbbr": "g",
+      "qtyDescription": "Weight in grams"
     },
     {
-      "qtyUnitCode": "16"
+      "qtyUnitCode": "16",
+      "qtyAbbr": "hive",
+      "qtyDescription": "Beehive"
     },
     {
-      "qtyUnitCode": "17"
+      "qtyUnitCode": "17",
+      "qtyAbbr": "1000 m³",
+      "qtyDescription": "Volume in thousand cubic meters"
     },
     {
-      "qtyUnitCode": "18"
+      "qtyUnitCode": "18",
+      "qtyAbbr": "TJ",
+      "qtyDescription": "Terajoule (gross calorific value)"
     },
     {
-      "qtyUnitCode": "19"
+      "qtyUnitCode": "19",
+      "qtyAbbr": "BBL",
+      "qtyDescription": "Barrels"
     },
     {
-      "qtyUnitCode": "20"
+      "qtyUnitCode": "20",
+      "qtyAbbr": "1000 L",
+      "qtyDescription": "Volume in thousands of liters"
     },
     {
-      "qtyUnitCode": "21"
+      "qtyUnitCode": "21",
+      "qtyAbbr": "1000 KG",
+      "qtyDescription": "Weight in thousand of kilograms"
     },
     {
-      "qtyUnitCode": "22"
+      "qtyUnitCode": "22",
+      "qtyAbbr": "kWH",
+      "qtyDescription": "Electrical energy in kilowatt-hours"
     },
     {
-      "qtyUnitCode": "23"
+      "qtyUnitCode": "23",
+      "qtyAbbr": "l alc 100%",
+      "qtyDescription": "Litre pure (100 %) alcohol - l alc. 100%"
     },
     {
-      "qtyUnitCode": "24"
+      "qtyUnitCode": "24",
+      "qtyAbbr": "head",
+      "qtyDescription": "Head"
     },
     {
-      "qtyUnitCode": "25"
+      "qtyUnitCode": "25",
+      "qtyAbbr": "kg/net eda",
+      "qtyDescription": "Kilogram drained net weight"
     },
     {
-      "qtyUnitCode": "26"
+      "qtyUnitCode": "26",
+      "qtyAbbr": "kg C5H14ClNO",
+      "qtyDescription": "Kilogram of choline chloride"
     },
     {
-      "qtyUnitCode": "27"
+      "qtyUnitCode": "27",
+      "qtyAbbr": "kg P2O5",
+      "qtyDescription": "Kilogram of diphosphorus pentaoxide"
     },
     {
-      "qtyUnitCode": "28"
+      "qtyUnitCode": "28",
+      "qtyAbbr": "kg H2O2",
+      "qtyDescription": "Kilogram of hydrogen peroxide"
     },
     {
-      "qtyUnitCode": "29"
+      "qtyUnitCode": "29",
+      "qtyAbbr": "kg met.am.",
+      "qtyDescription": "Kilogram of methylamines"
     },
     {
-      "qtyUnitCode": "30"
+      "qtyUnitCode": "30",
+      "qtyAbbr": "kg N",
+      "qtyDescription": "Kilogram of nitrogen"
     },
     {
-      "qtyUnitCode": "31"
+      "qtyUnitCode": "31",
+      "qtyAbbr": "kg KOH",
+      "qtyDescription": "Kilogram of potassium hydroxide (caustic potash)"
     },
     {
-      "qtyUnitCode": "32"
+      "qtyUnitCode": "32",
+      "qtyAbbr": "kg K2O",
+      "qtyDescription": "Kilogram of potassium oxide"
     },
     {
-      "qtyUnitCode": "33"
+      "qtyUnitCode": "33",
+      "qtyAbbr": "kg NaOH",
+      "qtyDescription": "Kilogram of sodium hydroxide (caustic soda)"
     },
     {
-      "qtyUnitCode": "34"
+      "qtyUnitCode": "34",
+      "qtyAbbr": "kg 90% sdt",
+      "qtyDescription": "Kilogram of substance 90 % dry"
     },
     {
-      "qtyUnitCode": "35"
+      "qtyUnitCode": "35",
+      "qtyAbbr": "kg U",
+      "qtyDescription": "Kilogram of uranium"
     },
     {
-      "qtyUnitCode": "36"
+      "qtyUnitCode": "36",
+      "qtyAbbr": "ct/l",
+      "qtyDescription": "Carrying capacity in tonnes"
     },
     {
-      "qtyUnitCode": "37"
+      "qtyUnitCode": "37",
+      "qtyAbbr": "Bq",
+      "qtyDescription": "Becquerels"
     },
     {
-      "qtyUnitCode": "38"
+      "qtyUnitCode": "38",
+      "qtyAbbr": "gi F/S",
+      "qtyDescription": "Gram of fissile isotopes"
     },
     {
-      "qtyUnitCode": "39"
+      "qtyUnitCode": "39",
+      "qtyAbbr": "GRT",
+      "qtyDescription": "Gross register ton"
     },
     {
-      "qtyUnitCode": "40"
+      "qtyUnitCode": "40",
+      "qtyAbbr": "GT",
+      "qtyDescription": "Gross tonnage"
     },
     {
-      "qtyUnitCode": "41"
+      "qtyUnitCode": "41",
+      "qtyAbbr": "ce/el",
+      "qtyDescription": "Number of cells/elements"
     }
   ]
 }

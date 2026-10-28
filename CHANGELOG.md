@@ -87,15 +87,28 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   agent whole (`MCP_CAPS`).
 - `classify`'s reading of `ErrorMessage` (above) covers getWorldShare's HTTP 400 as well
   (`get_world_share/period_malformed.json`), so its refusal names the field too.
+- Two lookup tasks over the packaged lists, MCP tools `comtrade_list_codes` and
+  `comtrade_list_classifications`, both answering without a call: `list_codes(param)`
+  returns one list's records, the value under the parameter's name in snake_case with
+  upstream's words for it (`TypeCodeValue`, `FreqCodeValue`, `ClCodeValue`,
+  `FlowCodeValue`, `CustomsCodeValue`, `MotCodeValue`, `AggregateByValue`,
+  `BreakdownModeValue`, `MosCodeValue`, `QtyUnitCodeValue`; the union `CodeValue`), a
+  list the package does not carry raising `InvalidRequestError` naming the closest; and
+  `list_classifications(category=None)` returns upstream's index of its reference files,
+  `ListofReferences.json`, as `Reference` rows (`category`, `variable`, `description`,
+  `fileuri`), filtered by category, an unknown one raising `InvalidRequestError` naming
+  every category. `meta.retrieved_at` is the list's fetch time and `meta.vintage` `None`;
+  both keep the default result cap (41 and 28 rows at most). `params.validate_code_list`
+  and `params.validate_reference_category` check their arguments.
 
 ### Changed
 
 - **BREAKING**: depends on `xippios-core~=0.3.0` and its `mcp`, `http` and `testing`
   extras likewise, from `>=0.1.0`.
 - `list_reporters` and `list_partners`: `meta.retrieved_at` is when the package fetched
-  the list (2026-10-23) and `meta.vintage` is `None`, where `vintage` carried the fetch
-  date; `list_commodities`' `meta.retrieved_at` is when its file was fetched, the first
-  fetch of the process on a later call.
+  the list and `meta.vintage` is `None`, where `vintage` carried the fetch date;
+  `list_commodities`' `meta.retrieved_at` is when its file was fetched, the first fetch
+  of the process on a later call.
 - One client: `reference_client` and `REFERENCE_CACHE` are gone from `_client`; the
   reference files go through `client` with `auth=None`, its cache kept to those files.
   `api.reference` and `api.reference_rows` return a `ReferenceFile` of the rows and
@@ -130,6 +143,20 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
 - README: the terms section names upstream's Policy on Comtrade Data Use and the
   license agreement it makes the use of the data subject to, and points at
   `docs/upstream/FETCHED.md` for the attribution.
+- The packaged lists carry upstream's words beside each value, under upstream's names:
+  `text` in `flowCode`, `customsCode`, `motCode` and `mosCode` from their reference
+  files, `qtyAbbr` and `qtyDescription` in `qtyUnitCode`, `variable` and `description` in
+  `clCode` from `ListofReferences.json`, and in `typeCode` and `freqCode` the spec's
+  wording as `text`; a value added from the spec stands alone. `ListofReferences.json`
+  is packaged as a table. `params.PACKAGED_LISTS` maps each list to the model of its
+  records. `scripts/refresh_reference.py` refreshed every list and table on 2026-10-28,
+  keyless: no value or row was added, removed or changed; `fetched` is each fetch's UTC
+  time to the second, the answer's `retrieved_at` (2026-10-28T22:02:01Z to 22:02:14Z),
+  the spec lists' the snapshot's time in `docs/upstream/FETCHED.md`
+  (2026-10-28T14:38:34Z), and `enums.py`'s class docstrings name the new day.
+- An unknown `customs_code` or `mot_code` names the closest codes with upstream's text
+  (`C16`: `C15 (Relief consignments)`; `air`: `1000 (Air)`) and `list_codes` as the list
+  of every code, where it named one closest code and every valid value.
 
 ## [0.1.0] - 2026-10-23
 

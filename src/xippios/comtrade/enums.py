@@ -17,7 +17,7 @@ __all__ = [
 
 
 class AggregateBy(StrEnum):
-    """Values of ``aggregateBy`` (fetched 2026-10-23)."""
+    """Values of ``aggregateBy`` (fetched 2026-10-28)."""
 
     CMDCODE = "cmdCode"
     PERIOD = "period"
@@ -29,14 +29,14 @@ class AggregateBy(StrEnum):
 
 
 class BreakdownMode(StrEnum):
-    """Values of ``breakdownMode`` (fetched 2026-10-23)."""
+    """Values of ``breakdownMode`` (fetched 2026-10-28)."""
 
     CLASSIC = "classic"
     PLUS = "plus"
 
 
 class ClCode(StrEnum):
-    """Values of ``clCode`` (fetched 2026-10-23)."""
+    """Values of ``clCode`` (fetched 2026-10-28)."""
 
     B4 = "B4"
     B5 = "B5"
@@ -62,7 +62,7 @@ class ClCode(StrEnum):
 
 
 class CustomsCode(StrEnum):
-    """Values of ``customsCode`` (fetched 2026-10-23)."""
+    """Values of ``customsCode`` (fetched 2026-10-28)."""
 
     C00 = "C00"
     C01 = "C01"
@@ -84,7 +84,7 @@ class CustomsCode(StrEnum):
 
 
 class FlowCode(StrEnum):
-    """Values of ``flowCode`` (fetched 2026-10-23)."""
+    """Values of ``flowCode`` (fetched 2026-10-28)."""
 
     M = "M"
     X = "X"
@@ -101,14 +101,14 @@ class FlowCode(StrEnum):
 
 
 class FreqCode(StrEnum):
-    """Values of ``freqCode`` (fetched 2026-10-23)."""
+    """Values of ``freqCode`` (fetched 2026-10-28)."""
 
     A = "A"
     M = "M"
 
 
 class MosCode(StrEnum):
-    """Values of ``mosCode`` (fetched 2026-10-23)."""
+    """Values of ``mosCode`` (fetched 2026-10-28)."""
 
     _0 = "0"
     MODE_1 = "Mode 1"
@@ -118,7 +118,7 @@ class MosCode(StrEnum):
 
 
 class MotCode(StrEnum):
-    """Values of ``motCode`` (fetched 2026-10-23)."""
+    """Values of ``motCode`` (fetched 2026-10-28)."""
 
     _0 = "0"
     _1000 = "1000"
@@ -141,7 +141,7 @@ class MotCode(StrEnum):
 
 
 class QtyUnitCode(StrEnum):
-    """Values of ``qtyUnitCode`` (fetched 2026-10-23)."""
+    """Values of ``qtyUnitCode`` (fetched 2026-10-28)."""
 
     _1 = "-1"
     _2 = "2"
@@ -187,7 +187,7 @@ class QtyUnitCode(StrEnum):
 
 
 class TypeCode(StrEnum):
-    """Values of ``typeCode`` (fetched 2026-10-23)."""
+    """Values of ``typeCode`` (fetched 2026-10-28)."""
 
     C = "C"
     S = "S"
