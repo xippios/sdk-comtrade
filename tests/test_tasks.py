@@ -2732,16 +2732,16 @@ def test_mirror_flow_problems_are_named_together(respx_mock: respx.MockRouter) -
     [
         (
             ("CHE", "US"), "partner", "US",
-            "'US' is not a partner in the packaged partnerAreas list (fetched 2026-10-23). "
+            "'US' is not a partner in the packaged partnerAreas list (fetched {fetched}). "
             "Did you mean 842 (USA)?",
         ),
         (
             ("CHF", "USA"), "reporter", "CHF",
-            "'CHF' is not a reporter in the packaged Reporters list (fetched 2026-10-23).",
+            "'CHF' is not a reporter in the packaged Reporters list (fetched {fetched}).",
         ),
         (
             ("756", "USA"), "reporter", "756",
-            "'756' is not a reporter in the packaged Reporters list (fetched 2026-10-23). "
+            "'756' is not a reporter in the packaged Reporters list (fetched {fetched}). "
             "Did you mean 757 (Switzerland)?",
         ),
     ],
@@ -2753,12 +2753,18 @@ def test_a_mirror_flow_area_the_packaged_tables_lack_is_an_unknown_code(
     value: str,
     expected: str,
 ) -> None:
-    """As a code or an ISO alpha-3 code: ``UnknownCode`` before any call (conventions §5)."""
+    """As a code or an ISO alpha-3 code: ``UnknownCode`` before any call (conventions §5).
+
+    The fetch date is read from the packaged table, so a refresh of it breaks no test.
+    """
     with pytest.raises(UnknownCode) as info:
         tasks.get_mirror_flows(*arguments, "27", "2023", "X")
     assert not respx_mock.calls
     assert (info.value.param, info.value.value) == (param, value)
-    assert expected in str(info.value)
+    fetched = PackagedList.load(PACKAGE, info.value.list_name).fetched
+    assert info.value.list_name == ("partnerAreas" if param == "partner" else "Reporters")
+    assert info.value.fetched == fetched
+    assert expected.format(fetched=f"{fetched:%Y-%m-%d}") in str(info.value)
 
 
 def test_a_mirror_flow_bound_over_the_limit_is_refused_without_a_call(

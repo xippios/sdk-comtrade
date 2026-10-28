@@ -904,18 +904,19 @@ async def get_mirror_flows_async(
     rule. ``primary_value_disc`` is upstream's, its meaning not stated: in every recorded
     row it equals ``(mirror_primary_value - primary_value) / primary_value`` (``-0.949``
     for Switzerland's 2023 exports of HS chapter 27 to the USA). ``mirror2_primary_value``
-    is not described upstream and was 0 in every recorded row, the other ``mirror2``
-    fields empty. Descriptions are ``None``: getBilateralData filled none even with
-    ``includeDesc``, so it is not sent; ``list_reporters`` and ``list_partners`` name the
-    codes. Bounded by construction at product codes times periods rows, so there is no
-    count call (upstream offers none here); a bound above 100,000 raises
-    ``QueryTooLarge`` before the call. Over MCP a result above 64 KB (about 60 rows)
-    reaches the agent as a preview of its text, so name a few product codes or periods
-    per call. Arguments are resolved and checked before the call; an unknown area raises
-    ``UnknownCode``, an ``InvalidRequestError`` naming the packaged list and the closest
-    area, another mistake ``InvalidRequestError`` naming the closest valid value.
-    ``meta.request`` holds the ``get_bilateral_data`` arguments that were sent, codes
-    resolved; ``meta.total`` is upstream's ``count``.
+    is not described upstream and was 0 in every recorded row; the other ``mirror2``
+    fields are left out (empty in every recording; ``get_bilateral_data`` carries them).
+    Descriptions are ``None``: getBilateralData filled none even with ``includeDesc``, so
+    it is not sent; ``list_reporters`` and ``list_partners`` name the codes. Bounded by
+    construction at product codes times periods rows, so there is no count call (upstream
+    offers none here); a bound above 100,000 raises ``QueryTooLarge`` before the call.
+    Over MCP a result above 64 KB (about 60 rows) reaches the agent as a preview of its
+    text, so name a few product codes or periods per call. Arguments are resolved and
+    checked before the call; an unknown area raises ``UnknownCode``, an
+    ``InvalidRequestError`` naming the packaged list and the closest area, another mistake
+    ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds the
+    ``get_bilateral_data`` arguments that were sent, codes resolved; ``meta.total`` is
+    upstream's ``count``.
 
     Args:
         reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:
