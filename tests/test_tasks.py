@@ -27,6 +27,7 @@ from xippios.core import (
     RateLimitError,
     ResultCap,
     RetryPolicy,
+    UnknownCode,
     UpstreamError,
     UpstreamModel,
 )
@@ -38,6 +39,7 @@ from xippios.core.testing import (
     assert_time_between,
     load_fixture,
     mcp_call,
+    mcp_call_text,
     recorded_query,
     response_from_fixture,
     sent_query,
@@ -247,47 +249,73 @@ async def test_a_code_that_is_not_a_reporter_counts_zero_upstream(
     assert (response.count, response.error) == (0, "")
 
 
+REFUSED_756 = (
+    "'756' is not a reporter_code in the packaged Reporters list (fetched 2026-10-23). "
+    "Did you mean 757 (Switzerland)? UN Comtrade answers a code it does not have with count "
+    "0, so the package refuses it before the call. list_reporters lists every code. If "
+    "upstream added it since, the packaged list needs a refresh (/refresh-reference-data)."
+)
+"""``UnknownCode``'s message for reporter 756 (conventions §5): core's text, comtrade's hint."""
+
+
+def _unknown(respx_mock: respx.MockRouter, **overrides: str) -> UnknownCode:
+    with pytest.raises(UnknownCode) as info:
+        tasks.get_data(**{**CH_EXPORTS_2023, **overrides})
+    assert not respx_mock.calls, "refused before any call"
+    assert isinstance(info.value, InvalidRequestError)
+    return info.value
+
+
 def test_a_code_that_is_not_a_reporter_is_refused_naming_the_reporter(
     respx_mock: respx.MockRouter,
 ) -> None:
     """The task refuses 756 before the call: Reporters.json has Switzerland as 757."""
-    message = _refused(respx_mock, reporter_code="757,756")
-    assert (
-        "reporter_code '756' is not a UN Comtrade reporter code (Reporters.json); "
-        "closest: '757' (Switzerland); list_reporters lists every code" in message
+    refused = _unknown(respx_mock, reporter_code="757,756")
+    assert str(refused) == REFUSED_756
+    assert (refused.param, refused.value, refused.list_name) == (
+        "reporter_code",
+        "756",
+        "Reporters",
     )
-    assert "'757' is not" not in message
+    assert refused.fetched == PackagedList.load(PACKAGE, "Reporters").fetched
+    assert refused.closest == (("757", "Switzerland"),)
+    assert refused.source == "comtrade"
 
 
 def test_unknown_partner_codes_are_refused(respx_mock: respx.MockRouter) -> None:
-    message = _refused(respx_mock, partner_code="0,9999", partner2_code="97")
-    assert "partner_code '9999' is not a UN Comtrade partner code (partnerAreas.json)" in message
-    assert "list_partners lists every code" in message
-    assert "partner_code '0'" not in message
-    assert (
-        "partner2_code '97' is not a UN Comtrade partner code (partnerAreas.json); "
-        "'97' (European Union) is a reporter code only" in message
+    unknown = _unknown(respx_mock, partner_code="0,9999")
+    assert (unknown.param, unknown.value, unknown.list_name) == (
+        "partner_code",
+        "9999",
+        "partnerAreas",
     )
+    assert str(unknown).startswith(
+        "'9999' is not a partner_code in the packaged partnerAreas list (fetched 2026-10-23)."
+    )
+    assert "list_partners lists every code" in str(unknown)
+    reporter_only = _unknown(respx_mock, partner2_code="97")
+    assert (reporter_only.param, reporter_only.closest) == ("partner2_code", ())
+    assert "'97' (European Union) is a reporter code only." in str(reporter_only)
 
 
 def test_world_is_a_partner_not_a_reporter(respx_mock: respx.MockRouter) -> None:
-    message = _refused(respx_mock, reporter_code="0")
-    assert "reporter_code '0' is not a UN Comtrade reporter code" in message
-    assert "'0' (World) is a partner code only" in message
+    refused = _unknown(respx_mock, reporter_code="0")
+    assert str(refused).startswith("'0' is not a reporter_code in the packaged Reporters list")
+    assert "'0' (World) is a partner code only." in str(refused)
 
 
 def test_every_member_of_an_area_list_is_checked() -> None:
+    """Each member of a list is checked; the first one the table lacks is refused."""
     checked = validate_get(
         "C", "A", "HS", reporter_code="757,842,276,156", partner_code="0,276,756",
         partner2_code="0",
     )  # fmt: skip
     assert checked["reporter_code"] == "757,842,276,156"
     assert checked["partner_code"] == "0,276,756"
-    with pytest.raises(InvalidRequestError) as info:
+    with pytest.raises(UnknownCode) as info:
         validate_get("C", "A", "HS", reporter_code="757,999,842,1000")
-    message = str(info.value)
-    assert "reporter_code '999' is not" in message
-    assert "reporter_code '1000' is not" in message
+    assert info.value.value == "999"
+    assert "'1000'" not in str(info.value)
 
 
 @pytest.mark.anyio
@@ -1373,22 +1401,24 @@ def test_get_data_availability_takes_more_than_12_periods(
 def test_dataset_arguments_are_checked_before_the_call(respx_mock: respx.MockRouter) -> None:
     with pytest.raises(InvalidRequestError) as info:
         tasks.get_data_availability(
-            "C", "A", "EBSDMX", reporter_code="756", period="2023-01",
+            "C", "A", "EBSDMX", reporter_code="757", period="2023-01",
             published_date_from="2024/01/01", published_date_to="2024-02-30",
         )  # fmt: skip
-    assert not respx_mock.calls
+    assert not isinstance(info.value, UnknownCode)
     message = str(info.value)
     for fragment in [
         "cl_code 'EBSDMX' is not a UN Comtrade clCode value",
-        "reporter_code '756' is not a UN Comtrade reporter code (Reporters.json); "
-        "closest: '757' (Switzerland)",
         "period '2023-01' is neither a year",
         "published_date_from '2024/01/01' is not a day as YYYY-MM-DD",
         "published_date_to '2024-02-30' is not a day as YYYY-MM-DD",
     ]:
         assert fragment in message
-    with pytest.raises(InvalidRequestError, match="reporter_code '0' is not"):
+    with pytest.raises(UnknownCode) as unknown:
+        tasks.get_data_availability("C", "A", "HS", reporter_code="756", period="2023")
+    assert str(unknown.value) == REFUSED_756
+    with pytest.raises(UnknownCode, match="'0' is not a reporter_code in the packaged Reporters"):
         tasks.get_metadata("C", "A", "HS", reporter_code="0")
+    assert not respx_mock.calls
 
 
 @pytest.mark.anyio
@@ -1555,8 +1585,10 @@ async def test_dataset_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
     assert len(live["data"]) == 50
     assert live["data"][0]["started_at"] == "2026-10-22T21:27:39Z"
     assert live["data"][0]["last_updated"] == "2026-10-22"
-    with pytest.raises(AssertionError, match=r"InvalidRequestError.*closest: '757'"):
-        await mcp_call(server, "comtrade_get_data_availability", {**query, "reporter_code": "756"})
+    refused = await mcp_call_text(
+        server, "comtrade_get_data_availability", {**query, "reporter_code": "756"}
+    )
+    assert refused == f"error: UnknownCode: {REFUSED_756}"
 
 
 def test_dataset_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
@@ -1765,28 +1797,6 @@ def _slice_refused(respx_mock: respx.MockRouter, call: Callable[[], object]) -> 
             "periods '2023,202301' mixes years (2023) and months (202301)",
         ),
         (
-            lambda: tasks.get_bilateral_flows("CHF", "USA", "TOTAL", "2023", "X"),
-            "reporter 'CHF' is neither a UN Comtrade reporter code nor the ISO alpha-3 code of "
-            "one (Reporters.json); closest: 'CHN' (156, China)",
-        ),
-        (
-            lambda: tasks.get_top_partners("Switzerland", "TOTAL", "2023", "X", 5),
-            "closest: 'CHE' (757, Switzerland)",
-        ),
-        (
-            lambda: tasks.get_bilateral_flows("CHE", "US", "TOTAL", "2023", "X"),
-            "partner 'US' is neither a UN Comtrade partner code nor the ISO alpha-3 code of one "
-            "(partnerAreas.json); closest: 'USA' (842, USA)",
-        ),
-        (
-            lambda: tasks.get_bilateral_flows("756", "USA", "TOTAL", "2023", "X"),
-            "reporter '756' is not a UN Comtrade reporter code (Reporters.json); closest: '757'",
-        ),
-        (
-            lambda: tasks.get_bilateral_flows("W00", "USA", "TOTAL", "2023", "X"),
-            "reporter 'W00' (0, World) is a partner area only",
-        ),
-        (
             lambda: tasks.get_bilateral_flows("CHE", "USA", "TOTAL", SERIES[:-5], "X"),
             "periods has 13 values; UN Comtrade takes at most 12 per call",
         ),
@@ -1833,6 +1843,52 @@ def test_slice_arguments_are_refused_before_any_call(
     respx_mock: respx.MockRouter, call: Callable[[], object], expected: str
 ) -> None:
     assert expected in _slice_refused(respx_mock, call)
+
+
+@pytest.mark.parametrize(
+    ("call", "param", "value", "expected"),
+    [
+        (
+            lambda: tasks.get_bilateral_flows("CHF", "USA", "TOTAL", "2023", "X"),
+            "reporter", "CHF",
+            "'CHF' is not a reporter in the packaged Reporters list (fetched 2026-10-23). "
+            "Did you mean 156 (China)?",
+        ),
+        (
+            lambda: tasks.get_top_partners("Switzerland", "TOTAL", "2023", "X", 5),
+            "reporter", "Switzerland", "Did you mean 757 (Switzerland)?",
+        ),
+        (
+            lambda: tasks.get_bilateral_flows("CHE", "US", "TOTAL", "2023", "X"),
+            "partner", "US",
+            "'US' is not a partner in the packaged partnerAreas list (fetched 2026-10-23). "
+            "Did you mean 842 (USA)?",
+        ),
+        (
+            lambda: tasks.get_bilateral_flows("756", "USA", "TOTAL", "2023", "X"),
+            "reporter", "756",
+            "'756' is not a reporter in the packaged Reporters list (fetched 2026-10-23). "
+            "Did you mean 757 (Switzerland)?",
+        ),
+        (
+            lambda: tasks.get_bilateral_flows("W00", "USA", "TOTAL", "2023", "X"),
+            "reporter", "W00", "'W00' (0, World) is a partner area only.",
+        ),
+    ],
+)  # fmt: skip
+def test_a_slice_area_the_packaged_tables_lack_is_an_unknown_code(
+    respx_mock: respx.MockRouter,
+    call: Callable[[], object],
+    param: str,
+    value: str,
+    expected: str,
+) -> None:
+    """As a code or an ISO alpha-3 code: ``UnknownCode`` before any call (conventions §5)."""
+    with pytest.raises(UnknownCode) as info:
+        call()
+    assert not respx_mock.calls
+    assert (info.value.param, info.value.value) == (param, value)
+    assert expected in str(info.value)
 
 
 def test_a_series_takes_at_most_120_periods(respx_mock: respx.MockRouter) -> None:
@@ -1975,5 +2031,5 @@ def test_slice_route_end_to_end(replay_fixture: ReplayFixture) -> None:
         assert route.call_count == 1
         refused = http.get("/comtrade/get_bilateral_flows", params={**query, "partner": "US"})
         assert refused.status_code == 422
-        assert "closest: 'USA' (842, USA)" in refused.json()["detail"]
+        assert "Did you mean 842 (USA)?" in refused.json()["detail"]
         assert route.call_count == 1, "refused before any call"

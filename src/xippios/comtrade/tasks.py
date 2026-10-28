@@ -125,8 +125,10 @@ async def get_counts_async(
     data matches: an unreported period, a code that is not a reporter, a flow the
     reporter does not record. Every count costs one call of the key's daily quota (500
     on a free key). Arguments are checked before the call, reporter and partner codes
-    against the packaged tables; an unknown code raises ``InvalidRequestError`` naming the
-    closest valid one (756 names 757, Switzerland).
+    against the packaged tables: an unknown one raises ``UnknownCode``, an
+    ``InvalidRequestError`` naming the packaged list, its fetch date and the closest area
+    (756 names 757, Switzerland); another mistake raises ``InvalidRequestError`` naming
+    the closest valid value.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
@@ -230,8 +232,9 @@ async def get_data_async(
     Switzerland's 2023 exports to the World); the row with ``partner2_code`` 0,
     ``customs_code`` ``"C00"`` and ``mot_code`` 0 is the total, and pinning those three
     (or ``breakdown_mode="classic"``) returns that row alone. Arguments are checked
-    before any call; an unknown code raises ``InvalidRequestError`` naming the closest
-    valid one.
+    before any call; an unknown reporter or partner code raises ``UnknownCode``, an
+    ``InvalidRequestError`` naming the packaged list and the closest area, another
+    mistake ``InvalidRequestError`` naming the closest valid value.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
@@ -328,8 +331,9 @@ async def get_data_availability_async(
     classification, how many records each dataset holds and when it was first and last
     released (``first_released``, ``last_released``, naive datetimes as upstream sends
     them). One call. A period nobody reported returns an empty list. Arguments are checked
-    before the call; an unknown code raises ``InvalidRequestError`` naming the closest
-    valid one.
+    before the call; an unknown reporter code raises ``UnknownCode``, an
+    ``InvalidRequestError`` naming the packaged list and the closest area, another
+    mistake ``InvalidRequestError`` naming the closest valid value.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
@@ -440,9 +444,10 @@ async def get_bilateral_flows_async(
     sorted by period, then product code; a code or period upstream holds nothing for has
     no row. Bounded by construction at product codes times periods rows (at most 12
     periods), so there is no count call; a bound above 100,000 raises ``QueryTooLarge``
-    before the call. Arguments are resolved and checked before the call; a mistake raises
-    ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds the
-    ``get_data`` arguments that were sent, codes resolved.
+    before the call. Arguments are resolved and checked before the call; an unknown area
+    raises ``UnknownCode``, an ``InvalidRequestError`` naming the packaged list and the
+    closest area, another mistake ``InvalidRequestError`` naming the closest valid value.
+    ``meta.request`` holds the ``get_data`` arguments that were sent, codes resolved.
 
     Args:
         reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:
@@ -503,9 +508,11 @@ async def get_commodity_series_async(
     reporter has released. One row per period at most, so there is no count call. Every
     chunk is a keyed call and a free key allows 500 calls a day, so one series takes at
     most 120 periods (ten calls); more raise ``InvalidRequestError`` before any call:
-    split the series. Arguments are resolved and checked before any call; a mistake
-    raises ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds
-    the ``get_data`` arguments with every period; they were sent 12 at a time.
+    split the series. Arguments are resolved and checked before any call; an unknown
+    reporter raises ``UnknownCode``, an ``InvalidRequestError`` naming the packaged list
+    and the closest area, another mistake ``InvalidRequestError`` naming the closest valid
+    value. ``meta.request`` holds the ``get_data`` arguments with every period; they were
+    sent 12 at a time.
 
     Args:
         reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:
@@ -607,9 +614,10 @@ async def get_top_partners_async(
     are not countries, such as 490 "Other Asia, nes", stay in the ranking where the
     reporter reported them. Bounded by construction at one row per partner (310 in the
     packaged ``partnerAreas.json``), so there is no count call. Arguments are resolved and
-    checked before the call; a mistake raises ``InvalidRequestError`` naming the closest
-    valid value. ``meta.request`` holds the ``get_data`` arguments that were sent, and
-    ``n``.
+    checked before the call; an unknown reporter raises ``UnknownCode``, an
+    ``InvalidRequestError`` naming the packaged list and the closest area, another
+    mistake ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds
+    the ``get_data`` arguments that were sent, and ``n``.
 
     Args:
         reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:

@@ -27,12 +27,12 @@ every product file as served, so the snapshot covers all of them. It writes:
   fetched, and the ETag and Last-Modified where sent.
 
 Everything is fetched before anything is written, one request at a time, each URL retried
-at most once; files a previous snapshot had and this one does not are removed. Every run
-stops, before writing, when a page states a copyright line, a licence or terms of use that
-``ATTRIBUTION`` does not record, or when the page a recorded statement is read from no
-longer prints it; an article that is upstream's statement of its terms is kept whole and
-not searched beyond the lines ``ATTRIBUTION`` quotes from it. The same upstream gives the
-same files; ``FETCHED.md`` then differs in ``Fetched`` alone. No key is needed or read. Run
+at most once; files a previous snapshot had and this one does not are removed. The same
+upstream gives the same bytes on disk, ``FETCHED.md``'s ``Fetched`` time aside. No key is
+needed or read. Every run stops, before writing, when a page states a copyright line, a
+licence or terms of use that ``ATTRIBUTION`` does not record, or when the page a recorded
+statement is read from no longer prints it; an article that is upstream's statement of its
+terms is kept whole and not searched beyond the lines ``ATTRIBUTION`` quotes from it. Run
 from the repository root::
 
     uv run scripts/refresh_upstream.py            # fetch, then write the snapshot
@@ -573,7 +573,10 @@ def render_fetched(
     entries: list[Entry],
     fetched: str,
 ) -> str:
-    """The whole of ``FETCHED.md``, ``fetched`` being the UTC time the run started."""
+    """The whole of ``FETCHED.md``; ``versions`` holds each product's ``openapi`` value.
+
+    ``fetched`` is the UTC time the run started, ``2026-10-24T09:15:00Z`` (conventions §3).
+    """
     found = ", ".join(sorted(set(versions)))
     stated = [
         f"- `{s.text}`, {s.where}, as printed at {s.url}, fetched {fetched}." for s in ATTRIBUTION
@@ -714,7 +717,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     out: Path = args.out
-    fetched = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    fetched = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")  # the UTC time the run started
 
     _log(f"ApiDocs: {APIDOCS_URL}")
     shell, bundle, apim_base, products = discover()
