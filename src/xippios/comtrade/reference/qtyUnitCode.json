@@ -1,48 +1,131 @@
 {
   "param": "qtyUnitCode",
+  "endpoint": "files/v1/app/reference/QuantityUnits.json",
   "fetched": "2026-10-23",
-  "origin": "https://comtradeapi.un.org/files/v1/app/reference/QuantityUnits.json, the qtyCode values",
-  "values": [
-    "-1",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    "8",
-    "9",
-    "10",
-    "11",
-    "12",
-    "13",
-    "14",
-    "15",
-    "16",
-    "17",
-    "18",
-    "19",
-    "20",
-    "21",
-    "22",
-    "23",
-    "24",
-    "25",
-    "26",
-    "27",
-    "28",
-    "29",
-    "30",
-    "31",
-    "32",
-    "33",
-    "34",
-    "35",
-    "36",
-    "37",
-    "38",
-    "39",
-    "40",
-    "41"
+  "note": "The qtyCode values of QuantityUnits.json, the codes qtyUnitCode and altQtyUnitCode carry on trade rows.",
+  "records": [
+    {
+      "qtyUnitCode": "-1"
+    },
+    {
+      "qtyUnitCode": "2"
+    },
+    {
+      "qtyUnitCode": "3"
+    },
+    {
+      "qtyUnitCode": "4"
+    },
+    {
+      "qtyUnitCode": "5"
+    },
+    {
+      "qtyUnitCode": "6"
+    },
+    {
+      "qtyUnitCode": "7"
+    },
+    {
+      "qtyUnitCode": "8"
+    },
+    {
+      "qtyUnitCode": "9"
+    },
+    {
+      "qtyUnitCode": "10"
+    },
+    {
+      "qtyUnitCode": "11"
+    },
+    {
+      "qtyUnitCode": "12"
+    },
+    {
+      "qtyUnitCode": "13"
+    },
+    {
+      "qtyUnitCode": "14"
+    },
+    {
+      "qtyUnitCode": "15"
+    },
+    {
+      "qtyUnitCode": "16"
+    },
+    {
+      "qtyUnitCode": "17"
+    },
+    {
+      "qtyUnitCode": "18"
+    },
+    {
+      "qtyUnitCode": "19"
+    },
+    {
+      "qtyUnitCode": "20"
+    },
+    {
+      "qtyUnitCode": "21"
+    },
+    {
+      "qtyUnitCode": "22"
+    },
+    {
+      "qtyUnitCode": "23"
+    },
+    {
+      "qtyUnitCode": "24"
+    },
+    {
+      "qtyUnitCode": "25"
+    },
+    {
+      "qtyUnitCode": "26"
+    },
+    {
+      "qtyUnitCode": "27"
+    },
+    {
+      "qtyUnitCode": "28"
+    },
+    {
+      "qtyUnitCode": "29"
+    },
+    {
+      "qtyUnitCode": "30"
+    },
+    {
+      "qtyUnitCode": "31"
+    },
+    {
+      "qtyUnitCode": "32"
+    },
+    {
+      "qtyUnitCode": "33"
+    },
+    {
+      "qtyUnitCode": "34"
+    },
+    {
+      "qtyUnitCode": "35"
+    },
+    {
+      "qtyUnitCode": "36"
+    },
+    {
+      "qtyUnitCode": "37"
+    },
+    {
+      "qtyUnitCode": "38"
+    },
+    {
+      "qtyUnitCode": "39"
+    },
+    {
+      "qtyUnitCode": "40"
+    },
+    {
+      "qtyUnitCode": "41"
+    }
   ]
 }

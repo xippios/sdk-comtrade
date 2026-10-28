@@ -1,140 +1,71 @@
 {
   "param": "clCode",
+  "endpoint": "files/v1/app/reference/ListofReferences.json",
   "fetched": "2026-10-23",
-  "origin": "https://comtradeapi.un.org/files/v1/app/reference/ListofReferences.json, the cmd:<clCode> categories, reconciled with docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum (see exceptions)",
-  "exceptions": [
+  "note": "The cmd:<clCode> categories of ListofReferences.json, reconciled with docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum. BE added: listed in docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum; upstream accepted it (tests/fixtures/get/count_cl_code_be.json, HTTP 200). BE5 left out: listed in docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum; upstream refused it (tests/fixtures/get/count_cl_code_be5.json, HTTP 400). TM added: listed in docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum; upstream accepted it (tests/fixtures/get/count_cl_code_tm.json, HTTP 200). B4 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_b4.json, HTTP 200). B5 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_b5.json, HTTP 200). EB02 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb02.json, HTTP 200). EB10 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb10.json, HTTP 200). EB10S kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb10s.json, HTTP 200). EB kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb.json, HTTP 200). H0 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h0.json, HTTP 200). H1 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h1.json, HTTP 200). H2 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h2.json, HTTP 200). H3 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h3.json, HTTP 200). H4 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h4.json, HTTP 200). H5 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h5.json, HTTP 200). H6 kept: in the reference file; upstream answered without settling it (tests/fixtures/get/count_cl_code_h6.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_retried.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_retried_later.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_cmd_code_01.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_usa.json, HTTP 500). HS kept: in the reference file; upstream accepted it (tests/fixtures/get/count_ch_exports_2023.json, HTTP 200). S1 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s1.json, HTTP 200). S2 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s2.json, HTTP 200). S3 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s3.json, HTTP 200). S4 kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s4.json, HTTP 200). SS kept: in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_ss.json, HTTP 200).",
+  "records": [
     {
-      "value": "BE",
-      "decision": "added",
-      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum; upstream accepted it (tests/fixtures/get/count_cl_code_be.json, HTTP 200)"
+      "clCode": "B4"
     },
     {
-      "value": "BE5",
-      "decision": "left out",
-      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum; upstream refused it (tests/fixtures/get/count_cl_code_be5.json, HTTP 400)"
+      "clCode": "B5"
     },
     {
-      "value": "TM",
-      "decision": "added",
-      "evidence": "listed in docs/upstream/apidocs/comtrade.json, operation get, parameter clCode, enum; upstream accepted it (tests/fixtures/get/count_cl_code_tm.json, HTTP 200)"
+      "clCode": "EB02"
     },
     {
-      "value": "B4",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_b4.json, HTTP 200)"
+      "clCode": "EB10"
     },
     {
-      "value": "B5",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_b5.json, HTTP 200)"
+      "clCode": "EB10S"
     },
     {
-      "value": "EB02",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb02.json, HTTP 200)"
+      "clCode": "EB"
     },
     {
-      "value": "EB10",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb10.json, HTTP 200)"
+      "clCode": "H0"
     },
     {
-      "value": "EB10S",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb10s.json, HTTP 200)"
+      "clCode": "H1"
     },
     {
-      "value": "EB",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_eb.json, HTTP 200)"
+      "clCode": "H2"
     },
     {
-      "value": "H0",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h0.json, HTTP 200)"
+      "clCode": "H3"
     },
     {
-      "value": "H1",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h1.json, HTTP 200)"
+      "clCode": "H4"
     },
     {
-      "value": "H2",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h2.json, HTTP 200)"
+      "clCode": "H5"
     },
     {
-      "value": "H3",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h3.json, HTTP 200)"
+      "clCode": "H6"
     },
     {
-      "value": "H4",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h4.json, HTTP 200)"
+      "clCode": "HS"
     },
     {
-      "value": "H5",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_h5.json, HTTP 200)"
+      "clCode": "S1"
     },
     {
-      "value": "H6",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream answered without settling it (tests/fixtures/get/count_cl_code_h6.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_retried.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_retried_later.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_cmd_code_01.json, HTTP 500; tests/fixtures/get/count_cl_code_h6_usa.json, HTTP 500)"
+      "clCode": "S2"
     },
     {
-      "value": "HS",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_ch_exports_2023.json, HTTP 200)"
+      "clCode": "S3"
     },
     {
-      "value": "S1",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s1.json, HTTP 200)"
+      "clCode": "S4"
     },
     {
-      "value": "S2",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s2.json, HTTP 200)"
+      "clCode": "SS"
     },
     {
-      "value": "S3",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s3.json, HTTP 200)"
+      "clCode": "BE"
     },
     {
-      "value": "S4",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_s4.json, HTTP 200)"
-    },
-    {
-      "value": "SS",
-      "decision": "kept",
-      "evidence": "in the reference file; upstream accepted it (tests/fixtures/get/count_cl_code_ss.json, HTTP 200)"
+      "clCode": "TM"
     }
-  ],
-  "values": [
-    "B4",
-    "B5",
-    "EB02",
-    "EB10",
-    "EB10S",
-    "EB",
-    "H0",
-    "H1",
-    "H2",
-    "H3",
-    "H4",
-    "H5",
-    "H6",
-    "HS",
-    "S1",
-    "S2",
-    "S3",
-    "S4",
-    "SS",
-    "BE",
-    "TM"
   ]
 }

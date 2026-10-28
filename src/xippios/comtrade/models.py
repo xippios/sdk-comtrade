@@ -25,7 +25,6 @@ from pydantic import (
     Field,
     ValidatorFunctionWrapHandler,
     WrapValidator,
-    model_validator,
 )
 from pydantic import ValidationError as PydanticValidationError
 from xippios.core import UpstreamModel
@@ -257,24 +256,7 @@ class QuantityUnit(UpstreamModel):
     qty_description: str = Field(validation_alias="qtyDescription")
 
 
-class _TableRow(UpstreamModel):
-    """A row of a reference table packaged as CSV, where an empty cell is an absent key.
-
-    Upstream leaves keys out of some rows (``entryExpiredDate`` on areas still in use);
-    the packaged CSV writes those as empty cells. No upstream value is an empty string
-    (checked by ``scripts/refresh_reference.py``), so reading an empty cell as absent
-    loses nothing.
-    """
-
-    @model_validator(mode="before")
-    @classmethod
-    def _empty_cell_is_absent(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            return {key: value for key, value in data.items() if value != ""}
-        return data
-
-
-class Reporter(_TableRow):
+class Reporter(UpstreamModel):
     """One reporter area of ``Reporters.json``: a country or area that reports trade.
 
     Codes are UN Comtrade's own, close to but not always ISO 3166 numeric: Switzerland is
@@ -299,7 +281,7 @@ class Reporter(_TableRow):
     is_group: bool = Field(validation_alias="isGroup")
 
 
-class PartnerArea(_TableRow):
+class PartnerArea(UpstreamModel):
     """One partner area of ``partnerAreas.json``: a country, area or group traded with.
 
     Every column of the file, in its order, under its upstream name in snake_case;
@@ -324,7 +306,7 @@ class PartnerArea(_TableRow):
     is_group: bool = Field(validation_alias="isGroup")
 
 
-class CountryAreaCodeIso(_TableRow):
+class CountryAreaCodeIso(UpstreamModel):
     """One row of ``country_area_code_iso.json``, UN Comtrade's area code to ISO alpha-3.
 
     Covers every reporter and partner code (312 rows when packaged). Some ``iso3`` values
@@ -335,7 +317,7 @@ class CountryAreaCodeIso(_TableRow):
     iso3: str
 
 
-class TradeDataItem(_TableRow):
+class TradeDataItem(UpstreamModel):
     """One data item of ``TradeDataItems.json``: a column of the trade data and where it occurs.
 
     Attributes:

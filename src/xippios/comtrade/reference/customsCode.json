@@ -1,24 +1,59 @@
 {
   "param": "customsCode",
+  "endpoint": "files/v1/app/reference/CustomsCodes.json",
   "fetched": "2026-10-23",
-  "origin": "https://comtradeapi.un.org/files/v1/app/reference/CustomsCodes.json",
-  "values": [
-    "C00",
-    "C01",
-    "C02",
-    "C03",
-    "C04",
-    "C05",
-    "C06",
-    "C07",
-    "C08",
-    "C09",
-    "C10",
-    "C11",
-    "C12",
-    "C13",
-    "C14",
-    "C15",
-    "C20"
+  "note": "The ids of CustomsCodes.json.",
+  "records": [
+    {
+      "customsCode": "C00"
+    },
+    {
+      "customsCode": "C01"
+    },
+    {
+      "customsCode": "C02"
+    },
+    {
+      "customsCode": "C03"
+    },
+    {
+      "customsCode": "C04"
+    },
+    {
+      "customsCode": "C05"
+    },
+    {
+      "customsCode": "C06"
+    },
+    {
+      "customsCode": "C07"
+    },
+    {
+      "customsCode": "C08"
+    },
+    {
+      "customsCode": "C09"
+    },
+    {
+      "customsCode": "C10"
+    },
+    {
+      "customsCode": "C11"
+    },
+    {
+      "customsCode": "C12"
+    },
+    {
+      "customsCode": "C13"
+    },
+    {
+      "customsCode": "C14"
+    },
+    {
+      "customsCode": "C15"
+    },
+    {
+      "customsCode": "C20"
+    }
   ]
 }
