@@ -60,6 +60,7 @@ from xippios.comtrade._client import (
 from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.mcp import server
 from xippios.comtrade.models import (
+    BilateralDataRecord,
     Commodity,
     CountryAreaCodeIso,
     LiveUpdateRecord,
@@ -67,6 +68,7 @@ from xippios.comtrade.models import (
     PartnerArea,
     ReferenceCode,
     Reporter,
+    TradeBalanceRecord,
     TradeDataItem,
     TradeDataRecord,
     TradeFlowRecord,
@@ -78,8 +80,10 @@ from xippios.comtrade.params import (
     PACKAGED_LISTS,
     PACKAGED_TABLES,
     classification_files,
+    validate_bilateral_data,
     validate_get,
     validate_slice,
+    validate_trade_balance,
 )
 
 TASKS = [getattr(tasks, name) for name in tasks.__all__]
@@ -2068,3 +2072,430 @@ def test_slice_route_end_to_end(replay_fixture: ReplayFixture) -> None:
         assert refused.status_code == 422
         assert "Did you mean 842 (USA)?" in refused.json()["detail"]
         assert route.call_count == 1, "refused before any call"
+
+
+# The Tools operations, tools/v1/getTradeBalance and tools/v1/getBilateralData, recorded
+# on 2026-10-28 under tests/fixtures/get_trade_balance/ and get_bilateral_data/.
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+BY_QUERY = ["reporterCode", "period", "partnerCode", "cmdCode"]
+"""``match_params`` of a Tools fixture: the areas, periods and product the test sends."""
+
+CH_WORLD_2023: dict[str, Any] = {
+    "type_code": "C",
+    "freq_code": "A",
+    "cl_code": "HS",
+    "reporter_code": "757",
+    "period": "2023",
+    "partner_code": "0",
+    "cmd_code": "TOTAL",
+}
+"""Switzerland's trade with the World in 2023, all goods, as ``get_trade_balance`` takes it."""
+
+CH_US_EXPORTS_2023: dict[str, Any] = {
+    "type_code": "C",
+    "freq_code": "A",
+    "cl_code": "HS",
+    "reporter_code": "757",
+    "period": "2023",
+    "partner_code": "842",
+    "cmd_code": "TOTAL",
+    "flow_code": "X",
+}
+"""Switzerland's 2023 exports to the USA, all goods, as ``get_bilateral_data`` takes it."""
+
+
+def _tools_body(wrapper: str, case: str) -> dict[str, Any]:
+    """The decoded body of a recorded Tools answer."""
+    body: dict[str, Any] = json.loads(
+        load_fixture(FIXTURES / wrapper / f"{case}.json").response.body
+    )
+    return body
+
+
+def _recorded(wrapper: str, case: str) -> dict[str, str]:
+    return recorded_query(load_fixture(FIXTURES / wrapper / f"{case}.json"))
+
+
+def _total_row[R: (TradeBalanceRecord, TradeDataRecord)](rows: list[R]) -> R:
+    return next(
+        row for row in rows if (row.customs_code, row.mot_code, row.partner2_code) == TOTAL_ROW
+    )
+
+
+def test_get_trade_balance_puts_exports_beside_imports(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get_trade_balance", "ch_world_2023_include_desc", match_params=BY_QUERY)
+    result = tasks.get_trade_balance(**CH_WORLD_2023, include_desc=True)
+    assert route.call_count == 1
+    assert route.calls.last.request.url.path == "/tools/v1/getTradeBalance/C/A/HS"
+    assert sent_query(route) == _recorded("get_trade_balance", "ch_world_2023_include_desc")
+    assert result.meta.source == "comtrade"
+    assert result.meta.endpoint == "tools/v1/getTradeBalance"
+    assert result.meta.request == {**CH_WORLD_2023, "include_desc": True}
+    assert result.meta.total == len(result.data) == 48
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    raw = _tools_body("get_trade_balance", "ch_world_2023_include_desc")["data"]
+    for row, record in zip(result.data, raw, strict=True):
+        assert isinstance(row, TradeBalanceRecord)
+        assert_projection(row, TradeBalanceRecord.model_validate(record))
+    total = _total_row(result.data)
+    assert total.primary_value_x == total.fobvalue_x == Decimal("419922543423.509")
+    assert total.primary_value_m == total.cifvalue_m == Decimal("365372487609.004")
+    assert (total.cifvalue_x, total.fobvalue_m) == (None, None)
+    assert total.primary_value_bal == Decimal("54550055814.504944")
+    assert total.primary_value_bal != total.primary_value_x - total.primary_value_m, (
+        "upstream's value, passed through, not computed"
+    )
+    assert (total.reporter_iso, total.reporter_desc) == ("CHE", "Switzerland")
+    assert (total.partner_desc, total.cmd_desc, total.customs_desc) == (
+        "World",
+        "All Commodities",
+        "TOTAL CPC",
+    )
+    assert (total.is_reported, total.is_aggregate) == (False, True)
+    assert "flow_code" not in TradeBalanceRecord.model_fields
+
+
+def test_trade_balance_exports_are_get_datas_exports(fixtures_dir: Path) -> None:
+    """Same query, same reporter: the X column is ``data/v1/get``'s export total."""
+    tools = [
+        TradeBalanceRecord.model_validate(row)
+        for row in _tools_body("get_trade_balance", "ch_world_2023_include_desc")["data"]
+    ]
+    exports = _total_row(_records(fixtures_dir, "ch_exports_2023"))
+    assert _total_row(tools).primary_value_x == exports.primary_value
+
+
+def test_trade_balance_without_breakdown_mode_gives_every_breakdown(
+    replay_fixture: ReplayFixture,
+) -> None:
+    classic = replay_fixture(
+        "get_trade_balance",
+        "ch_world_2023_include_desc_breakdown_mode_classic",
+        match_params=["breakdownMode"],
+    )
+    default = replay_fixture(
+        "get_trade_balance", "ch_world_2023_include_desc", match_params=BY_QUERY
+    )
+    every = tasks.get_trade_balance(**CH_WORLD_2023, include_desc=True).data
+    [total] = tasks.get_trade_balance(
+        **CH_WORLD_2023, breakdown_mode="classic", include_desc=True
+    ).data
+    assert classic.call_count == default.call_count == 1
+    assert "breakdownMode" not in sent_query(default)
+    assert sent_query(classic)["breakdownMode"] == "classic"
+    assert len({(row.customs_code, row.mot_code, row.partner2_code) for row in every}) == 48
+    assert (total.customs_code, total.mot_code, total.partner2_code) == TOTAL_ROW
+    assert total == _total_row(every)
+
+
+def test_trade_balance_nothing_matches_is_an_empty_list(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("get_trade_balance", "ch_world_1900_empty", match_params=BY_QUERY)
+    result = tasks.get_trade_balance(**{**CH_WORLD_2023, "period": "1900"})
+    assert (result.data, result.meta.total) == ([], 0)
+    assert sent_query(route) == _recorded("get_trade_balance", "ch_world_1900_empty")
+
+
+def _tools_refused(respx_mock: respx.MockRouter, call: Callable[[], object]) -> str:
+    with pytest.raises(InvalidRequestError) as info:
+        call()
+    assert not respx_mock.calls, "refused before any call"
+    return str(info.value)
+
+
+THIRTEEN = ",".join(str(year) for year in range(2010, 2023))
+
+
+def test_trade_balance_takes_12_periods(respx_mock: respx.MockRouter) -> None:
+    message = _tools_refused(
+        respx_mock, lambda: tasks.get_trade_balance(**{**CH_WORLD_2023, "period": THIRTEEN})
+    )
+    assert "period has 13 values; UN Comtrade takes at most 12 per call" in message
+
+
+@pytest.mark.anyio
+async def test_upstream_refuses_13_periods_on_trade_balance(replay_fixture: ReplayFixture) -> None:
+    """Layer 1, past the task's check: HTTP 400, as ``data/v1/get`` answers."""
+    replay_fixture("get_trade_balance", "ch_world_13_periods", match_params=["period"])
+    with pytest.raises(InvalidRequestError, match="Maximum number of periods is 12"):
+        await api.get_trade_balance(
+            "C", "A", "HS", reporter_code="757", period=THIRTEEN, partner_code="0",
+            cmd_code="TOTAL", breakdown_mode="classic",
+        )  # fmt: skip
+
+
+def test_count_only_counts_nothing_on_the_tools() -> None:
+    """``countOnly``, which the Tools spec does not list: no count on either operation."""
+    counted = _tools_body("get_trade_balance", "count_only_ch_world_2023")
+    rows = _tools_body("get_trade_balance", "ch_world_2023_include_desc")
+    assert _recorded("get_trade_balance", "count_only_ch_world_2023")["countOnly"] == "true"
+    assert (counted["count"], counted["error"]) == (0, "")
+    assert isinstance(counted["data"], dict), "a placeholder record, as data/v1/get's count"
+    assert rows["count"] == 48, "the same query answers 48 rows"
+    ignored = _tools_body("get_bilateral_data", "count_only_ch_us_exports_2023")
+    plain = _tools_body("get_bilateral_data", "ch_us_exports_2023")
+    assert _recorded("get_bilateral_data", "count_only_ch_us_exports_2023")["countOnly"] == "true"
+    assert (ignored["count"], ignored["data"]) == (plain["count"], plain["data"])
+
+
+def test_tools_queries_name_an_area_and_a_product(respx_mock: respx.MockRouter) -> None:
+    """No count to check a query's size first, so the arguments bound it."""
+    balance = _tools_refused(
+        respx_mock, lambda: tasks.get_trade_balance("C", "A", "HS", period="2023", cmd_code="TOTAL")
+    )
+    assert balance.startswith("get_trade_balance needs reporter_code or partner_code, and cmd_code")
+    assert "countOnly answered 0 for a query of 48 rows" in balance
+    bilateral = _tools_refused(
+        respx_mock, lambda: tasks.get_bilateral_data("C", "A", "HS", reporter_code="757")
+    )
+    assert bilateral.startswith("get_bilateral_data needs reporter_code or partner_code")
+    by_partner = validate_bilateral_data(**{**CH_US_EXPORTS_2023, "reporter_code": None})
+    assert "reporter_code" not in by_partner, "a partner bounds it too"
+
+
+def test_tools_refuse_an_unknown_area_before_the_call(respx_mock: respx.MockRouter) -> None:
+    with pytest.raises(UnknownCode) as balance:
+        tasks.get_trade_balance(**{**CH_WORLD_2023, "reporter_code": "756"})
+    assert str(balance.value) == REFUSED_756
+    with pytest.raises(UnknownCode) as bilateral:
+        tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "partner_code": "842,9999"})
+    assert (bilateral.value.param, bilateral.value.value, bilateral.value.list_name) == (
+        "partner_code",
+        "9999",
+        "partnerAreas",
+    )
+    assert not respx_mock.calls
+
+
+@pytest.mark.parametrize("cl_code", ["BE4", "BE5", "EBSDMX"])
+def test_tools_check_the_classification_against_the_packaged_list(cl_code: str) -> None:
+    """In the Tools spec's enum, not in the package's list: refused before the call."""
+    for validate in (validate_trade_balance, validate_bilateral_data):
+        with pytest.raises(InvalidRequestError, match=f"cl_code '{cl_code}' is not a UN Comtrade"):
+            validate(**{**CH_WORLD_2023, "cl_code": cl_code})
+
+
+def test_tools_take_the_editions_the_tools_spec_does_not_list() -> None:
+    assert validate_trade_balance(**{**CH_WORLD_2023, "cl_code": "H6"})["cl_code"] == "H6"
+    assert validate_bilateral_data(**{**CH_US_EXPORTS_2023, "cl_code": "B5"})["cl_code"] == "B5"
+
+
+def test_get_bilateral_data_puts_the_mirror_beside_the_reported_figures(
+    replay_fixture: ReplayFixture,
+) -> None:
+    route = replay_fixture(
+        "get_bilateral_data",
+        "ch_us_exports_2023_include_desc",
+        match_params=[*BY_QUERY, "flowCode"],
+    )
+    result = tasks.get_bilateral_data(**CH_US_EXPORTS_2023, include_desc=True)
+    assert route.calls.last.request.url.path == "/tools/v1/getBilateralData/C/A/HS"
+    assert sent_query(route) == _recorded("get_bilateral_data", "ch_us_exports_2023_include_desc")
+    assert result.meta.endpoint == "tools/v1/getBilateralData"
+    assert result.meta.request == {**CH_US_EXPORTS_2023, "include_desc": True}
+    assert result.meta.total == 1
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    [row] = result.data
+    [raw] = _tools_body("get_bilateral_data", "ch_us_exports_2023_include_desc")["data"]
+    assert isinstance(row, BilateralDataRecord)
+    assert_projection(row, BilateralDataRecord.model_validate(raw))
+    assert (row.reporter_code, row.partner_code, row.flow_code, row.period) == (
+        757,
+        842,
+        "X",
+        "2023",
+    )
+    assert row.primary_value == row.fobvalue == Decimal("62852531481.607")
+    assert row.mirror_primary_value == Decimal("52815436548.0")
+    assert row.primary_value_disc == Decimal("-0.15969277126959047")
+    relative = (row.mirror_primary_value - row.primary_value) / row.primary_value
+    assert float(row.primary_value_disc) == pytest.approx(float(relative), rel=1e-12), (
+        "observed, not stated: a relative difference, passed through"
+    )
+    assert (row.mirror2_primary_value, row.mirror2_qty, row.mirror2_qty_unit_code) == (
+        Decimal(0),
+        None,
+        None,
+    )
+    assert (row.customs_code, row.mot_code) == ("C00", 0), "classic mode only"
+    assert (row.reporter_iso, row.reporter_desc, row.partner_desc) == (None, None, None)
+    assert (row.is_extended_partner_code, row.is_extended_partner2_code) == (True, False)
+
+
+def test_bilateral_include_desc_changes_nothing(replay_fixture: ReplayFixture) -> None:
+    with_desc = replay_fixture(
+        "get_bilateral_data", "ch_us_exports_2023_include_desc", match_params=["includeDesc"]
+    )
+    without = replay_fixture(
+        "get_bilateral_data", "ch_us_exports_2023", match_params=[*BY_QUERY, "flowCode"]
+    )
+    described = tasks.get_bilateral_data(**CH_US_EXPORTS_2023, include_desc=True).data
+    plain = tasks.get_bilateral_data(**CH_US_EXPORTS_2023).data
+    assert with_desc.call_count == without.call_count == 1
+    assert sent_query(without) == _recorded("get_bilateral_data", "ch_us_exports_2023")
+    assert described == plain
+
+
+def test_a_partner_that_has_not_reported_gives_a_mirror_of_zero(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Afghanistan's 2023 imports are not reported: its mirror is 0, not "no trade"."""
+    replay_fixture("get_bilateral_data", "ch_us_kp_af_exports_2023", match_params=BY_QUERY)
+    result = tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "partner_code": "842,408,4"})
+    assert [row.partner_code for row in result.data] == [842, 4], "no row for 408"
+    afghanistan = result.data[1]
+    assert afghanistan.primary_value == Decimal("5718328.953")
+    assert afghanistan.mirror_primary_value == 0
+    assert afghanistan.primary_value_disc == -1
+    assert (afghanistan.mirror_qty, afghanistan.mirror_qty_unit_code) == (None, None)
+    assert afghanistan.is_extended_partner_code is False
+
+
+def test_a_pair_without_data_has_no_row(replay_fixture: ReplayFixture, fixtures_dir: Path) -> None:
+    """Switzerland reported no 2023 exports to DPRK (408): ``data/v1/get`` answers none too."""
+    route = replay_fixture(
+        "get_bilateral_data", "ch_kp_exports_2023_include_desc", match_params=BY_QUERY
+    )
+    result = tasks.get_bilateral_data(
+        **{**CH_US_EXPORTS_2023, "partner_code": "408"}, include_desc=True
+    )
+    assert (result.data, result.meta.total) == ([], 0)
+    assert sent_query(route) == _recorded("get_bilateral_data", "ch_kp_exports_2023_include_desc")
+    assert _rows(fixtures_dir, "ch_kp_exports_2023_totals") == []
+
+
+def test_bilateral_data_takes_more_than_12_periods(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture(
+        "get_bilateral_data", "ch_us_exports_13_periods", match_params=["period"]
+    )
+    result = tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "period": THIRTEEN})
+    assert route.call_count == 1
+    assert [row.period for row in result.data] == THIRTEEN.split(",")
+    assert result.meta.total == 13
+    assert {row.classification_code for row in result.data} == {"H3", "H4", "H5", "H6"}
+
+
+def test_bilateral_data_takes_one_flow(respx_mock: respx.MockRouter) -> None:
+    both = _tools_refused(
+        respx_mock,
+        lambda: tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "flow_code": "M,X"}),
+    )
+    assert "flow_code 'M,X' must be one flow, 'M' or 'X'" in both
+    re_exports = _tools_refused(
+        respx_mock,
+        lambda: tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "flow_code": "RX"}),
+    )
+    assert "flow_code 'RX' is not a flowCode getBilateralData takes" in re_exports
+    assert "Valid values: M, X" in re_exports
+
+
+@pytest.mark.anyio
+async def test_upstream_refuses_two_flows_on_bilateral_data(replay_fixture: ReplayFixture) -> None:
+    """Layer 1: the spec's description reads csv, its enum and upstream take one flow."""
+    replay_fixture("get_bilateral_data", "ch_us_2023_flow_code_m_x", match_params=["flowCode"])
+    with pytest.raises(InvalidRequestError) as info:
+        await api.get_bilateral_data(
+            "C", "A", "HS", reporter_code="757", period="2023", partner_code="842",
+            cmd_code="TOTAL", flow_code="M,X",
+        )  # fmt: skip
+    assert "Invalid parameter value" in str(info.value)
+    assert "The field flowCode is invalid" in str(info.value)
+
+
+@pytest.mark.anyio
+async def test_the_bilateral_envelope_has_a_utc_timestamp_and_a_note(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Layer 1: ``timestampRequested`` is UTC per the spec; the note's wording varies."""
+    replay_fixture("get_bilateral_data", "ch_us_kp_af_exports_2023", match_params=BY_QUERY)
+    gap = await api.get_bilateral_data(
+        "C", "A", "HS", reporter_code="757", period="2023", partner_code="842,408,4",
+        cmd_code="TOTAL", flow_code="X",
+    )  # fmt: skip
+    assert gap.timestamp_requested == datetime(2026, 10, 28, 16, 17, 21, 134000, tzinfo=UTC)
+    assert gap.note is not None
+    assert gap.note.startswith(
+        "EXPERIMENTAL: In reviewing the selection criteria, we've identified a data gap for "
+        "2 partner(s)"
+    )
+    assert (gap.count, len(gap.data), gap.error) == (2, 2, "")
+    no_gap = _tools_body("get_bilateral_data", "ch_us_exports_2023")
+    assert no_gap["note"].startswith("EXPERIMENTAL: We have good news! There is no data gap")
+    assert no_gap["timestampRequested"] == "2026-10-28 16:15:58.965"
+
+
+@pytest.mark.anyio
+async def test_tools_end_to_end_over_mcp(replay_fixture: ReplayFixture) -> None:
+    replay_fixture(
+        "get_trade_balance",
+        "ch_world_2023_include_desc_breakdown_mode_classic",
+        match_params=["breakdownMode"],
+    )
+    replay_fixture("get_bilateral_data", "ch_us_exports_2023", match_params=BY_QUERY)
+    balance = json.loads(
+        await mcp_call_text(
+            server,
+            "comtrade_get_trade_balance",
+            {**CH_WORLD_2023, "breakdown_mode": "classic", "include_desc": True},
+        )
+    )
+    [total] = balance["data"]
+    assert total["primary_value_x"] == 419922543423.509
+    assert total["primary_value_bal"] == 54550055814.504944
+    assert (balance["meta"]["endpoint"], balance["meta"]["total"]) == (
+        "tools/v1/getTradeBalance",
+        1,
+    )
+    bilateral = json.loads(
+        await mcp_call_text(server, "comtrade_get_bilateral_data", CH_US_EXPORTS_2023)
+    )
+    [row] = bilateral["data"]
+    assert (row["primary_value"], row["mirror_primary_value"]) == (62852531481.607, 52815436548.0)
+    assert bilateral["meta"]["request"] == CH_US_EXPORTS_2023
+    refused = await mcp_call_text(
+        server, "comtrade_get_trade_balance", {**CH_WORLD_2023, "reporter_code": "756"}
+    )
+    assert refused == f"error: UnknownCode: {REFUSED_756}"
+    two_flows = await mcp_call_text(
+        server, "comtrade_get_bilateral_data", {**CH_US_EXPORTS_2023, "flow_code": "M,X"}
+    )
+    assert two_flows.startswith("error: InvalidRequestError: flow_code 'M,X' must be one flow")
+
+
+def test_tools_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    balance_route = replay_fixture(
+        "get_trade_balance",
+        "ch_world_2023_include_desc_breakdown_mode_classic",
+        match_params=["breakdownMode"],
+    )
+    bilateral_route = replay_fixture(
+        "get_bilateral_data", "ch_us_exports_2023", match_params=BY_QUERY
+    )
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as http:
+        balance = http.get(
+            "/comtrade/get_trade_balance",
+            params={**CH_WORLD_2023, "breakdown_mode": "classic", "include_desc": "true"},
+        )
+        assert balance.status_code == 200
+        [total] = balance.json()["data"]
+        assert (total["primary_value_m"], total["reporter_desc"]) == (
+            365372487609.004,
+            "Switzerland",
+        )
+        bilateral = http.get("/comtrade/get_bilateral_data", params=CH_US_EXPORTS_2023)
+        assert bilateral.status_code == 200
+        assert bilateral.json()["data"][0]["primary_value_disc"] == -0.15969277126959047
+        assert bilateral.json()["meta"]["total"] == 1
+        refused = http.get(
+            "/comtrade/get_bilateral_data", params={**CH_US_EXPORTS_2023, "flow_code": "M,X"}
+        )
+        assert refused.status_code == 422
+    assert balance_route.call_count == bilateral_route.call_count == 1
