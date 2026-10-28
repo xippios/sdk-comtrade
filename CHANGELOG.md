@@ -32,8 +32,8 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   product codes, at most 12 periods of one format (the slices' bound; upstream answered
   13), flow `X` or `M`, checked before the call (`params.validate_mirror_flows`), the
   rows bounded by product codes times periods. It returns one `MirrorFlows`: upstream's
-  `note` and `timestamp_requested` with the rows as `MirrorFlowRecord`, sorted by period,
-  then product code, the reported and mirror columns under upstream's names, nothing
+  `note` and `timestamp_requested` with the rows as `MirrorFlowRecord`, in upstream's
+  order, the reported and mirror columns under upstream's names, nothing reordered or
   computed (`primary_value_disc` and `mirror2_primary_value` as sent). `includeDesc` is
   not sent: it filled no description. Recorded on 2026-10-28, Switzerland's chapter 27
   exports to the USA in 2022 and 2023 and in January 2023

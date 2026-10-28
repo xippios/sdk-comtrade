@@ -171,11 +171,12 @@ The mirror slice, `get_mirror_flows`, calls `tools/v1/getBilateralData` through
 `api.get_bilateral_data` instead, with `params.validate_mirror_flows`: `validate_slice`'s
 resolution and checks, one flow of `TOOLS_FLOW_CODES`, at most 12 periods (the slices'
 bound, though upstream answered 13), `typeCode` C and no `includeDesc`, which filled no
-description. It is bounded by product codes × periods like `get_bilateral_flows`, sorts
-its rows the same way (period, then product code), projects them into `MirrorFlowRecord`
-(the identity fields, the reported figures and their mirrors, `primary_value_disc` and
-`mirror2_primary_value` as sent; the empty `mirror2*` quantities left out) and returns
-them with upstream's note as one `MirrorFlows`. Recorded on 2026-10-28 for Switzerland's
+description. It is bounded by product codes × periods like `get_bilateral_flows`, keeps
+its rows in upstream's order (period order in both recordings: one call, nothing to
+join, unlike the series), projects them into `MirrorFlowRecord` (the identity fields,
+the reported figures and their mirrors, `primary_value_disc` and `mirror2_primary_value`
+as sent; the empty `mirror2*` quantities left out) and returns them with upstream's note
+as one `MirrorFlows`. Recorded on 2026-10-28 for Switzerland's
 chapter 27 exports to the USA (`ch_us_27_2022_2023_x.json`, `ch_us_27_202301_x.json`
 under `tests/fixtures/get_bilateral_data/`): chapter rows and monthly periods are
 answered, the note found no gap, and the reported values equal `data/v1/get`'s
