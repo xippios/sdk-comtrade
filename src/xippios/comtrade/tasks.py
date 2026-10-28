@@ -505,12 +505,14 @@ async def get_commodity_series_async(
     Upstream takes at most 12 periods per call, so the periods are sent in chunks of 12,
     one call after the other in the order given (14 periods: two calls, 1.5 s apart), and
     the rows are joined and sorted by period; a period upstream holds nothing for has no
-    row. One row per period at most, so there is no count call. Every chunk is a keyed
-    call and a free key allows 500 calls a day, so one series takes at most 120 periods
-    (ten calls); more raise ``InvalidRequestError`` before any call: split the series.
-    Arguments are resolved and checked before any call; a mistake raises
-    ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds the
-    ``get_data`` arguments with every period; they were sent 12 at a time.
+    row. A period the reporter has not released yet has no row either, which cannot be
+    told from a period without trade; ``get_data_availability`` names the periods a
+    reporter has released. One row per period at most, so there is no count call. Every
+    chunk is a keyed call and a free key allows 500 calls a day, so one series takes at
+    most 120 periods (ten calls); more raise ``InvalidRequestError`` before any call:
+    split the series. Arguments are resolved and checked before any call; a mistake
+    raises ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds
+    the ``get_data`` arguments with every period; they were sent 12 at a time.
 
     Args:
         reporter: The reporting area, as UN Comtrade's code or its ISO alpha-3 code:

@@ -176,7 +176,7 @@ package.
 ## Commands
 
 ```bash
-direnv exec /home/johan/github/sdk uv run pytest -m live --tb=short   # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY
+uv run pytest -m live --tb=short   # needs XIPPIOS_LIVE_TESTS=1 and COMTRADE_API_KEY
 
 uv run xippios-comtrade-mcp   # stdio; add --http for streamable HTTP
 ```
