@@ -32,11 +32,13 @@ from xippios.comtrade.api.get_live_update import ENDPOINT as GET_LIVE_UPDATE
 from xippios.comtrade.api.get_metadata import ENDPOINT as GET_METADATA
 from xippios.comtrade.errors import MAX_PERIODS, RECORD_LIMIT, QueryTooLarge
 from xippios.comtrade.models import (
+    CodeValue,
     Commodity,
     DataAvailability,
     LiveUpdateRecord,
     MetadataDataset,
     PartnerArea,
+    Reference,
     Reporter,
     TradeDataRecord,
     TradeFlowRecord,
@@ -44,9 +46,12 @@ from xippios.comtrade.models import (
 from xippios.comtrade.params import (
     MAX_SERIES_PERIODS,
     PACKAGE,
+    PACKAGED_LISTS,
     validate_classification_file,
+    validate_code_list,
     validate_datasets,
     validate_get,
+    validate_reference_category,
     validate_slice,
 )
 
@@ -60,6 +65,8 @@ __all__ = [
     "get_metadata",
     "get_top_partners",
     "get_world_trade",
+    "list_classifications",
+    "list_codes",
     "list_commodities",
     "list_partners",
     "list_reporters",
@@ -761,6 +768,63 @@ async def list_commodities_async(
     return Result(data=rows, meta=meta)
 
 
+async def list_codes_async(param: str) -> Result[list[CodeValue]]:
+    """List the values one UN Comtrade parameter takes, each with upstream's words for it.
+
+    Answered from the list packaged with this version (``reference/<param>.json``),
+    without an upstream call; ``meta.endpoint`` is the reference file or the spec the list
+    came from, ``meta.retrieved_at`` when the package fetched it, ``meta.vintage`` is
+    ``None``. Each row holds the value under the parameter's name in snake_case
+    (``flow_code``, ``qty_unit_code``) and upstream's words for it, under upstream's
+    names: ``text`` from the reference files for ``flowCode`` (``tradeRegimes.json``),
+    ``customsCode``, ``motCode`` and ``mosCode``; ``qty_abbr`` and ``qty_description`` for
+    ``qtyUnitCode``; ``variable`` and ``description`` from ``ListofReferences.json`` for
+    ``clCode``; for ``typeCode`` and ``freqCode`` ``text`` is the spec's wording (``"C"``
+    commodities, ``"A"`` annual). A value the package takes from the spec carries none:
+    ``"MIF"`` and ``"XIF"`` (``flowCode``), ``"BE"`` and ``"TM"`` (``clCode``), and
+    ``breakdownMode`` and ``aggregateBy``, whose descriptions word no value. ``mosCode``
+    lists ``ModeOfSupply.json``'s ids, not proven parameter values (``data/v1/get``
+    refused ``"Mode 1"`` and accepted ``"0"`` and ``"1"``). At most 41 rows
+    (``qtyUnitCode``).
+
+    Args:
+        param: The parameter, as upstream names it: ``"flowCode"``, ``"customsCode"``,
+            ``"motCode"``, ``"clCode"``, ``"typeCode"``, ``"freqCode"``,
+            ``"breakdownMode"``, ``"aggregateBy"``, ``"qtyUnitCode"`` or ``"mosCode"``.
+    """
+    request = validate_code_list(param)
+    packaged = PackagedList.load(PACKAGE, param)
+    rows: list[CodeValue] = list(packaged.parse(PACKAGED_LISTS[param], source=SOURCE))
+    return Result(data=rows, meta=packaged.meta(SOURCE, request=request))
+
+
+async def list_classifications_async(category: str | None = None) -> Result[list[Reference]]:
+    """List UN Comtrade's reference files, the product classifications among them, by category.
+
+    Answered from upstream's index of the files, ``ListofReferences.json``, as packaged
+    with this version (``reference/ListofReferences.json``), without an upstream call;
+    ``meta.retrieved_at`` is when the package fetched it, ``meta.vintage`` is ``None``.
+    28 rows when packaged, one per file: its ``category`` (``"flow"``, ``"reporter"``,
+    ``"cmd:HS"``), the ``variable`` it lists (``"Product [HS 2022]"``), upstream's
+    ``description`` and where the file is served, ``fileuri``. A category
+    ``cmd:<clCode>`` is a product classification, 19 of them: the ``cl_code`` that
+    ``get_data`` and ``list_commodities`` take (``"cmd:H6"`` is ``"H6"``, HS 2022).
+
+    Args:
+        category: Keep the row of this category, as upstream writes it, e.g.
+            ``"cmd:HS"``, ``"cmd:H6"``, ``"cmd:EB10"``, ``"flow"``, ``"reporter"``,
+            ``"qtyunit"``. Omit for every row.
+    """
+    request = validate_reference_category(category)
+    packaged = PackagedList.load(PACKAGE, "ListofReferences")
+    rows = [
+        row
+        for row in packaged.parse(Reference, source=SOURCE)
+        if category is None or row.category == category
+    ]
+    return Result(data=rows, meta=packaged.meta(SOURCE, request=request))
+
+
 get_bilateral_flows = sync(get_bilateral_flows_async)
 get_commodity_series = sync(get_commodity_series_async)
 get_counts = sync(get_counts_async)
@@ -770,6 +834,8 @@ get_live_update = sync(get_live_update_async)
 get_metadata = sync(get_metadata_async)
 get_top_partners = sync(get_top_partners_async)
 get_world_trade = sync(get_world_trade_async)
+list_classifications = sync(list_classifications_async)
+list_codes = sync(list_codes_async)
 list_commodities = sync(list_commodities_async)
 list_partners = sync(list_partners_async)
 list_reporters = sync(list_reporters_async)
