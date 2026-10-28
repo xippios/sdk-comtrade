@@ -46,6 +46,8 @@ __all__ = [
     "MetadataDataset",
     "MetadataNote",
     "MetadataResponse",
+    "MirrorFlowRecord",
+    "MirrorFlows",
     "PartnerArea",
     "QuantityUnit",
     "Reference",
@@ -506,6 +508,116 @@ class BilateralData(UpstreamModel):
     timestamp_requested: _UtcTime = Field(default=None, validation_alias="timestampRequested")
     note: str | None = None
     data: list[BilateralDataRecord]
+
+
+class MirrorFlowRecord(UpstreamModel):
+    """One mirror flow: a projection of ``BilateralDataRecord`` for ``get_mirror_flows``.
+
+    One reporter, one partner, one product code, one flow and one period, at the total of
+    every breakdown (getBilateralData answers in classic mode: ``customsCode`` ``C00``,
+    ``motCode`` 0). The reporter's figures (``primary_value``, ``qty``, ``alt_qty``,
+    ``net_wgt``, ``gross_wgt``, ``cifvalue``, ``fobvalue``) stand beside the partner's
+    mirror of them (``mirror_primary_value``, ``mirror_qty``, ``mirror_alt_qty``,
+    ``mirror_net_wgt``, ``mirror_gross_wgt``, with the mirror unit codes); for a reporter's
+    exports the mirror is "the import data reported by" the partner (Help Center,
+    ``un-comtrade-tools.md``). Fields keep their upstream names in snake_case (ADR-0003),
+    with the values of ``BilateralDataRecord``: nothing is renamed or computed.
+
+    ``primary_value_disc`` and ``mirror2_primary_value`` are upstream's, passed through;
+    upstream states the meaning of neither. In every recorded row ``primary_value_disc``
+    equals ``(mirror_primary_value - primary_value) / primary_value`` (``-0.948930998489112``
+    for Switzerland's 2023 exports of HS chapter 27 to the USA,
+    ``tests/fixtures/get_bilateral_data/ch_us_27_2022_2023_x.json``), while the
+    arithmetic of the spec's example fits ``primary_value - mirror_primary_value``;
+    ``mirror2_primary_value`` is 0 in every recorded row, and the ``mirror2_*`` quantities
+    and unit codes, ``None`` in every recorded row, are left out. ``is_extended_partner_code``
+    is passed through too; the spec does not state its meaning for this operation.
+
+    getBilateralData fills no description (``includeDesc`` filled none when recorded), so
+    ``reporter_iso``, ``reporter_desc``, ``partner_iso``, ``partner_desc``, ``flow_desc``,
+    ``cmd_desc`` and the unit abbreviations are ``None`` in every recorded row;
+    ``list_reporters`` and ``list_partners`` name the codes. At ``TOTAL`` and chapter level
+    the recorded rows are mostly UN Comtrade's aggregates (``is_aggregate`` true,
+    ``is_reported`` false; Switzerland's 2010 and 2011 totals to the USA are reported
+    figures), and none carries a quantity: ``qty`` 0 with ``qty_unit_code`` -1; read the
+    trade values there. The fields left out are those the operation pins
+    (``type_code``, ``customs_*``, ``mot_*``, ``mos_code``), those it does not fill
+    (``aggr_level``, ``is_leaf``) and its bookkeeping (``ref_period_id``,
+    ``classification_search_code``, ``is_original_classification``,
+    ``is_extended_partner2_code``, ``legacy_estimation_flag``).
+    """
+
+    freq_code: str | None
+    ref_year: int
+    ref_month: int
+    period: str | None
+    reporter_code: int
+    reporter_iso: str | None
+    reporter_desc: str | None
+    flow_code: str | None
+    flow_desc: str | None
+    partner_code: int
+    partner_iso: str | None
+    partner_desc: str | None
+    classification_code: str | None
+    cmd_code: str | None
+    cmd_desc: str | None
+    qty_unit_code: int | None
+    qty_unit_abbr: str | None
+    mirror_qty_unit_code: int | None
+    mirror_qty_unit_abbr: str | None
+    qty: Decimal | None
+    mirror_qty: Decimal | None
+    is_qty_estimated: bool
+    alt_qty_unit_code: int | None
+    alt_qty_unit_abbr: str | None
+    alt_qty: Decimal | None
+    mirror_alt_qty_unit_code: int | None
+    mirror_alt_qty_unit_abbr: str | None
+    mirror_alt_qty: Decimal | None
+    is_alt_qty_estimated: bool
+    net_wgt: Decimal | None
+    mirror_net_wgt: Decimal | None
+    is_net_wgt_estimated: bool
+    gross_wgt: Decimal | None
+    mirror_gross_wgt: Decimal | None
+    is_gross_wgt_estimated: bool
+    cifvalue: Decimal | None
+    fobvalue: Decimal | None
+    primary_value: Decimal
+    is_extended_partner_code: bool | None
+    mirror_primary_value: Decimal
+    primary_value_disc: Decimal
+    mirror2_primary_value: Decimal
+    is_reported: bool | None
+    is_aggregate: bool | None
+
+
+class MirrorFlows(UpstreamModel):
+    """A reporter's trade with one partner beside the partner's mirror, with upstream's note.
+
+    What ``get_mirror_flows`` returns: a projection of ``BilateralDataResponse``
+    (``UpstreamModel.project``), the shape of ``BilateralData`` with its rows projected into
+    ``MirrorFlowRecord``: the envelope's ``timestampRequested`` and ``note`` and the rows
+    under upstream's name, ``data``, so a result reads ``result.data.data``. ``count`` goes
+    to ``meta.total``; ``elapsedTime`` and ``error`` are left out, as for the other
+    envelopes.
+
+    Attributes:
+        timestamp_requested: When upstream took the request, "UTC, yyyy-MM-dd
+            HH:mm:ss.fff" per the spec, read as UTC; ``None`` when upstream sends none.
+        note: Upstream's "Data-gap note for the requested reporters/partners, if any." (the
+            spec), as sent, HTML markup included; ``None`` when upstream sends none, which
+            no recorded answer did. It qualifies the mirror columns: it counts the partners
+            with a data gap and gives their share of world trade, without naming them
+            (``BilateralData`` quotes both recorded wordings).
+        data: The rows, one ``MirrorFlowRecord`` per product code and period, in
+            upstream's order (period order in every recording).
+    """
+
+    timestamp_requested: _UtcTime = Field(default=None, validation_alias="timestampRequested")
+    note: str | None = None
+    data: list[MirrorFlowRecord]
 
 
 class ReferenceCode(UpstreamModel):

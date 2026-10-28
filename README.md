@@ -60,10 +60,10 @@ list_partners().data  # 310 partner areas, 0 World among them
 list_commodities("HS", search="coffee").data  # from 8,262 HS codes, fetched keyless once
 ```
 
-Four task-shaped slices answer the common questions in one call each (the series in one
-call per 12 periods), at the total of every breakdown, one row per reporter × partner ×
-product code × period. Areas are UN Comtrade's codes or ISO alpha-3 codes; `YYYY` periods
-ask for annual data, `YYYYMM` for monthly:
+Four task-shaped slices on `data/v1/get` answer the common questions in one call each
+(the series in one call per 12 periods), at the total of every breakdown, one row per
+reporter × partner × product code × period. Areas are UN Comtrade's codes or ISO alpha-3
+codes; `YYYY` periods ask for annual data, `YYYYMM` for monthly:
 
 ```python
 from xippios.comtrade import (
@@ -126,6 +126,20 @@ depends on whether the partner reported. So `get_bilateral_data` returns upstrea
 `note`, which counts the partners with a data gap without naming them, and its
 `timestamp_requested`, with the rows: its `data` is one `BilateralData`, not a list.
 
+A fifth slice, `get_mirror_flows`, asks getBilateralData the slices' way: one reporter and
+one partner as codes or ISO alpha-3, single product codes, up to 12 periods of one
+format, one flow. Each row holds the reporter's figures beside the partner's mirror of
+them, and the result keeps the note:
+
+```python
+from xippios.comtrade import get_mirror_flows
+
+mirror = get_mirror_flows("CHE", "USA", "27", "2022,2023", "X").data
+mirror.note  # 'EXPERIMENTAL: We have good news! There is no data gap ...'
+[(r.period, r.primary_value, r.mirror_primary_value) for r in mirror.data]
+# Switzerland's chapter 27 exports to the USA beside the USA's reported imports of them
+```
+
 `get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
 result without a second call, and a count above 100,000 raises `QueryTooLarge` with the
 count before anything is fetched, because upstream would cut the answer at 100,000 rows
@@ -176,13 +190,14 @@ HTTP instead of stdio.
 | `data/v1/get/C/{A,M}/{clCode}`, total row, every partner, ranked | `get_top_partners(reporter, commodity, period, flow, n, *, cl_code="HS")` | `comtrade_get_top_partners` | alpha |
 | `tools/v1/getTradeBalance/{typeCode}/{freqCode}/{clCode}` | `get_trade_balance(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, cmd_code=, ...)` | `comtrade_get_trade_balance` | alpha; experimental upstream |
 | `tools/v1/getBilateralData/{typeCode}/{freqCode}/{clCode}` | `get_bilateral_data(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, cmd_code=, flow_code=, ...)`, returns `BilateralData` (`note`, `timestamp_requested`, the rows as `data`) | `comtrade_get_bilateral_data` | alpha; experimental upstream |
+| `tools/v1/getBilateralData/C/{A,M}/{clCode}`, one reporter and partner, at most 12 periods | `get_mirror_flows(reporter, partner, commodities, periods, flow, *, cl_code="HS")`, returns `MirrorFlows` (`note`, `timestamp_requested`, the rows as `data`) | `comtrade_get_mirror_flows` | alpha; experimental upstream |
 | `files/v1/app/reference/Reporters.json`, packaged | `list_reporters(search=None)` | `comtrade_list_reporters` | alpha |
 | `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(search=None)` | `comtrade_list_partners` | alpha |
 | `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
 
 Every task above came with 0.1.0, the first release, but `get_trade_balance`,
-`get_bilateral_data`, `get_comtrade_releases` and `get_world_share`, which are
-unreleased. Alpha: the public surface may change in a minor version before 1.0;
+`get_bilateral_data`, `get_mirror_flows`, `get_comtrade_releases` and `get_world_share`,
+which are unreleased. Alpha: the public surface may change in a minor version before 1.0;
 `CHANGELOG.md` lists every change.
 
 ## Upstream terms and attribution

@@ -25,6 +25,21 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   Both need `reporter_code` or `partner_code`, and `cmd_code`, checked before the call
   with the other arguments (`params.validate_trade_balance`,
   `params.validate_bilateral_data`).
+- `get_mirror_flows(reporter, partner, commodities, periods, flow, *, cl_code="HS")`,
+  MCP tool `comtrade_get_mirror_flows`: a reporter's reported trade with one partner
+  beside the partner's reported mirror of it, per product code and period, in one
+  `tools/v1/getBilateralData` call for goods. Areas as codes or ISO alpha-3, single
+  product codes, at most 12 periods of one format (the slices' bound; upstream answered
+  13), flow `X` or `M`, checked before the call (`params.validate_mirror_flows`), the
+  rows bounded by product codes times periods. It returns one `MirrorFlows`: upstream's
+  `note` and `timestamp_requested` with the rows as `MirrorFlowRecord`, in upstream's
+  order, the reported and mirror columns under upstream's names, nothing reordered or
+  computed (`primary_value_disc` and `mirror2_primary_value` as sent). `includeDesc` is
+  not sent: it filled no description. Recorded on 2026-10-28, Switzerland's chapter 27
+  exports to the USA in 2022 and 2023 and in January 2023
+  (`tests/fixtures/get_bilateral_data/ch_us_27_2022_2023_x.json`, `ch_us_27_202301_x.json`):
+  chapter-level rows and `freqCode` M are answered, and the reported values equal
+  `data/v1/get`'s for the pair.
 - What the recorded answers of 2026-10-28 established, under
   `tests/fixtures/get_trade_balance/` and `get_bilateral_data/`:
   - both operations answered the package's key; getTradeBalance's allow-list refusal
