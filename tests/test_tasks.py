@@ -43,6 +43,7 @@ from xippios.core.testing import (
     recorded_query,
     response_from_fixture,
     sent_query,
+    sent_urls,
 )
 
 from xippios.comtrade import api, enums, tasks
@@ -2130,7 +2131,7 @@ def test_get_trade_balance_puts_exports_beside_imports(replay_fixture: ReplayFix
     route = replay_fixture("get_trade_balance", "ch_world_2023_include_desc", match_params=BY_QUERY)
     result = tasks.get_trade_balance(**CH_WORLD_2023, include_desc=True)
     assert route.call_count == 1
-    assert route.calls.last.request.url.path == "/tools/v1/getTradeBalance/C/A/HS"
+    assert httpx.URL(sent_urls(route)[-1]).path == "/tools/v1/getTradeBalance/C/A/HS"
     assert sent_query(route) == _recorded("get_trade_balance", "ch_world_2023_include_desc")
     assert result.meta.source == "comtrade"
     assert result.meta.endpoint == "tools/v1/getTradeBalance"
@@ -2256,6 +2257,29 @@ def test_tools_queries_name_an_area_and_a_product(respx_mock: respx.MockRouter) 
     assert "reporter_code" not in by_partner, "a partner bounds it too"
 
 
+@pytest.mark.parametrize(
+    ("argument", "value", "list_name"),
+    [
+        ("customs_code", "C00,C16", "customsCode"),
+        ("mot_code", "0,9", "motCode"),
+        ("partner2_code", "0,9999", "partnerAreas"),
+    ],
+)
+def test_trade_balance_refuses_an_unknown_dimension_code(
+    argument: str, value: str, list_name: str
+) -> None:
+    """``validate_get``'s ``UnknownCode`` for the breakdowns getTradeBalance takes too."""
+    with pytest.raises(UnknownCode) as info:
+        validate_trade_balance(**{**CH_WORLD_2023, argument: value})
+    unknown = value.split(",")[-1]
+    assert (info.value.param, info.value.value, info.value.list_name) == (
+        argument,
+        unknown,
+        list_name,
+    )
+    assert info.value.fetched == PackagedList.load(PACKAGE, list_name).fetched
+
+
 def test_tools_refuse_an_unknown_area_before_the_call(respx_mock: respx.MockRouter) -> None:
     with pytest.raises(UnknownCode) as balance:
         tasks.get_trade_balance(**{**CH_WORLD_2023, "reporter_code": "756"})
@@ -2292,7 +2316,7 @@ def test_get_bilateral_data_puts_the_mirror_beside_the_reported_figures(
         match_params=[*BY_QUERY, "flowCode"],
     )
     result = tasks.get_bilateral_data(**CH_US_EXPORTS_2023, include_desc=True)
-    assert route.calls.last.request.url.path == "/tools/v1/getBilateralData/C/A/HS"
+    assert httpx.URL(sent_urls(route)[-1]).path == "/tools/v1/getBilateralData/C/A/HS"
     assert sent_query(route) == _recorded("get_bilateral_data", "ch_us_exports_2023_include_desc")
     assert result.meta.endpoint == "tools/v1/getBilateralData"
     assert result.meta.request == {**CH_US_EXPORTS_2023, "include_desc": True}
@@ -2347,16 +2371,21 @@ def test_bilateral_include_desc_changes_nothing(replay_fixture: ReplayFixture) -
     assert described.timestamp_requested != plain.timestamp_requested, "two answers"
 
 
-def test_a_partner_that_has_not_reported_gives_a_mirror_of_zero(
-    replay_fixture: ReplayFixture,
-) -> None:
-    """Afghanistan's 2023 imports are not reported: its mirror is 0, not "no trade"."""
+def test_a_partner_with_a_data_gap_has_a_mirror_of_zero(replay_fixture: ReplayFixture) -> None:
+    """The note counts the partners with a gap and names none; the mirror of 0 shows one.
+
+    That Afghanistan is one of the two is inferred from the counts, not stated: DPRK alone
+    counts 1, the USA alone none.
+    """
     replay_fixture("get_bilateral_data", "ch_us_kp_af_exports_2023", match_params=BY_QUERY)
     result = tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "partner_code": "842,408,4"})
     assert result.data.note is not None
-    assert "we've identified a data gap for 2 partner(s)" in result.data.note, (
-        "the note that qualifies the mirror"
-    )
+    assert "we've identified a data gap for 2 partner(s)" in result.data.note
+    assert "Afghanistan" not in result.data.note, "no partner named"
+    kp_alone = _tools_body("get_bilateral_data", "ch_kp_exports_2023_include_desc")["note"]
+    us_alone = _tools_body("get_bilateral_data", "ch_us_exports_2023")["note"]
+    assert "a data gap for 1 partner(s)" in kp_alone
+    assert "There is no data gap" in us_alone
     assert [row.partner_code for row in result.data.data] == [842, 4], "no row for 408"
     afghanistan = result.data.data[1]
     assert afghanistan.primary_value == Decimal("5718328.953")
