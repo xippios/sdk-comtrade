@@ -55,6 +55,9 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   that changes on every request, as four articles' do) and a note. The capture script
   stops before writing when a page states a copyright line, licence or terms of use it
   does not record.
+- README: the terms section names upstream's Policy on Comtrade Data Use and the
+  license agreement it makes the use of the data subject to, and points at
+  `docs/upstream/FETCHED.md` for the attribution.
 
 ## [0.1.0] - 2026-10-23
 
