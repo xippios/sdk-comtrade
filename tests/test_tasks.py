@@ -2628,7 +2628,8 @@ def test_mirror_flows_put_the_partners_report_beside_the_reporters(
     assert latest.mirror2_primary_value == 0
     assert (latest.reporter_desc, latest.partner_desc, latest.cmd_desc) == (None, None, None)
     assert (latest.is_reported, latest.is_aggregate) == (False, True)
-    assert (latest.qty, latest.mirror_qty, latest.mirror_qty_unit_code) == (0, 0, -1)
+    assert (latest.qty, latest.mirror_qty) == (Decimal(0), Decimal(0))
+    assert (latest.qty_unit_code, latest.mirror_qty_unit_code) == (-1, -1), "no quantity"
     pinned = {"type_code", "customs_code", "mot_code", "mos_code"}
     empty = {"mirror2_qty", "mirror2_net_wgt", "mirror2_qty_unit_code", "aggr_level", "is_leaf"}
     assert not (pinned | empty) & set(MirrorFlowRecord.model_fields)
