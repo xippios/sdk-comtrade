@@ -556,35 +556,35 @@ async def get_bilateral_data_async(
 
     Upstream's ``getBilateralData``, which its spec marks "EXPERIMENTAL - USE SPARINGLY":
     one keyed call, "basic trade data joined with mirror partner data", useful to analyse
-    bilateral trade asymmetries. It is the one task whose result is not a list: ``data``
-    is a ``BilateralData`` holding upstream's ``note``, its ``timestamp_requested`` and
-    the rows, ``data.data``, because the note qualifies the mirror values. It counts the
-    partners with a data gap and gives their share of world trade without naming them
-    ("a data gap for 2 partner(s) ... approximately 0.015% of the accumulated world's
-    share"); where such a partner has a row, its ``mirror_primary_value`` of 0 shows which
-    it is. Each row, a ``BilateralDataRecord``, is one reporter, partner, product code,
-    flow and period at the total of every breakdown (``customs_code`` ``"C00"``,
-    ``mot_code`` 0): the reporter's figures (``primary_value``, ``qty``, ``net_wgt``, ...)
-    beside the mirror (``mirror_primary_value``, ``mirror_qty``, ...), for a reporter's
-    exports "the import data reported by" its partners, as UN Comtrade's Help Center puts
-    it. It warns that "the outcome of the mirror data depends on the availability of other
-    reporters rather than no-trade": a mirror of 0 is no evidence of no trade. For
-    Switzerland's 2023 exports Afghanistan's mirror is 0; that Afghanistan is one of the
-    two partners the note counts is inferred from the counts (DPRK alone: 1, the USA
-    alone: none, the three together: 2), not stated. ``primary_value_disc`` is
-    upstream's, its meaning not stated; in every recorded row it equals
-    ``(mirror_primary_value - primary_value) / primary_value``, a relative difference
-    (``-0.16`` for Switzerland's 2023 exports to the USA, ``-1.0`` where the mirror is 0).
-    The ``mirror2_*`` fields are not described upstream and were ``None`` or 0 in every
-    recorded row. A pair upstream holds nothing for has no row. ``meta.total`` is
-    upstream's ``count``. Over MCP the rows are not cut to the result cap one by one: an
-    answer above it (about 40 rows) comes as a preview of its text, so name a few
-    partners or periods per call. The query must name ``reporter_code`` or
-    ``partner_code``, and ``cmd_code``: upstream offers no count to check a query's size
+    bilateral trade asymmetries. It is the one task whose result is not a list: ``data`` is
+    a ``BilateralData`` holding upstream's ``note``, its ``timestamp_requested`` and the
+    rows, ``data.data``, because the note qualifies the mirror values. It counts the
+    partners with a data gap and gives their share of world trade without naming them ("a
+    data gap for 2 partner(s) ... approximately 0.015% of the accumulated world's share").
+    Each row, a ``BilateralDataRecord``, is one reporter, partner, product code, flow and
+    period at the total of every breakdown (``customs_code`` ``"C00"``, ``mot_code`` 0): the
+    reporter's figures (``primary_value``, ``qty``, ``net_wgt``, ...) beside the mirror
+    (``mirror_primary_value``, ``mirror_qty``, ...), for a reporter's exports "the import
+    data reported by" its partners, as UN Comtrade's Help Center puts it. It warns that "the
+    outcome of the mirror data depends on the availability of other reporters rather than
+    no-trade": a mirror of 0 is no evidence of no trade. For Switzerland's 2023 exports
+    Afghanistan's mirror of 0 showed which partner the gap was, inferred from the counts
+    (DPRK alone: 1, the USA alone: none, the three together: 2), not stated. That is no
+    general rule: the note speaks of a gap "during specific periods" and says "the
+    calculation of mirror data may be incomplete", and a mirror of 0 can also be a partner
+    that reported no such imports. ``primary_value_disc`` is upstream's, its meaning not
+    stated; in every recorded row it equals ``(mirror_primary_value - primary_value) /
+    primary_value``, a relative difference (``-0.16`` for Switzerland's 2023 exports to the
+    USA, ``-1.0`` where the mirror is 0). The ``mirror2_*`` fields are not described
+    upstream and were ``None`` or 0 in every recorded row. A pair upstream holds nothing for
+    has no row. ``meta.total`` is upstream's ``count``. Over MCP the rows are not cut to the
+    result cap one by one: an answer above it (about 40 rows) comes as a preview of its
+    text, so name a few partners or periods per call. The query must name ``reporter_code``
+    or ``partner_code``, and ``cmd_code``: upstream offers no count to check a query's size
     before the call (it ignores ``countOnly``), so a broader query is refused before it is
-    sent. Arguments are checked before the call; an unknown reporter or partner code
-    raises ``UnknownCode``, an ``InvalidRequestError`` naming the packaged list and the
-    closest area, another mistake ``InvalidRequestError`` naming the closest valid value.
+    sent. Arguments are checked before the call; an unknown reporter or partner code raises
+    ``UnknownCode``, an ``InvalidRequestError`` naming the packaged list and the closest
+    area, another mistake ``InvalidRequestError`` naming the closest valid value.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.

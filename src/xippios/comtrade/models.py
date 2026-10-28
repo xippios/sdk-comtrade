@@ -477,22 +477,24 @@ class BilateralData(UpstreamModel):
         timestamp_requested: When upstream took the request, "UTC, yyyy-MM-dd
             HH:mm:ss.fff" per the spec, read as UTC, e.g. 2026-10-28 16:15:58.965 UTC;
             ``None`` when upstream sends none.
-        note: Upstream's "Data-gap note for the requested reporters/partners, if any."
-            (the spec), as sent, HTML markup included; ``None`` when upstream sends none,
-            which no recorded answer did. It qualifies the mirror columns: it counts the
-            partners with a data gap and gives their share of world trade, without
-            naming them; where such a partner has a row, its ``mirror_primary_value`` of
-            0 shows which it is, and is no sign of no trade. Its wording varies with the
-            answer: "EXPERIMENTAL: We have
-            good news! There is no data gap among the selected partners for bilateral
-            trade comparison. This means all partners in this selection have reported
-            their data to us." where every partner reported
-            (``tests/fixtures/get_bilateral_data/ch_us_exports_2023.json``), and
-            "EXPERIMENTAL: In reviewing the selection criteria, we've identified a data
-            gap for 2 partner(s) during specific periods, which accounts for
-            approximately 0.015% of the accumulated world's share. ... <b>As a reminder,
-            users should be aware of the data availability when using the data.</b>"
-            where some partners have a gap (``ch_us_kp_af_exports_2023.json``).
+        note: Upstream's "Data-gap note for the requested reporters/partners, if any." (the
+            spec), as sent, HTML markup included; ``None`` when upstream sends none, which
+            no recorded answer did. It qualifies the mirror columns: it counts the partners
+            with a data gap and gives their share of world trade, without naming them. For
+            Switzerland's 2023 exports Afghanistan's mirror of 0 showed which partner the
+            gap was, inferred from the counts (DPRK alone: 1, the USA alone: none), not
+            stated; that is no general rule, since the note speaks of a gap "during specific
+            periods" and says "the calculation of mirror data may be incomplete", and a
+            mirror of 0 can also be a partner that reported no such imports. Its wording
+            varies with the answer: "EXPERIMENTAL: We have good news! There is no data gap
+            among the selected partners for bilateral trade comparison. This means all
+            partners in this selection have reported their data to us." where every partner
+            reported (``tests/fixtures/get_bilateral_data/ch_us_exports_2023.json``), and
+            "EXPERIMENTAL: In reviewing the selection criteria, we've identified a data gap
+            for 2 partner(s) during specific periods, which accounts for approximately
+            0.015% of the accumulated world's share. ... <b>As a reminder, users should be
+            aware of the data availability when using the data.</b>" where some partners
+            have a gap (``ch_us_kp_af_exports_2023.json``).
         data: The rows, one ``BilateralDataRecord`` per reporter, partner, product code,
             flow and period.
     """
