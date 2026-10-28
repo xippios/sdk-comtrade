@@ -839,9 +839,17 @@ def test_every_packaged_list_is_upstreams_records_with_their_provenance(name: st
 
 
 def test_the_spec_lists_name_the_operation_they_were_read_from() -> None:
+    """Read from the spec snapshot: ``fetched`` is its row's time in ``FETCHED.md``."""
+    row = re.search(
+        r"^\| apidocs/comtrade\.json \| \S+ \| (\S+) \|",
+        (UPSTREAM / "FETCHED.md").read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert row is not None
     for name in ["typeCode", "freqCode", "breakdownMode", "aggregateBy"]:
         packaged = PackagedList.load(PACKAGE, name)
         assert packaged.endpoint == "files/v1/app/apim/comtrade.json", name
+        assert packaged.fetched == datetime.fromisoformat(row.group(1)), name
         assert packaged.note is not None
         assert packaged.note.startswith(
             "Read from docs/upstream/apidocs/comtrade.json, the snapshot of "
