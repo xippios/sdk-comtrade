@@ -439,7 +439,8 @@ async def get_comtrade_releases_async() -> Result[list[ComtradeRelease]]:
     with the UI live update page" (https://comtradeplus.un.org/RecentReleases); the spec
     calls each row "A recent or upcoming dataset release". Keyless: no key is sent and no
     daily quota is spent, but the Public tier allows 1 call per second, which the client
-    paces with every other call. One row per release: ``reporter_code`` (UN Comtrade's
+    paces with every other call (its preview API's 500 records a call is far above the
+    rows recorded). One row per release: ``reporter_code`` (UN Comtrade's
     code, e.g. 757 Switzerland), ``dataset_desc`` (e.g. ``"Switzerland CM 202601"``),
     ``flag_code`` and ``nr``, whose meanings upstream does not state (recorded: two
     letters, ``"CH"`` for 757; ``"N"`` or ``"R"``), and ``date_release``, a naive datetime:
@@ -476,12 +477,12 @@ async def get_world_share_async(
     ``last_released``, ``created``, ``updated``) are naive datetimes: upstream prints them
     without a UTC offset and states no zone, so none is attached. Keyless: no key is sent
     and no daily quota is spent, but the Public tier allows 1 call per second, paced by
-    the client; it also names 500 records a call for its preview, which the recorded
-    answers (214 rows at most) did not reach, and the spec states no limit of this
-    operation's own. One call, rows in upstream's order; a period nobody reported returns
-    an empty list. Arguments are checked before the call; an unknown reporter code raises
-    ``UnknownCode``, an ``InvalidRequestError`` naming the packaged list and the closest
-    area, another mistake ``InvalidRequestError``.
+    the client. Upstream's subscription page limits the Public tier's preview API to 500
+    records a call; whether that binds this operation is not stated, and the recorded
+    answers (214 rows at most) did not reach it. One call, rows in upstream's order; a
+    period nobody reported returns an empty list. Arguments are checked before the call;
+    an unknown reporter code raises ``UnknownCode``, an ``InvalidRequestError`` naming the
+    packaged list and the closest area, another mistake ``InvalidRequestError``.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
