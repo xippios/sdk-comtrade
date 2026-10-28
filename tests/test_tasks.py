@@ -9,7 +9,7 @@ import inspect
 import json
 import re
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -38,6 +38,7 @@ from xippios.core.testing import (
     load_fixture,
     mcp_call,
     recorded_query,
+    response_from_fixture,
     sent_query,
 )
 
@@ -915,13 +916,22 @@ QUOTA_SPENT = {
 """API Management's standard quota answer; not observed (never provoked)."""
 
 
-def test_the_policy_reads_the_quota_answer_and_no_other() -> None:
-    """The policy's ``spent`` hook: the 403's replenish time, nothing from other answers."""
+PACE_REFUSED = {"statusCode": 429, "message": "Rate limit is exceeded. Try again in 7 seconds."}
+"""Upstream's pace refusal with 7 for the recorded 1; sent here without ``Retry-After``."""
+
+
+def test_the_policy_reads_the_quota_and_pace_answers_and_no_other() -> None:
+    """The policy's ``spent`` hook: the 403's replenish time, a 429's seconds, nothing else."""
     assert policy.spent is not None
     assert (policy.limit_header, policy.remaining_header, policy.window) == (None, None, 86_400.0)
     assert policy.spent(_response(403, QUOTA_SPENT)) == 5 * 3600 + 12 * 60 + 34
     assert policy.spent(_response(403, {"error": "User not allowed"})) is None
     assert policy.spent(_response(200, {"message": "replenished in 01:00:00"})) is None
+    recorded = response_from_fixture(load_fixture(GET / "count_rate_limited.json"))
+    assert recorded.headers["Retry-After"] == "1"
+    assert policy.spent(recorded) is None, "Retry-After rules"
+    assert policy.spent(_response(429, PACE_REFUSED)) == 7.0
+    assert policy.spent(_response(429, {"statusCode": 429})) == 1.0, "never the day-long window"
     assert config.observe == policy.observe
     assert config.before_request == policy.before_request
 
@@ -950,6 +960,35 @@ def test_a_spent_daily_quota_refuses_the_next_call_before_sending(
     assert refused.value.retry_after is not None
     assert 5 * 3600 < refused.value.retry_after <= 5 * 3600 + 12 * 60 + 34
     assert route.call_count == 1
+
+
+@pytest.mark.rate_limited
+@pytest.mark.anyio
+async def test_a_pace_refusal_without_retry_after_holds_calls_back_seconds_not_a_day(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A 429 without ``Retry-After`` marks the quota spent for its body's seconds.
+
+    Constructed route, not a fixture: the recorded 429 carries ``Retry-After: 1``; without
+    it, ``QuotaPolicy`` would hold calls back for ``window``, a day, unless ``spent`` names
+    the time.
+    """
+    respx_mock.get(f"{BASE_URL}/data/v1/get/C/A/H1").mock(
+        return_value=httpx.Response(429, json=PACE_REFUSED)
+    )
+    once = AsyncClient(dataclasses.replace(config, retry=RetryPolicy(max_attempts=1)), auth=auth)
+    before = datetime.now(UTC)
+    with pytest.raises(RateLimitError):
+        await once.get_json(
+            "/data/v1/get/C/A/H1", params={"reporterCode": "757", "countOnly": "true"}
+        )
+    after = datetime.now(UTC)
+    snapshot = policy.snapshot()
+    assert snapshot is not None
+    assert snapshot.remaining == 0
+    assert snapshot.resumes_at is not None
+    assert snapshot.resumes_at - snapshot.observed_at == timedelta(seconds=7)
+    assert_time_between(snapshot.observed_at, before, after)
 
 
 def test_the_list_tasks_have_caps_of_their_own() -> None:

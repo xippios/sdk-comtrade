@@ -14,7 +14,7 @@ the family rules every source shares are in `.claude/family.md`, which the next 
 | API base URL | `https://comtradeapi.un.org` |
 | Documentation | https://comtradeplus.un.org/ApiDocs, snapshotted in `docs/upstream/` |
 | Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header |
-| Rate limit | 1 per second documented; the client spaces calls 1.5 s apart (40 per minute), no burst; the daily quota of 500 calls is kept by `policy`, a `QuotaPolicy` (`_client.py`, ADR-0015) |
+| Rate limit | 1 per second documented; the client spaces calls 1.5 s apart (40 per minute), no burst; 500 calls a day, which the client does not count: `policy`, a `QuotaPolicy`, holds calls back once upstream answers that the quota is spent (`_client.py`, ADR-0015) |
 | Write tools | no, this package is read-only |
 
 The snapshot in `docs/upstream/` is the reference for names, parameters and semantics.
@@ -42,7 +42,10 @@ and how `_client.py` treats them:
   remaining_header=None, window=86400, spent=...)` installed on `config`, marks the quota
   spent until then: the next call is refused with `RateLimitError` before it is sent
   (a wait within 30 s is waited out). It reads no `x-ratelimit-*` header, since those
-  describe the per-second pace. That answer has not been observed; never provoke it.
+  describe the per-second pace. Its `spent` hook reads two answers, this 403, whose time
+  `window` caps at a day, and a 429 without `Retry-After`, for the "Try again in N
+  seconds" of its body or else 1 s, so a pace refusal never holds calls back for the
+  day-long `window`. The 403 has not been observed; never provoke it.
 - **100,000 records per call.** Above it upstream answers HTTP 200 with the first
   100,000 rows, `count` 100000 and an empty `error`: it truncates silently (observed
   2026-10-23 for a query counted at 5,006,385). `get_data` counts first and raises

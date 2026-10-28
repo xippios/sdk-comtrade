@@ -9,9 +9,10 @@ serves the sync facades and the MCP server.
 Limits of a Basic Individual (free) key, ``docs/upstream/help/subscriptions.md``: 1 call
 per second, 500 calls per day, 100,000 records per call. Upstream's own headers agree
 (``x-ratelimit-limit: 1`` and ``x-ratelimit-operation-limit: 60`` on the recorded backend
-answers). The bucket below spaces calls 1.5 s apart (``RATE_LIMIT``). The daily quota is
-kept by ``policy``: once upstream answers 403 "Quota will be replenished in HH:MM:SS",
-no call is sent until then; ``countOnly`` calls count against it.
+answers). The bucket below spaces calls 1.5 s apart (``RATE_LIMIT``). The client counts no
+calls against the daily quota; ``policy`` reacts to upstream's answers: once upstream
+answers 403 "Quota will be replenished in HH:MM:SS", no call is sent until then.
+``countOnly`` calls count against the quota too.
 """
 
 import re
@@ -28,6 +29,7 @@ from xippios.core import (
     RateLimitError,
     Timeouts,
     XippiosError,
+    parse_retry_after,
 )
 
 from xippios.comtrade._version import __version__
@@ -54,6 +56,7 @@ timed-out attempt it retries is another call against the daily quota.
 """
 
 _REPLENISHED = re.compile(r"replenished in (\d+):(\d{2}):(\d{2})", re.IGNORECASE)
+_TRY_AGAIN = re.compile(r"try again in (\d+) seconds?", re.IGNORECASE)
 
 
 def _payload(response: httpx.Response) -> object:
@@ -119,12 +122,22 @@ def classify(response: httpx.Response) -> XippiosError | None:
 
 
 def _quota_spent(response: httpx.Response) -> float | None:
-    """Seconds until the daily quota is back, from a 403 that names it; else ``None``.
+    """Seconds the quota is spent for, from the two answers that say so; else ``None``.
 
-    The ``spent`` hook of ``policy``. Only a 403 is read, so a reference file of 2 MB is
-    never decoded for it; the time comes from the text ``classify`` reads as well.
+    The ``spent`` hook of ``policy``. A 403 that names the daily quota gives its
+    "replenished in HH:MM:SS". A 429, upstream's pace refusal, gives ``None`` when its
+    ``Retry-After`` can be read, so the header rules, else the seconds of "Try again in N
+    seconds" in its body, else 1.0, upstream's documented one-second window, so a pace
+    refusal never falls back to the day-long ``window``. No other answer is read, so a
+    reference file of 2 MB is never decoded for it.
     """
-    if response.status_code != 403:
+    status = response.status_code
+    if status == 429:
+        if parse_retry_after(response.headers.get("Retry-After")) is not None:
+            return None
+        match = _TRY_AGAIN.search(response.text)
+        return float(match.group(1)) if match else 1.0
+    if status != 403:
         return None
     text = response.text
     if "quota" not in text.lower():
@@ -139,13 +152,15 @@ policy = QuotaPolicy(
     spent=_quota_spent,
     source=SOURCE,
 )
-"""The daily quota of 500 calls (ADR-0010, ADR-0015): no call into a quota known to be spent.
+"""No call into a quota upstream has said is spent (ADR-0010, ADR-0015).
 
-Upstream's ``x-ratelimit-*`` headers describe the per-second pace, not the daily quota, so
-neither is read. API Management's 403 "Out of call volume quota. Quota will be replenished
-in HH:MM:SS." marks the quota spent for that long (``_quota_spent``), cut to the window of
-a day; a 429 marks it spent until its ``Retry-After``, upstream's ``1`` for the pace
-refusal. A wait within ``pause_cap`` (30 s) is waited out, a longer one is refused with
+The policy counts no calls against the daily 500; it reacts to the two answers that say
+the quota is spent. Upstream's ``x-ratelimit-*`` headers describe the per-second pace, not
+the daily quota, so neither is read. ``_quota_spent`` reads the 403 "Out of call volume
+quota. Quota will be replenished in HH:MM:SS." for that long, which ``window`` caps at a
+day, and a 429 for its ``Retry-After``, upstream's ``1``, or, without one, for the
+"Try again in N seconds" of its body, else for 1 s, never for the day-long ``window``. A
+wait within ``pause_cap`` (30 s) is waited out, a longer one is refused with
 ``RateLimitError`` before anything is sent. ``classify`` still maps the 403 itself.
 """
 
