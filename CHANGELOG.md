@@ -151,8 +151,9 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   is packaged as a table. `params.PACKAGED_LISTS` maps each list to the model of its
   records. `scripts/refresh_reference.py` refreshed every list and table on 2026-10-28,
   keyless: no value or row was added, removed or changed; `fetched` is each fetch's UTC
-  time to the second (2026-10-28T19:46:46Z to 19:46:56Z), the spec lists' the snapshot's
-  day (2026-10-23T00:00:00Z), and `enums.py`'s class docstrings name the new day.
+  time to the second, the answer's `retrieved_at` (2026-10-28T22:02:01Z to 22:02:14Z),
+  the spec lists' the snapshot's time in `docs/upstream/FETCHED.md`
+  (2026-10-28T14:38:34Z), and `enums.py`'s class docstrings name the new day.
 - An unknown `customs_code` or `mot_code` names the closest codes with upstream's text
   (`C16`: `C15 (Relief consignments)`; `air`: `1000 (Air)`) and `list_codes` as the list
   of every code, where it named one closest code and every valid value.

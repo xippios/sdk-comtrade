@@ -386,7 +386,7 @@ def _reconcile(name: str, base: list[str], spec: dict[str, Any]) -> tuple[list[s
 def _snapshot_fetched() -> datetime:
     """When the spec snapshot was fetched, from its row in ``docs/upstream/FETCHED.md``.
 
-    A bare date, as the snapshot of 2026-10-23 records it, reads as 00:00 UTC of that day.
+    A bare date, as the snapshot of 2026-10-23 recorded it, reads as 00:00 UTC of that day.
     """
     match = re.search(
         rf"^\| {re.escape(SPEC_NAME)} \| \S+ \| (\d{{4}}-\d{{2}}-\d{{2}}(?:T[0-9:]+Z)?) \|",
