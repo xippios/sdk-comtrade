@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (conventions §15).
 
+### Added
+
+- The upstream snapshot refreshed on 2026-10-28 (`docs/upstream/`), with six more Help
+  Center articles: `un-comtrade-tools` (the Trade Balance and Bilateral Data tools),
+  `developer-tools`, `un-comtrade-data-pipeline` (releases and revisions),
+  `bilateral-asymmetries`,
+  `how-to-retrieve-data-for-world-exports-to-a-country-in-un-comtrade` and
+  `how-should-i-interpret-and-use-quantity-data-in-un-comtrade`. The five ApiDocs product
+  files, the ten earlier articles and the two reference files are unchanged.
+- `uv run scripts/refresh_upstream.py --check` fetches everything and compares it with
+  the snapshot, writing nothing; exit 1 names the files that differ.
+
 ### Changed
 
 - **BREAKING**: depends on `xippios-core~=0.3.0` and its `mcp`, `http` and `testing`
@@ -32,6 +44,13 @@ Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (convention
   `packaged_table_info`, `PackagedValues`, `PackagedTable` and `ListException` give way
   to `xippios.core.PackagedList.load("xippios.comtrade", name)`, and
   `params.CL_CODES_FROM_SPEC` names the `clCode` values without a classification file.
+- `docs/upstream/FETCHED.md` takes the form of conventions §3: `Fetched` is the UTC time
+  of the run with `Z`; an Attribution section quotes the Help Center's footer line,
+  `© 2026 UN Comtrade Help Center`, read from https://uncomtrade.org/; each row records
+  the HTTP status, size, sha256, ETag and Last-Modified (none of the four for a body
+  that changes on every request, as four articles' do) and a note. The capture script
+  stops before writing when a page states a copyright line, licence or terms of use it
+  does not record.
 
 ## [0.1.0] - 2026-10-23
 
