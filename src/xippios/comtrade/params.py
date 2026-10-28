@@ -213,7 +213,6 @@ def _check_list(
     for member in members:
         if (member.upper() if case_insensitive else member) in known:
             continue
-        closest = _closest(member, allowed)
         if upstream in _DIMENSIONS:
             raise UnknownCode(
                 argument,
@@ -224,7 +223,8 @@ def _check_list(
                 reason=f"{_UNKNOWN_DIMENSION} list_codes({upstream!r}) lists every code.",
                 source=SOURCE,
             )
-        hint = f"; closest: {closest!r}" if closest else ""
+        near = _closest(member, allowed)
+        hint = f"; closest: {near!r}" if near else ""
         problems.append(
             f"{argument} {member!r} is not a UN Comtrade {upstream} value{hint}. "
             f"Valid values: {', '.join(allowed)}"
