@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
-_commit: v0.3.0
+_commit: v0.3.1
 _src_path: https://github.com/xippios/sdk-template.git
 api_base_url: https://comtradeapi.un.org
 api_key_env: COMTRADE_API_KEY
@@ -9,6 +9,7 @@ core_git_ref: ''
 core_version: 0.3.0
 gateway: none
 has_files: false
+human: jdidaskalu
 import_path: comtrade
 rate_limit_burst: 1
 rate_limit_per_minute: 40
