@@ -32,9 +32,9 @@ and how `_client.py` treats them:
   none of 10 (2026-10-23). So `RATE_LIMIT = RateLimit(per_minute=40, burst=1)`: one call
   every 1.5 s, never a burst, under the limit upstream documents (sdk-core ADR-0033
   decision 1: 1 a second and 60 a minute documented, 40 a minute chosen after the recorded
-  429s, D41). Core retries a 429 after `Retry-After`, each retry a call, and `policy` holds
-  the next keyed call back until then. Offline tests skip the wait (core's plugin); a test marked
-  `rate_limited` keeps it.
+  429s, as https://github.com/xippios/sdk-comtrade/pull/4 decided). Core retries a 429 after
+  `Retry-After`, each retry a call, and `policy` holds the next keyed call back until then.
+  Offline tests skip the wait (core's plugin); a test marked `rate_limited` keeps it.
 - **500 calls per day.** `countOnly` calls count against it, so `get_data` costs two
   calls (count, then data) and `get_counts` one. The client does not count calls. Over
   the quota API Management answers 403 "Out of call volume quota. Quota will be
@@ -161,7 +161,7 @@ variable `xippios_placeholder_key_envs` names in `pyproject.toml`.
 What the recorded answers established (2026-10-23). The fixtures are named in
 `reference/clCode.json` and `flowCode.json`, in the docstrings of the `getDa`,
 `getMetadata` and `getLiveUpdate` wrappers, and, for the `data/v1/get` behaviours, in
-`tests/test_tasks.py` and the PR description of wave 1:
+`tests/test_tasks.py` and the description of https://github.com/xippios/sdk-comtrade/pull/4:
 
 - `data/v1/get`: `breakdownMode` `plus` is the default (omitting it gives the same 32 rows
   for Switzerland's 2023 exports); `classic` returns only the total row, as pinning
@@ -202,13 +202,13 @@ row and `mirror2*` is empty or 0; upstream states neither meaning. Its envelope'
 `timestampRequested` is UTC per the spec and its `note` counts the partners with a data gap
 and their share of world trade, naming none, in wording that varies; the task returns both
 with the rows as one `BilateralData` (`note`, `timestamp_requested`, `data`), not a list,
-so the note that qualifies the mirror values reaches the agent (Johannes, 2026-10-28);
-`get_mirror_flows`' `MirrorFlows` has the same shape. Over MCP, core's result cap cuts the
-rows of either model: an answer above 64 KB (about 40 rows of `BilateralData`, 60 of
-`MirrorFlows`) keeps its `note` and `timestamp_requested` whole beside the rows that fit,
-with the cap's note.
+so the note that qualifies the mirror values reaches the agent, as
+https://github.com/xippios/sdk-comtrade/pull/11 decided; `get_mirror_flows`' `MirrorFlows`
+has the same shape. Over MCP, core's result cap cuts the rows of either model: an answer
+above 64 KB (about 40 rows of `BilateralData`, 60 of `MirrorFlows`) keeps its `note` and
+`timestamp_requested` whole beside the rows that fit, with the cap's note.
 
-The task-shaped slices (wave 2: `get_bilateral_flows`, `get_commodity_series`,
+The task-shaped slices (`get_bilateral_flows`, `get_commodity_series`,
 `get_world_trade`, `get_top_partners`) call `data/v1/get` through `api.get` with
 `params.SLICE_PINS`: `typeCode` C, `breakdownMode` classic, `partner2Code` 0, `motCode` 0,
 `customsCode` C00, `includeDesc` true, so one row is reporter × partner × product code ×
