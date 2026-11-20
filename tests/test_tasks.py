@@ -9,6 +9,7 @@ import dataclasses
 import inspect
 import json
 import re
+import sys
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -39,7 +40,6 @@ from xippios.core import (
 from xippios.core.http import status_for
 from xippios.core.mcp import ToolSet, build_server
 from xippios.core.testing import (
-    CLOCK_SLACK,
     ReplayFixture,
     assert_projection,
     assert_time_between,
@@ -66,7 +66,7 @@ from xippios.comtrade._client import (
     policy,
 )
 from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
-from xippios.comtrade.mcp import build, server
+from xippios.comtrade.mcp import build, run, server
 from xippios.comtrade.models import (
     BilateralData,
     BilateralDataRecord,
@@ -174,6 +174,52 @@ async def test_a_host_serves_what_the_entry_point_serves() -> None:
         entry = sorted(tool.name for tool in (await served.list_tools()).tools)
         host = sorted(tool.name for tool in (await hosted.list_tools()).tools)
     assert entry == host == sorted(f"comtrade_{name}" for name in tasks.__all__)
+
+
+ENTRY_USAGE = (
+    "usage: xippios-comtrade-mcp [-h] [--http] [--host HOST] [--port PORT] [--allow-remote]"
+)
+"""The entry point's usage line at a width that holds it, as ``--help`` prints it."""
+
+
+@pytest.fixture
+def plain_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """argparse's output without color and at a width of 100, whatever the shell sets.
+
+    Python 3.14 colors the help where ``FORCE_COLOR`` is set and wraps it to ``COLUMNS``.
+    """
+    monkeypatch.setenv("PYTHON_COLORS", "0")
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setenv("COLUMNS", "100")
+
+
+@pytest.mark.usefixtures("plain_terminal")
+def test_the_entry_point_names_itself_in_its_usage_and_errors(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``xippios-comtrade-mcp --help`` and an unknown option name the entry point that runs.
+
+    Core 0.4.0 names ``sys.argv[0]`` (https://github.com/xippios/sdk-core/issues/167), where
+    0.3.0 named the server's slug, ``xippios-comtrade``; ``--allow-remote`` says that it
+    changes nothing on this read server. Both exit before a server starts.
+    """
+    entry = str(Path(sys.executable).parent / "xippios-comtrade-mcp")
+    monkeypatch.setattr(sys, "argv", [entry, "--help"])
+    with pytest.raises(SystemExit) as helped:
+        run()
+    out = capsys.readouterr().out
+    assert helped.value.code == 0
+    assert out.splitlines()[0] == ENTRY_USAGE
+    assert "--allow-remote  changes nothing: this read server is not held to loopback" in out
+    monkeypatch.setattr(sys, "argv", [entry, "--nope"])
+    with pytest.raises(SystemExit) as refused:
+        run()
+    err = capsys.readouterr().err
+    assert refused.value.code == 2
+    assert err.splitlines() == [
+        ENTRY_USAGE,
+        "xippios-comtrade-mcp: error: unrecognized arguments: --nope",
+    ]
 
 
 # Switzerland (reporter 757 in Reporters.json) exports to the World in 2023, all products.
@@ -1410,8 +1456,7 @@ def test_list_commodities_keeps_the_file_for_the_process(replay_fixture: ReplayF
     second = tasks.list_commodities("B4")
     assert route.call_count == 1
     assert second.data == first.data
-    stored, read = second.meta.retrieved_at, first.meta.retrieved_at
-    assert read - CLOCK_SLACK <= stored <= read + CLOCK_SLACK, "stored as it was read"
+    assert second.meta.retrieved_at == first.meta.retrieved_at, "one time, read once"
 
 
 def test_a_cached_reference_file_was_retrieved_when_it_was_stored(
