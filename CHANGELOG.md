@@ -4,16 +4,107 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/) (pre-1.0: breaking changes bump the minor).
 
-## [Unreleased]
+## [0.3.0] - 2026-11-20
+
+### Added
+
+- `xippios.comtrade.mcp` exports `build()`, which returns the tool set of xippios-core's
+  package contract, `server`, built from it, and `ENV_VARS`, the variables the package
+  reads: `COMTRADE_API_KEY`, a secret the data operations need. So a host serves the
+  nineteen tools as `xippios-comtrade-mcp` does.
+  (https://github.com/xippios/sdk-core/issues/245)
 
 ### Changed
 
+- Every list and table packaged from UN Comtrade's reference files is the one fetched on
+  2026-11-20: `meta.retrieved_at` of `list_reporters`, `list_partners`, `list_classifications`
+  and of `list_codes` for the six lists drawn from those files gives that day, and so does the
+  fetch date an `UnknownCode` refusal names, while the four lists read from the spec keep
+  theirs. `Reporters.json` adds `238` Falkland Isds (Malvinas): `list_reporters` answers 256
+  reporters, where it answered 255, `reporter_code` takes `238`, and the slices' `reporter`
+  takes `238` or `FLK`, where both refused the area as a partner code only. `list_partners`
+  gives `756` Switzerland without the trailing space upstream had sent in `text` and
+  `partner_desc`, so an exact comparison or a `search` with that space no longer finds it; no
+  code left any list or table, and every other record is unchanged.
+  (https://github.com/xippios/sdk-comtrade/issues/54)
+- `CLAUDE.md`, the comment above `RATE_LIMIT` in `_client.py` and the docstring of
+  `_MIRROR_TOO_MANY` in `params.py` cite the pace of 40 calls a minute, the shape of
+  `BilateralData` and the mirror slice's 12 periods by the pull requests that took them,
+  where they gave internal decision numbers or a first name and a date. `CLAUDE.md` names
+  the pull request whose description lists the fixtures of `data/v1/get`, and calls the
+  slices by that name alone. (https://github.com/xippios/sdk-comtrade/issues/19)
+- `xippios-comtrade-mcp` names itself in the usage line of `--help` and in the prefix of
+  an option error, `xippios-comtrade-mcp: error: unrecognized arguments: --nope`, where both
+  read `xippios-comtrade`, and the help of `--allow-remote` says that it changes nothing on
+  this read server. (https://github.com/xippios/sdk-core/issues/167)
+- `get_comtrade_releases`, `get_world_share` and `list_commodities` go out once the key's
+  daily quota is spent, at the 1.5 s pace, where the client held them back with the keyed
+  calls until upstream's replenish time: they send no key and spend none of the quota, and
+  their answers no longer mark it spent. (https://github.com/xippios/sdk-core/issues/163)
+- A tool's error answer sets `isError` on its result beside the text
+  `error: <ErrorClass>: <message>`, the refusal of reporter `756` or of an unknown
+  `list_codes` list among them, so a client tells a refusal from data without reading the
+  text. (https://github.com/xippios/sdk-core/issues/168)
+- Over MCP, an answer of `comtrade_get_bilateral_data` or `comtrade_get_mirror_flows` above
+  its 64 KB cap keeps its `note` on the data gap and its `timestamp_requested` whole beside
+  the rows that fit, with the cap's note, where the whole answer became a note and a text
+  preview. (https://github.com/xippios/sdk-core/issues/131)
+- A refusal that names another task, the one to call instead or the list task of the known
+  codes, names that task's MCP tool too: `list_reporters lists every code (over MCP, the
+  tool comtrade_list_reporters).`, and so for `list_partners`, `list_codes`, `get_counts` in
+  `QueryTooLarge`'s advice, `get_data`, `get_commodity_series` and `get_bilateral_data`.
+  (https://github.com/xippios/sdk-core/issues/111)
+- A route answers an argument that its schema refuses, an `n` of `get_top_partners` that is
+  no integer say, or one that is missing, as problem details before the task runs: HTTP 422,
+  `application/problem+json`, the title `InvalidRequestError` and the detail
+  `n: Input should be a valid integer, unable to parse string as an integer`, where
+  FastAPI's own 422 listed its error details with the value sent.
+  (https://github.com/xippios/sdk-core/issues/66)
+- The refusal of an area, customs or transport code that the packaged list lacks, such as
+  reporter `756`, ends with `If upstream added it since, the packaged list is out of date.`,
+  where it named the maintainers' `/refresh-reference-data`, which an agent cannot run.
+  (https://github.com/xippios/sdk-core/issues/111)
+- Adopts sdk-template v0.3.4, from v0.3.1, with conventions 1.27 and no new core minor: the
+  floor stays `xippios-core~=0.3.0`. The README lists the package's documents under
+  `## Documents`, and `CLAUDE.md` holds the rules that `.claude/family.md` carried, which
+  leaves with `/adopt-release`. Changelog entries are fragments under `changelog/`, the
+  package's own decisions go into `docs/adr/` with the index `scripts/adr_index.py` writes,
+  and a pull request runs the organization's checks from `organization.yml`, where
+  `gates.yml` was, on its opening, a push, a reopening and an edit.
+  (https://github.com/xippios/sdk-template/releases/tag/v0.3.4,
+  https://github.com/xippios/sdk-comtrade/issues/18)
 - Adopted sdk-template v0.3.1 (conventions §15), with no new core minor: the floor stays
   `xippios-core~=0.3.0`. `.github/CODEOWNERS` is rendered from the template's answers and
   names the code owner whom GitHub asks to review a change to `.github/`, `CLAUDE.md`,
   `.claude/`, `pyproject.toml` or `.copier-answers.yml`; `.gitignore` leaves copier's
   `*.rej` and `*.orig` out; `.claude/family.md`, `/adopt-release`, `/release-prep` and the
   PR template no longer have the author of a pull request merge it.
+
+### Fixed
+
+- The call of `list_commodities` that fetches a classification file reports the
+  `meta.retrieved_at` that every later call answered from the cache reports, one reading
+  of the clock, where the two were read apart and differed slightly.
+  (https://github.com/xippios/sdk-core/issues/79)
+- `list_commodities` asks upstream again for a classification file whose answer is no JSON
+  or holds no `results`, where the cache kept that answer and the task failed with it for
+  the life of the process. (https://github.com/xippios/sdk-core/issues/122)
+
+### Breaking
+
+- `xippios.comtrade.api.reference_rows` and `api.reference` return xippios-core's `Answer`:
+  the rows are its `payload` and the time its `retrieved_at`, where they returned
+  `api.ReferenceFile`, which is gone, with `rows` and unpacked as a pair.
+  (https://github.com/xippios/sdk-core/issues/123)
+- A tool refuses an argument that it does not declare before it runs, naming the ones it
+  takes: `comtrade_list_codes` with `{"param": "motCode", "paramm": "x"}` answers
+  `error: InvalidRequestError: paramm: Not an argument of this tool; it takes param`, where
+  it dropped `paramm` and answered the transport codes.
+  (https://github.com/xippios/sdk-core/issues/84)
+- Adopts sdk-template v0.4.0, from v0.3.4, with `core_version=0.4.0`. The package depends
+  on `xippios-core~=0.4.0`, its extras likewise, and follows conventions 1.28.
+  (https://github.com/xippios/sdk-template/releases/tag/v0.4.0,
+  https://github.com/xippios/sdk-comtrade/issues/50)
 
 ## [0.2.0] - 2026-10-28
 
