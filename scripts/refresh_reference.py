@@ -2,7 +2,7 @@
 
 Fetches every list in ``LISTS`` and table in ``TABLES``, reads every list in
 ``SPEC_LISTS``, and only then writes each to ``reference/<name>.json`` with
-``PackagedList.write`` (conventions §3, ADR-0022): the list's name, the upstream
+``PackagedList.write`` (conventions §3, sdk-core ADR-0041): the list's name, the upstream
 operation it came from, the UTC time of the fetch to the second, upstream's records under
 upstream's field names and a ``note`` with its provenance in words. The time is the
 ``retrieved_at`` the wrapper returns: a file the client's cache answers, as it answers
@@ -15,7 +15,7 @@ Every record is checked against its list's model, ``params.PACKAGED_LISTS``. The
 ``enums.py`` is regenerated from the packaged files by one
 ``xippios.core.reference.render_enums`` call, one ``StrEnum`` per list, its members the
 values, each class naming the day its list was fetched, and formatted with ``ruff format``
-and ``ruff check --fix``, as it is committed (ADR-0008).
+and ``ruff check --fix``, as it is committed (sdk-core ADR-0031).
 
 - ``LISTS`` come from UN Comtrade's public reference files, fetched through the layer-1
   wrapper ``api.reference_rows`` (no key needed or sent): the ``id`` and ``text`` of
@@ -104,7 +104,7 @@ async def _rows[M: UpstreamModel](file: str, model: type[M]) -> tuple[list[M], d
     endpoint = f"{FILES}{file}"
     answer = await api.reference_rows(file)
     rows: list[M] = []
-    for row in answer.rows:
+    for row in answer.payload:
         parsed = parse(model, row, source=SOURCE, endpoint=endpoint)
         unknown = sorted(set(row) - set(parsed.dump_upstream()))
         if unknown:
@@ -449,16 +449,20 @@ def _table(name: str) -> PackagedList:
     file = TABLES[name]
     model = PACKAGED_TABLES[name]
     endpoint = f"{FILES}{file}"
-    rows, fetched = sync(api.reference_rows)(file)
+    answer = sync(api.reference_rows)(file)
     records: list[dict[str, Any]] = []
-    for row in rows:
+    for row in answer.payload:
         dumped = parse(model, row, source=SOURCE, endpoint=endpoint).dump_upstream()
         unknown = sorted(set(row) - set(dumped))
         if unknown:
             raise SystemExit(f"{file}: keys {unknown} are not in {model.__name__}")
         records.append({key: value for key, value in dumped.items() if key in row})
     return PackagedList(
-        param=name, endpoint=endpoint, fetched=fetched, note=TABLE_NOTES.get(name), records=records
+        param=name,
+        endpoint=endpoint,
+        fetched=answer.retrieved_at,
+        note=TABLE_NOTES.get(name),
+        records=records,
     )
 
 
@@ -474,13 +478,15 @@ def render() -> None:
     """Regenerate ``enums.py`` from the packaged value lists and format it as committed."""
     lists: dict[str, Sequence[str]] = {}
     fetched: dict[str, str] = {}
-    # Classes in the order of their names, as enums.py has always listed them.
+    # Classes in the order of their names, as enums.py has always listed them. Core's
+    # default class name is each of these, the first letter upper-cased and every camelCase
+    # hump kept (sdk-core ADR-0031), so render_enums is given none.
     class_names = {name: name[0].upper() + name[1:] for name in PACKAGED_LISTS}
     for name in sorted(PACKAGED_LISTS, key=class_names.__getitem__):
         packaged = read(name)
         lists[name] = [str(record[name]) for record in packaged.records]
         fetched[name] = f"{packaged.fetched:%Y-%m-%d}"
-    module = render_enums(lists, fetched=fetched, class_names=class_names, generator=GENERATOR)
+    module = render_enums(lists, fetched=fetched, generator=GENERATOR)
     ENUMS.write_text(module, encoding="utf-8")
     sys.stdout.flush()
     for command in (["format"], ["check", "--fix"]):

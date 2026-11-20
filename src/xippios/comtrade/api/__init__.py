@@ -1,6 +1,6 @@
 """Endpoint wrappers for UN Comtrade.
 
-Layer 1 of ADR-0001: one module per upstream operation, named after it. A wrapper
+Layer 1 of sdk-core ADR-0001: one module per upstream operation, named after it. A wrapper
 takes the parameters as upstream names them (snake_cased), calls
 ``xippios.comtrade._client.client`` (with ``auth=None`` for the public reference files
 and the public operations under ``public/v1``, so they never send the key) and returns
@@ -16,10 +16,9 @@ from xippios.comtrade.api.get_live_update import get_live_update
 from xippios.comtrade.api.get_metadata import get_metadata
 from xippios.comtrade.api.get_trade_balance import get_trade_balance
 from xippios.comtrade.api.get_world_share import get_world_share
-from xippios.comtrade.api.reference import ReferenceFile, reference, reference_rows
+from xippios.comtrade.api.reference import reference, reference_rows
 
 __all__ = [
-    "ReferenceFile",
     "get",
     "get_bilateral_data",
     "get_comtrade_releases",

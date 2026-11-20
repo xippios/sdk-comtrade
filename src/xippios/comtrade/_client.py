@@ -12,8 +12,8 @@ per second, 500 calls per day, 100,000 records per call. Upstream's own headers 
 (``x-ratelimit-limit: 1`` and ``x-ratelimit-operation-limit: 60`` on the recorded backend
 answers). The bucket below spaces calls 1.5 s apart (``RATE_LIMIT``). The client counts no
 calls against the daily quota; ``policy`` reacts to upstream's answers: once upstream
-answers 403 "Quota will be replenished in HH:MM:SS", no call is sent until then.
-``countOnly`` calls count against the quota too.
+answers 403 "Quota will be replenished in HH:MM:SS", no keyed call is sent until then.
+``countOnly`` calls count against the quota too; the keyless calls spend none of it.
 """
 
 import re
@@ -22,6 +22,7 @@ import httpx
 from xippios.core import (
     AsyncClient,
     ClientConfig,
+    EnvVar,
     HeaderKeyAuth,
     InvalidRequestError,
     MemoryCache,
@@ -38,8 +39,13 @@ from xippios.comtrade._version import __version__
 SOURCE = "comtrade"
 BASE_URL = "https://comtradeapi.un.org"
 API_KEY_ENV = "COMTRADE_API_KEY"  # pragma: allowlist secret (a variable name, not a key)
-# Paced within the limit upstream documents (ADR-0010 decision 1): 1 call per second, 60
-# per minute, documented; 40 per minute chosen after the recorded 429s at 1.0 s (D41).
+ENV_VARS: tuple[EnvVar, ...] = (EnvVar(API_KEY_ENV, secret=True, required=True),)
+"""The variables the package reads, for a host (conventions §7; sdk-core ADR-0026, amendment
+2026-11-18, point c). An ``EnvVar`` names a variable and reads none; a variable the source reads
+beside these joins the list."""
+# Paced under the limit upstream documents; CLAUDE.md gives both (sdk-core ADR-0033 decision 1).
+# Upstream documents 1 call per second, 60 per minute; 40 per minute, one call every 1.5 s,
+# since calls spaced exactly 1.0 s apart drew HTTP 429 (D41).
 RATE_LIMIT = RateLimit(per_minute=40, burst=1)
 """One call every 1.5 s, no burst: upstream's 1 call per second with a margin.
 
@@ -93,7 +99,7 @@ def _refusal(payload: dict[str, object]) -> str:
 
 
 def classify(response: httpx.Response) -> XippiosError | None:
-    """UN Comtrade's documented and observed error shapes, mapped once (ADR-0008).
+    """UN Comtrade's documented and observed error shapes, mapped once (sdk-core ADR-0031).
 
     - HTTP 400 with the backend's ``ErrorResponse`` body ``{"error": ..., "details": ...}``
       (``components.schemas.ErrorResponse``; "Invalid or missing parameters." in the spec)
@@ -167,16 +173,19 @@ policy = QuotaPolicy(
     spent=_quota_spent,
     source=SOURCE,
 )
-"""No call into a quota upstream has said is spent (ADR-0010, ADR-0015).
+"""No keyed call into a quota upstream has said is spent.
 
 The policy counts no calls against the daily 500; it reacts to the two answers that say
-the quota is spent. Upstream's ``x-ratelimit-*`` headers describe the per-second pace, not
-the daily quota, so neither is read. ``_quota_spent`` reads the 403 "Out of call volume
-quota. Quota will be replenished in HH:MM:SS." for that long, which ``window`` caps at a
-day, and a 429 for its ``Retry-After``, upstream's ``1``, or, without one, for the
-"Try again in N seconds" of its body, else for 1 s, never for the day-long ``window``. A
-wait within ``pause_cap`` (30 s) is waited out, a longer one is refused with
-``RateLimitError`` before anything is sent. ``classify`` still maps the 403 itself.
+the quota is spent (sdk-core ADR-0033, sdk-core ADR-0037). Upstream's ``x-ratelimit-*``
+headers describe the per-second pace, not the daily quota, so neither is read.
+``_quota_spent`` reads the 403 "Out of call volume quota. Quota will be replenished in
+HH:MM:SS." for that long, which ``window`` caps at a day, and a 429 for its
+``Retry-After``, upstream's ``1``, or, without one, for the "Try again in N seconds" of
+its body, else for 1 s, never for the day-long ``window``. A wait within ``pause_cap``
+(30 s) is waited out, a longer one is refused with ``RateLimitError`` before anything is
+sent. ``classify`` still maps the 403 itself. A request sent with ``auth=None``, a
+reference file or a public operation, is neither held back nor read: core's policy skips
+it, since it spends no quota.
 """
 
 _REFERENCE_FILES = "/files/v1/app/reference/"
@@ -206,17 +215,19 @@ config = policy.install(
 # The key is read from the environment on the first request, never at import. The
 # reference files under files/v1/app/reference/ are public: the Help Center links them
 # without a key and scripts/refresh_upstream.py fetches them without one. api.reference
-# passes auth=None, so a reference refresh never sends the key or spends quota; it shares
-# RATE_LIMIT's pace, and once the quota is spent policy holds it back too. The public
-# operations under public/v1 (getComtradeReleases, getWorldShare), where public.json's
-# security makes a key optional and its info says "No subscription key required", pass
-# auth=None the same way and share pace and policy alike; their answers are not cached.
+# passes auth=None, so a reference refresh never sends the key or spends quota; it takes
+# RATE_LIMIT's pace alone, and a spent key quota does not hold it back, since policy skips
+# a request sent with auth=None. The public operations under public/v1
+# (getComtradeReleases, getWorldShare), where public.json's security makes a key optional
+# and its info says "No subscription key required", pass auth=None the same way and take
+# the pace alone; their answers are not cached.
 auth = HeaderKeyAuth("Ocp-Apim-Subscription-Key", API_KEY_ENV, source=SOURCE)
 client = AsyncClient(config, auth=auth)
 
 __all__ = [
     "API_KEY_ENV",
     "BASE_URL",
+    "ENV_VARS",
     "RATE_LIMIT",
     "SOURCE",
     "TIMEOUTS",

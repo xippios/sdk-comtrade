@@ -14,7 +14,7 @@ follows, sdk-core's conventions among them, are listed under
 | API base URL | `https://comtradeapi.un.org` |
 | Documentation | https://comtradeplus.un.org/ApiDocs, snapshotted in `docs/upstream/` |
 | Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header; never to the public operations or the reference files |
-| Rate limit | 1 per second documented; the client spaces calls 1.5 s apart (40 per minute), no burst; 500 calls a day, which the client does not count: `policy`, a `QuotaPolicy`, holds calls back once upstream answers that the quota is spent (`_client.py`, sdk-core ADR-0015) |
+| Rate limit | 40 requests per minute, burst 1, one call every 1.5 s; set under the limit upstream documents, 1 call per second (60 per minute), since calls spaced exactly 1.0 s apart drew HTTP 429 (sdk-core ADR-0033); 500 calls a day, which the client does not count: `policy`, a `QuotaPolicy`, holds keyed calls back once upstream answers that the quota is spent (`_client.py`, sdk-core ADR-0037) |
 | Write tools | no, this package is read-only |
 
 The snapshot listed in `docs/upstream/FETCHED.md` is the reference for names, parameters and
@@ -30,10 +30,10 @@ and how `_client.py` treats them:
   spaced exactly 1.0 s apart, 9 of 18 drew HTTP 429 "Rate limit is exceeded. Try again in
   1 seconds." (`Retry-After: 1`, `count_rate_limited.json`); at 1.5 s 2 of 39, at 2.0 s
   none of 10 (2026-10-23). So `RATE_LIMIT = RateLimit(per_minute=40, burst=1)`: one call
-  every 1.5 s, never a burst, within the limit upstream documents (sdk-core ADR-0010
+  every 1.5 s, never a burst, under the limit upstream documents (sdk-core ADR-0033
   decision 1: 1 a second and 60 a minute documented, 40 a minute chosen after the recorded
   429s, D41). Core retries a 429 after `Retry-After`, each retry a call, and `policy` holds
-  the next call back until then. Offline tests skip the wait (core's plugin); a test marked
+  the next keyed call back until then. Offline tests skip the wait (core's plugin); a test marked
   `rate_limited` keeps it.
 - **500 calls per day.** `countOnly` calls count against it, so `get_data` costs two
   calls (count, then data) and `get_counts` one. The client does not count calls. Over
@@ -41,7 +41,7 @@ and how `_client.py` treats them:
   replenished in HH:MM:SS"; `classify` maps a 403 that mentions a quota to
   `RateLimitError` with `retry_after`, and `policy`, `QuotaPolicy(limit_header=None,
   remaining_header=None, window=86400, spent=...)` installed on `config`, marks the quota
-  spent until then: the next call is refused with `RateLimitError` before it is sent
+  spent until then: the next keyed call is refused with `RateLimitError` before it is sent
   (a wait within 30 s is waited out). It reads no `x-ratelimit-*` header, since those
   describe the per-second pace. Its `spent` hook reads two answers, this 403, whose time
   `window` caps at a day, and a 429 without `Retry-After`, for the "Try again in N
@@ -66,16 +66,16 @@ them with `auth=None`, without the key, and its cache, narrowed to those paths b
 `cache_filter`, keeps each for the life of the process (core's plugin clears every
 `MemoryCache` around each offline test); `list_commodities`' `meta.retrieved_at` is the
 time its file was stored. So `scripts/refresh_reference.py` and `list_commodities` need
-no key and cost no quota; a reference fetch still takes the 1.5 s pace, and a spent quota
-holds it back too.
+no key and cost no quota; a reference fetch takes the 1.5 s pace alone, since `policy`
+neither holds back nor reads a request sent with `auth=None`.
 
 The public operations under `public/v1`, `getComtradeReleases` and `getWorldShare`
 (`docs/upstream/apidocs/public.json`, whose `security` is `[{}, apiKeyHeader,
 apiKeyQuery]`, a key optional, and whose `info` says "No subscription key required"), go
 through the same client with `auth=None` too: `get_comtrade_releases` and
-`get_world_share` send no key and spend no daily quota, but they share `RATE_LIMIT`'s pace
-(the Public tier allows 1 call per second) and `policy`, so a spent key quota holds them
-back too, as it does the reference files. `cache_filter` keeps their answers out of the
+`get_world_share` send no key and spend no daily quota, and they take `RATE_LIMIT`'s pace
+(the Public tier allows 1 call per second) alone: a spent key quota does not hold them
+back, nor the reference files. `cache_filter` keeps their answers out of the
 cache, so a release calendar always comes from upstream. Their operationIds are opaque hex
 ids, so the wrappers are named after the paths (conventions §2). What the keyless
 recordings of 2026-10-28 established (`tests/fixtures/get_comtrade_releases/`,
@@ -138,7 +138,7 @@ call, without `search` and without a cap of their own: the largest list has 41 r
 unknown `customs_code` or `mot_code` names the closest codes with their text (core's
 `closest` by code and by text, else the most similar code).
 
-`MCP_CAPS` in `tasks.py` gives four tasks result caps of their own (sdk-core ADR-0016),
+`MCP_CAPS` in `tasks.py` gives four tasks result caps of their own (sdk-core ADR-0038),
 each 400 rows or 100 KB: three list tasks and `get_world_share`. `list_reporters` (255
 rows, 69 KB) and `list_partners` (310, 83 KB) reach an agent whole, past Switzerland and the
 USA, where the default cap of 200 rows cut them in upstream's alphabetical order. A
@@ -203,9 +203,10 @@ row and `mirror2*` is empty or 0; upstream states neither meaning. Its envelope'
 and their share of world trade, naming none, in wording that varies; the task returns both
 with the rows as one `BilateralData` (`note`, `timestamp_requested`, `data`), not a list,
 so the note that qualifies the mirror values reaches the agent (Johannes, 2026-10-28);
-`get_mirror_flows`' `MirrorFlows` has the same shape. Over MCP, core's result cap cuts
-only a top-level list: an answer above 64 KB (about 40 rows of `BilateralData`, 60 of
-`MirrorFlows`) arrives as a text preview.
+`get_mirror_flows`' `MirrorFlows` has the same shape. Over MCP, core's result cap cuts the
+rows of either model: an answer above 64 KB (about 40 rows of `BilateralData`, 60 of
+`MirrorFlows`) keeps its `note` and `timestamp_requested` whole beside the rows that fit,
+with the cap's note.
 
 The task-shaped slices (wave 2: `get_bilateral_flows`, `get_commodity_series`,
 `get_world_trade`, `get_top_partners`) call `data/v1/get` through `api.get` with
@@ -250,8 +251,10 @@ src/xippios/comtrade/
   py.typed         PEP 561 marker; consumers' mypy --strict needs it
   _version.py      __version__ from distribution metadata
   _client.py       the one configured AsyncClient (base URL, key, rate limit, classify),
-                   its daily quota policy and the cache of the public reference files
-  errors.py        RECORD_LIMIT, MAX_PERIODS and QueryTooLarge
+                   ENV_VARS, its daily quota policy and the cache of the public reference
+                   files
+  errors.py        RECORD_LIMIT, MAX_PERIODS, QueryTooLarge and over_mcp, which names a
+                   task's MCP tool in a refusal
   models.py        pydantic models mirroring upstream payloads (UpstreamModel); by the
                    family's precedent also an enumeration written by hand, for a value set
                    upstream documents and no packaged list renders
@@ -259,7 +262,7 @@ src/xippios/comtrade/
   tasks.py         task functions; __all__ is what the adapters register, but BULK_TASKS,
                    the Python-only ones; MCP_CAPS the result caps of three list tasks
                    and get_world_share
-  mcp.py           xippios-comtrade-mcp entry point
+  mcp.py           xippios-comtrade-mcp entry point: build() the tool set, server
   http.py          FastAPI router
   params.py        packaged lists and tables: PACKAGED_LISTS, PACKAGED_TABLES,
                    CL_CODES_FROM_SPEC, classification_files(); checks run before a
@@ -324,7 +327,7 @@ uv run xippios-comtrade-mcp   # stdio; add --http for streamable HTTP
 ```
 
 `uv run pytest` is offline: core's plugin refuses the network and skips the rate limiter's
-waits in every test not marked `live` (conventions §10, sdk-core ADR-0013). A test that
+waits in every test not marked `live` (conventions §10, sdk-core ADR-0035). A test that
 asserts a limiter wait or a quota pause is marked `rate_limited`, one that must reach the
 network `network`.
 It sends the key's placeholder, with `COMTRADE_API_KEY` set to it because
@@ -348,6 +351,15 @@ and counts, never on a raw payload.
 - Upstream's documented error shapes go into `classify` in `_client.py`, once, and an error
   class of the package's own into `errors.py`; a wrapper never inspects a status code
   (conventions §5, §6).
+- One limiter paces each host the package sends to (conventions §2, §6). A second base URL
+  on the host of the API base URL goes through the one `client` of `_client.py` by its
+  absolute URL, and `classify`'s path checks name both bases. An origin or mirror that the
+  publisher runs itself, where its canonical host refuses automated requests, takes that
+  host's pace through the same client, and `docs/upstream/` names both hosts; a mirror that
+  anyone else runs is never sent to. A host that a dependency sends to is reached through
+  the dependency's tasks alone. Any other host gets a client of its own in `_client.py`,
+  its base URL and its `RateLimit` beside the first's, and a row of its own in the table
+  under What this package wraps, with its pace and where the pace comes from.
 - A change brings its tests, written before the code, and passes the offline checks above;
   its changelog entry is a fragment under `changelog/`, one file holding its bullet, as
   `changelog/README.md` lays it out (conventions §12). Commit subjects follow Conventional
@@ -363,16 +375,17 @@ and counts, never on a raw payload.
 - Never hand-write a fixture, and never commit one without grepping it for key patterns
   (conventions §10).
 - Never read or print `.envrc`, `.env`, the credential variable of this package,
-  `COMTRADE_API_KEY`, or any variable ending in `_API_KEY`, `_REFRESH_TOKEN` or
+  `COMTRADE_API_KEY`, or any variable ending in `_API_KEY`, `_TOKEN` or
   `_SECRET`.
 - Never write a key, a token or another credential into a file or a commit.
 - Never put logic in `mcp.py` or `http.py`, and never add a route or a tool by hand: the
   adapters register `tasks.__all__` (sdk-core ADR-0001).
-- Never rename or re-map an upstream concept to another source's (sdk-core ADR-0003).
+- Never rename or re-map an upstream concept to another source's (sdk-core ADR-0028).
 - Never return a documented personal identifier in a task's projection, echo one in
   `meta.request`, or commit one in a fixture (sdk-core ADR-0017).
-- Never edit `docs/upstream/` by hand: `/refresh-upstream` fetches it, and the pull request
-  shows its diff (conventions §3).
+- Never edit `docs/upstream/` by hand but `docs/upstream/OBSERVED.md`, the notes on what
+  upstream does but never documents: `/refresh-upstream` fetches the rest, and the pull
+  request shows its diff (conventions §3).
 - Never add `src/xippios/__init__.py`, nor an `__init__.py` at a level between it and the
   package (sdk-core ADR-0006).
 - Never push a tag by hand: a release's tag comes from `publish.yml` alone (conventions §12).
@@ -384,7 +397,7 @@ template release reaches it in a pull request of its own, with
 `uvx --from 'copier>=9.19' copier update --defaults --vcs-ref=<tag>` (conventions §15): the
 update renders the template's files again and never overwrites the files this package
 fills, `__init__.py`, `_client.py`, `errors.py`, `models.py`, `api/`, `parse/`, `tasks.py`,
-`params.py`, `enums.py`, `reference/`, `scripts/refresh_reference.py`,
+`tasks_write.py`, `params.py`, `enums.py`, `reference/`, `scripts/refresh_reference.py`,
 `scripts/refresh_upstream.py`, `tests/test_tasks.py`, `tests/test_live.py`,
 `tests/fixtures/`, `docs/upstream/`, `docs/adr.md`, `docs/adr.json`, `README.md`,
 `CHANGELOG.md` and `CLAUDE.md`. sdk-template's

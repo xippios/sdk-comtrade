@@ -5,11 +5,11 @@ lookups and checks need no network call; ``scripts/refresh_reference.py`` writes
 the matching ``StrEnum`` classes in ``enums.py``, never by hand. ``reference/README.md``
 carries the provenance of every file. Each is a packaged-list file,
 ``reference/<name>.json``, read with ``xippios.core.PackagedList.load(PACKAGE, name)``
-(ADR-0022): a list's records carry the value under the parameter's name and the fields
-upstream words it in, under upstream's names, parsed into the list's model
+(sdk-core ADR-0041): a list's records carry the value under the parameter's name and the
+fields upstream words it in, under upstream's names, parsed into the list's model
 (``PACKAGED_LISTS``), a table's records upstream's columns, parsed into its row model
 (``PACKAGED_TABLES``). ``validate_get`` checks the arguments of a ``data/v1/get`` call
-against them, and the free-form ones by shape, before anything is sent (ADR-0007);
+against them, and the free-form ones by shape, before anything is sent (sdk-core ADR-0007);
 ``validate_datasets`` does the same for ``data/v1/getDa`` and ``data/v1/getMetadata``,
 ``validate_trade_balance`` and ``validate_bilateral_data`` for the Tools operations
 ``tools/v1/getTradeBalance`` and ``tools/v1/getBilateralData``, ``validate_world_share``
@@ -29,7 +29,7 @@ from typing import Any, NamedTuple
 from xippios.core import InvalidRequestError, PackagedList, UnknownCode, UpstreamModel, closest
 
 from xippios.comtrade._client import SOURCE
-from xippios.comtrade.errors import MAX_PERIODS
+from xippios.comtrade.errors import MAX_PERIODS, over_mcp
 from xippios.comtrade.models import (
     AggregateByValue,
     BreakdownModeValue,
@@ -229,7 +229,10 @@ def _check_list(
                 list_name=upstream,
                 fetched=PackagedList.load(PACKAGE, upstream).fetched,
                 closest=_closest_texts(member, upstream),
-                reason=f"{_UNKNOWN_DIMENSION} list_codes({upstream!r}) lists every code.",
+                reason=(
+                    f"{_UNKNOWN_DIMENSION} list_codes({upstream!r}) lists every code "
+                    f"{over_mcp('list_codes')}."
+                ),
                 source=SOURCE,
             )
         near = _closest(member, allowed)
@@ -302,7 +305,7 @@ def _unknown_area(
         fetched=PackagedList.load(PACKAGE, list_name).fetched,
         closest=closest,
         hint=hint,
-        reason=f"{reason} {task} lists every code.",
+        reason=f"{reason} {task} lists every code {over_mcp(task)}.",
         source=SOURCE,
     )
 
@@ -1014,8 +1017,8 @@ def _slice_periods(
             f"{argument} has {len(members)} values; "
             + (
                 too_many
-                or f"UN Comtrade takes at most {at_most} per call (get_commodity_series "
-                "splits longer series)"
+                or f"UN Comtrade takes at most {at_most} per call, and get_commodity_series "
+                f"{over_mcp('get_commodity_series')} splits longer series"
             )
         )
     return ("A" if lengths == {4} else "M"), members
@@ -1045,8 +1048,8 @@ def _slice_commodities(
         if _KEYWORD.fullmatch(member) or member.endswith(("*", "?")):
             problems.append(
                 f"{argument} {member!r} expands to many product codes; the slices take "
-                "codes such as 'TOTAL', '27' or '2709' (get_data takes levels and wildcards "
-                "and counts first)"
+                f"codes such as 'TOTAL', '27' or '2709', and get_data {over_mcp('get_data')} "
+                "takes levels and wildcards and counts first"
             )
         elif not shape.fullmatch(member):
             problems.append(
@@ -1137,7 +1140,8 @@ def validate_slice(
 
 _MIRROR_TOO_MANY = (
     f"get_mirror_flows takes at most {MAX_PERIODS} per call, the bound of the slices; split "
-    "the periods (get_bilateral_data takes more)"
+    f"the periods, or ask get_bilateral_data {over_mcp('get_bilateral_data')}, which takes "
+    "more"
 )
 """The refusal of a 13th period: the package's slice bound, not upstream's.
 

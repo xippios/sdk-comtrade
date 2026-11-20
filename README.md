@@ -156,8 +156,9 @@ count before anything is fetched, because upstream would cut the answer at 100,0
 without saying so. A free key allows 1 call per second and 500 calls per day, and
 `countOnly` calls count; the client spaces calls 1.5 s apart (upstream's gateway refuses
 some calls spaced exactly 1 s apart) and counts no calls, so the daily quota is yours to
-track: once upstream answers that it is spent, the client sends nothing more until the
-time upstream names and raises `RateLimitError` instead.
+track: once upstream answers that it is spent, the client sends no keyed call until the
+time upstream names and raises `RateLimitError` instead, while the keyless operations and
+reference files, which spend none of it, go on.
 
 ## MCP
 

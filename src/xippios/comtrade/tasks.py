@@ -22,7 +22,7 @@ date. A single value for a whole result would be a guess.
 The lists packaged with this version (``list_reporters``, ``list_partners``,
 ``list_codes``, ``list_classifications``) carry the time the package fetched them as
 ``meta.retrieved_at``, and ``meta.vintage`` stays ``None``: upstream gives the files no
-release identifier (ADR-0022, rule 1).
+release identifier (sdk-core ADR-0041, decision 1).
 """
 
 from collections.abc import Mapping
@@ -97,16 +97,17 @@ __all__ = [
     "list_reporters",
 ]
 
-# A task named here is Python-only: no tool, no route; the adapters skip it (ADR-0019 decision 4).
+# A task named here is Python-only: no tool, no route; the adapters skip it
+# (sdk-core ADR-0040 decision 4).
 BULK_TASKS: frozenset[str] = frozenset()
 
-# Result caps of their own, keyed by the task function's name (conventions §8, ADR-0016):
-# the reporter (255) and partner (310) tables reach an agent whole; a classification file
-# (8,262 HS codes) cannot, and its note tells the agent to search. One period's world share
-# for every reporter (214 rows, 88.5 KB for 2023) reaches an agent whole too, where the
-# default cap cut it at 157 rows, dropping the USA (842): upstream sends the available rows
-# first, by reporter code, then the unavailable ones in an order the recording does not
-# explain.
+# Result caps of their own, keyed by the task function's name (conventions §8,
+# sdk-core ADR-0038): the reporter (255) and partner (310) tables reach an agent whole; a
+# classification file (8,262 HS codes) cannot, and its note tells the agent to search. One
+# period's world share for every reporter (214 rows, 88.5 KB for 2023) reaches an agent
+# whole too, where the default cap cut it at 157 rows, dropping the USA (842): upstream
+# sends the available rows first, by reporter code, then the unavailable ones in an order
+# the recording does not explain.
 MCP_CAPS: Mapping[str, ResultCap] = {
     "list_reporters": ResultCap(max_rows=400, max_bytes=100_000),
     "list_partners": ResultCap(max_rows=400, max_bytes=100_000),
@@ -610,9 +611,9 @@ async def get_bilateral_data_async(
     primary_value``, a relative difference (``-0.16`` for Switzerland's 2023 exports to the
     USA, ``-1.0`` where the mirror is 0). The ``mirror2_*`` fields are not described
     upstream and were ``None`` or 0 in every recorded row. A pair upstream holds nothing for
-    has no row. ``meta.total`` is upstream's ``count``. Over MCP the rows are not cut to the
-    result cap one by one: an answer above it (about 40 rows) comes as a preview of its
-    text, so name a few partners or periods per call. The query must name ``reporter_code``
+    has no row. ``meta.total`` is upstream's ``count``. Over MCP an answer above the result
+    cap (about 40 rows) keeps ``note`` and ``timestamp_requested`` and shows the rows that
+    fit, so name a few partners or periods per call. The query must name ``reporter_code``
     or ``partner_code``, and ``cmd_code``: upstream offers no count to check a query's size
     before the call (it ignores ``countOnly``), so a broader query is refused before it is
     sent. Arguments are checked before the call; an unknown reporter or partner code raises
@@ -675,14 +676,14 @@ async def get_comtrade_releases_async() -> Result[list[ComtradeRelease]]:
     Upstream's public ``getComtradeReleases``, "the list of the recent releases, the same
     with the UI live update page" (https://comtradeplus.un.org/RecentReleases); the spec
     calls each row "A recent or upcoming dataset release". Keyless: no key is sent and no
-    daily quota is spent, but the call shares the client's pace (the Public tier allows 1
-    call per second) and its quota policy, so once upstream has said the key's daily quota
-    is spent it is held back too; the Public tier's preview API's 500 records a call is far
-    above the rows recorded. One row per release: ``reporter_code`` (UN Comtrade's code,
-    e.g. 757 Switzerland), ``dataset_desc`` (e.g. ``"Switzerland CM 202601"``),
-    ``flag_code`` and ``nr``, whose meanings upstream does not state (recorded: two letters,
-    ``"CH"`` for 757; ``"N"`` or ``"R"``), and ``date_release``, a naive datetime: upstream
-    prints it without a UTC offset and states no zone, so none is attached. When recorded on
+    daily quota is spent, so the call goes out once the key's daily quota is spent too, at
+    the client's pace (the Public tier allows 1 call per second); the Public tier's preview
+    API's 500 records a call is far above the rows recorded. One row per release:
+    ``reporter_code`` (UN Comtrade's code, e.g. 757 Switzerland), ``dataset_desc`` (e.g.
+    ``"Switzerland CM 202601"``), ``flag_code`` and ``nr``, whose meanings upstream does
+    not state (recorded: two letters, ``"CH"`` for 757; ``"N"`` or ``"R"``), and
+    ``date_release``, a naive datetime: upstream prints it without a UTC offset and states
+    no zone, so none is attached. When recorded on
     2026-10-28 it listed 38 releases from 2026-10-22 to 2026-10-28, newest first, every one
     at midnight, none in the future; the spec states no order. UN Comtrade keeps one version
     of each dataset, so a revised release replaces the earlier data, which is not archived.
@@ -714,9 +715,9 @@ async def get_world_share_async(
     not a release; upstream states no meaning for ``is_available`` or ``data_count``. The
     four times (``first_released``, ``last_released``, ``created``, ``updated``) are naive
     datetimes: upstream prints them without a UTC offset and states no zone, so none is
-    attached. Keyless: no key is sent and no daily quota is spent, but the call shares the
-    client's pace (the Public tier allows 1 call per second) and its quota policy, so once
-    upstream has said the key's daily quota is spent it is held back too. Upstream's
+    attached. Keyless: no key is sent and no daily quota is spent, so the call goes out once
+    the key's daily quota is spent too, at the client's pace (the Public tier allows 1 call
+    per second). Upstream's
     subscription page limits the Public tier's preview API to 500 records a call; whether
     that binds this operation is not stated, and the recorded answers (214 rows at most) did
     not reach it. One call, rows in upstream's order; a period nobody reported returns an
@@ -1017,8 +1018,8 @@ async def get_mirror_flows_async(
     it is not sent; ``list_reporters`` and ``list_partners`` name the codes. Bounded by
     construction at product codes times periods rows, so there is no count call (upstream
     offers none here); a bound above 100,000 raises ``QueryTooLarge`` before the call.
-    Over MCP a result above 64 KB (about 60 rows) reaches the agent as a preview of its
-    text, so name a few product codes or periods per call. Arguments are resolved and
+    Over MCP a result above 64 KB (about 60 rows) keeps ``note`` and shows the rows that
+    fit, so name a few product codes or periods per call. Arguments are resolved and
     checked before the call; an unknown area raises ``UnknownCode``, an
     ``InvalidRequestError`` naming the packaged list and the closest area, another mistake
     ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds the
@@ -1166,7 +1167,7 @@ async def list_commodities_async(
     fetched = await api.reference(f"{cl_code}.json", Commodity)
     rows = [
         row
-        for row in fetched.rows
+        for row in fetched.payload
         if matches(search, row.id, row.cmd_code, row.text, row.description_original)
     ]
     meta = ResultMeta(
