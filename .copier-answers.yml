@@ -15,7 +15,7 @@ import_path: comtrade
 live_secrets: '[]'
 rate_limit_burst: 1
 rate_limit_per_minute: 40
-rate_limit_provenance: documented
+rate_limit_provenance: below-documented
 source_dependencies: '[]'
 source_name: UN Comtrade
 source_slug: comtrade

@@ -14,7 +14,7 @@ follows, sdk-core's conventions among them, are listed under
 | API base URL | `https://comtradeapi.un.org` |
 | Documentation | https://comtradeplus.un.org/ApiDocs, snapshotted in `docs/upstream/` |
 | Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header; never to the public operations or the reference files |
-| Rate limit | 1 per second documented; the client spaces calls 1.5 s apart (40 per minute), no burst; 500 calls a day, which the client does not count: `policy`, a `QuotaPolicy`, holds calls back once upstream answers that the quota is spent (`_client.py`, sdk-core ADR-0037) |
+| Rate limit | 40 requests per minute, burst 1, one call every 1.5 s; set under the limit upstream documents, 1 call per second (60 per minute), since calls spaced exactly 1.0 s apart drew HTTP 429 (sdk-core ADR-0033); 500 calls a day, which the client does not count: `policy`, a `QuotaPolicy`, holds keyed calls back once upstream answers that the quota is spent (`_client.py`, sdk-core ADR-0037) |
 | Write tools | no, this package is read-only |
 
 The snapshot listed in `docs/upstream/FETCHED.md` is the reference for names, parameters and
@@ -30,7 +30,7 @@ and how `_client.py` treats them:
   spaced exactly 1.0 s apart, 9 of 18 drew HTTP 429 "Rate limit is exceeded. Try again in
   1 seconds." (`Retry-After: 1`, `count_rate_limited.json`); at 1.5 s 2 of 39, at 2.0 s
   none of 10 (2026-10-23). So `RATE_LIMIT = RateLimit(per_minute=40, burst=1)`: one call
-  every 1.5 s, never a burst, within the limit upstream documents (sdk-core ADR-0033
+  every 1.5 s, never a burst, under the limit upstream documents (sdk-core ADR-0033
   decision 1: 1 a second and 60 a minute documented, 40 a minute chosen after the recorded
   429s, D41). Core retries a 429 after `Retry-After`, each retry a call, and `policy` holds
   the next call back until then. Offline tests skip the wait (core's plugin); a test marked

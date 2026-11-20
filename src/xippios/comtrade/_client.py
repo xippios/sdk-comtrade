@@ -43,8 +43,9 @@ ENV_VARS: tuple[EnvVar, ...] = (EnvVar(API_KEY_ENV, secret=True, required=True),
 """The variables the package reads, for a host (conventions §7; sdk-core ADR-0026, amendment
 2026-11-18, point c). An ``EnvVar`` names a variable and reads none; a variable the source reads
 beside these joins the list."""
-# Paced within the limit upstream documents (sdk-core ADR-0033 decision 1): 1 call per second, 60
-# per minute, documented; 40 per minute chosen after the recorded 429s at 1.0 s (D41).
+# Paced under the limit upstream documents; CLAUDE.md gives both (sdk-core ADR-0033 decision 1).
+# Upstream documents 1 call per second, 60 per minute; 40 per minute, one call every 1.5 s,
+# since calls spaced exactly 1.0 s apart drew HTTP 429 (D41).
 RATE_LIMIT = RateLimit(per_minute=40, burst=1)
 """One call every 1.5 s, no burst: upstream's 1 call per second with a margin.
 
