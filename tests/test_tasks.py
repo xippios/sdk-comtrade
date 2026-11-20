@@ -374,7 +374,8 @@ async def test_a_refusal_that_names_another_task_names_a_served_tool(
     """Conventions §8: each task a refusal points to is named with its MCP tool.
 
     The refusals of this package that name a task to call instead or the list task that
-    lists the codes, each with ``(over MCP, the tool comtrade_<task>)`` right after it.
+    lists the codes name its tool as ``(over MCP, the tool comtrade_<task>)``, a tool the
+    server lists, after the task or the clause it ends.
     """
     refusals = [
         str(QueryTooLarge(200_000)),
@@ -396,12 +397,12 @@ async def test_a_refusal_that_names_another_task_names_a_served_tool(
         refusals.append(str(info.value))
     async with Client(server) as client:
         served = {tool.name for tool in (await client.list_tools()).tools}
-    named = [re.findall(r"(\w+)\S* \(over MCP, the tool (\w+)\)", refusal) for refusal in refusals]
-    assert all(named), refusals
-    for pairs in named:
-        for task, tool in pairs:
-            assert tool == f"comtrade_{task}"
+    for refusal in refusals:
+        tools = re.findall(r"\(over MCP, the tool (\w+)\)", refusal)
+        assert tools, refusal
+        for tool in tools:
             assert tool in served
+            assert re.search(rf"\b{tool.removeprefix('comtrade_')}\b", refusal), refusal
     assert not respx_mock.calls
 
 

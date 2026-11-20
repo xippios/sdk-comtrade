@@ -4,7 +4,21 @@ from xippios.core import InvalidRequestError
 
 from xippios.comtrade._client import SOURCE
 
-__all__ = ["MAX_PERIODS", "RECORD_LIMIT", "QueryTooLarge"]
+__all__ = ["MAX_PERIODS", "RECORD_LIMIT", "QueryTooLarge", "over_mcp"]
+
+
+def over_mcp(task: str) -> str:
+    """How a refusal names the MCP tool of a task it points to, after the task's name.
+
+    Conventions §8: an error a tool can return that names another task, the one to call
+    instead or the list task that lists the codes, names that task's tool too, e.g.
+    ``list_reporters (over MCP, the tool comtrade_list_reporters)``.
+
+    Args:
+        task: The task's name in ``tasks.__all__``, e.g. ``"get_counts"``.
+    """
+    return f"(over MCP, the tool {SOURCE}_{task})"
+
 
 RECORD_LIMIT = 100_000
 """Most records ``data/v1/get`` returns per call on a Basic Individual (free) key.
@@ -50,7 +64,7 @@ class QueryTooLarge(InvalidRequestError):
             advice = (
                 f"Split by period (max {MAX_PERIODS} per call), then by reporter, then raise "
                 "the aggregation level (for example cmd_code 'AG2' instead of 'AG6'), and "
-                "check each part with get_counts."
+                f"check each part with get_counts {over_mcp('get_counts')}."
             )
         super().__init__(
             f"{what}; UN Comtrade serves at most {limit:,} per call and silently cuts the "
