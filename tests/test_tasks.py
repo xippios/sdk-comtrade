@@ -10,7 +10,7 @@ import inspect
 import json
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -1342,6 +1342,14 @@ def test_http_route_end_to_end(replay_fixture: ReplayFixture) -> None:
 # Reference lists: reporters and partners are packaged, commodities fetched keyless.
 
 
+def _as_sent(rows: Sequence[UpstreamModel], records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each row under upstream's names, with the keys its packaged record holds."""
+    return [
+        {key: value for key, value in row.dump_upstream().items() if key in record}
+        for row, record in zip(rows, records, strict=True)
+    ]
+
+
 def test_list_reporters_returns_the_packaged_table(respx_mock: respx.MockRouter) -> None:
     result = tasks.list_reporters()
     assert not respx_mock.calls, "packaged: no upstream call"
@@ -1374,6 +1382,9 @@ def test_list_reporters_returns_the_packaged_table(respx_mock: respx.MockRouter)
     assert all(isinstance(row.entry_effective_date, datetime) for row in result.data)
     assert sum(row.entry_expired_date is not None for row in result.data) == 33
     assert all(row.id == row.reporter_code for row in result.data)
+    # Every row as upstream sent it, against its packaged record: a value's padding is kept.
+    records = PackagedList.load(PACKAGE, "Reporters").records
+    assert _as_sent(result.data, records) == records
 
 
 def test_list_partners_returns_the_packaged_table(respx_mock: respx.MockRouter) -> None:
@@ -1391,6 +1402,10 @@ def test_list_partners_returns_the_packaged_table(respx_mock: respx.MockRouter) 
     assert by_code[757].partner_desc == "Switzerland"
     assert by_code[756].partner_desc == "Switzerland"
     assert by_code[756].partner_note is None
+    # Every row as upstream sent it, against its packaged record: the trailing space of
+    # some areas' texts is kept, whichever areas carry one.
+    records = PackagedList.load(PACKAGE, "partnerAreas").records
+    assert _as_sent(result.data, records) == records
 
 
 def _table[M: UpstreamModel](name: str, model: type[M]) -> list[M]:
