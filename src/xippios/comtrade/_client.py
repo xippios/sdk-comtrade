@@ -43,7 +43,7 @@ ENV_VARS: tuple[EnvVar, ...] = (EnvVar(API_KEY_ENV, secret=True, required=True),
 """The variables the package reads, for a host (conventions §7; sdk-core ADR-0026, amendment
 2026-11-18, point c). An ``EnvVar`` names a variable and reads none; a variable the source reads
 beside these joins the list."""
-# Paced within the limit upstream documents (ADR-0010 decision 1): 1 call per second, 60
+# Paced within the limit upstream documents (sdk-core ADR-0033 decision 1): 1 call per second, 60
 # per minute, documented; 40 per minute chosen after the recorded 429s at 1.0 s (D41).
 RATE_LIMIT = RateLimit(per_minute=40, burst=1)
 """One call every 1.5 s, no burst: upstream's 1 call per second with a margin.
@@ -98,7 +98,7 @@ def _refusal(payload: dict[str, object]) -> str:
 
 
 def classify(response: httpx.Response) -> XippiosError | None:
-    """UN Comtrade's documented and observed error shapes, mapped once (ADR-0008).
+    """UN Comtrade's documented and observed error shapes, mapped once (sdk-core ADR-0031).
 
     - HTTP 400 with the backend's ``ErrorResponse`` body ``{"error": ..., "details": ...}``
       (``components.schemas.ErrorResponse``; "Invalid or missing parameters." in the spec)
@@ -172,18 +172,19 @@ policy = QuotaPolicy(
     spent=_quota_spent,
     source=SOURCE,
 )
-"""No keyed call into a quota upstream has said is spent (ADR-0010, ADR-0015).
+"""No keyed call into a quota upstream has said is spent.
 
 The policy counts no calls against the daily 500; it reacts to the two answers that say
-the quota is spent. Upstream's ``x-ratelimit-*`` headers describe the per-second pace, not
-the daily quota, so neither is read. ``_quota_spent`` reads the 403 "Out of call volume
-quota. Quota will be replenished in HH:MM:SS." for that long, which ``window`` caps at a
-day, and a 429 for its ``Retry-After``, upstream's ``1``, or, without one, for the
-"Try again in N seconds" of its body, else for 1 s, never for the day-long ``window``. A
-wait within ``pause_cap`` (30 s) is waited out, a longer one is refused with
-``RateLimitError`` before anything is sent. ``classify`` still maps the 403 itself. A
-request sent with ``auth=None``, a reference file or a public operation, is neither held
-back nor read: core's policy skips it, since it spends no quota.
+the quota is spent (sdk-core ADR-0033, sdk-core ADR-0037). Upstream's ``x-ratelimit-*``
+headers describe the per-second pace, not the daily quota, so neither is read.
+``_quota_spent`` reads the 403 "Out of call volume quota. Quota will be replenished in
+HH:MM:SS." for that long, which ``window`` caps at a day, and a 429 for its
+``Retry-After``, upstream's ``1``, or, without one, for the "Try again in N seconds" of
+its body, else for 1 s, never for the day-long ``window``. A wait within ``pause_cap``
+(30 s) is waited out, a longer one is refused with ``RateLimitError`` before anything is
+sent. ``classify`` still maps the 403 itself. A request sent with ``auth=None``, a
+reference file or a public operation, is neither held back nor read: core's policy skips
+it, since it spends no quota.
 """
 
 _REFERENCE_FILES = "/files/v1/app/reference/"

@@ -14,7 +14,7 @@ follows, sdk-core's conventions among them, are listed under
 | API base URL | `https://comtradeapi.un.org` |
 | Documentation | https://comtradeplus.un.org/ApiDocs, snapshotted in `docs/upstream/` |
 | Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header; never to the public operations or the reference files |
-| Rate limit | 1 per second documented; the client spaces calls 1.5 s apart (40 per minute), no burst; 500 calls a day, which the client does not count: `policy`, a `QuotaPolicy`, holds calls back once upstream answers that the quota is spent (`_client.py`, sdk-core ADR-0015) |
+| Rate limit | 1 per second documented; the client spaces calls 1.5 s apart (40 per minute), no burst; 500 calls a day, which the client does not count: `policy`, a `QuotaPolicy`, holds calls back once upstream answers that the quota is spent (`_client.py`, sdk-core ADR-0037) |
 | Write tools | no, this package is read-only |
 
 The snapshot listed in `docs/upstream/FETCHED.md` is the reference for names, parameters and
@@ -30,7 +30,7 @@ and how `_client.py` treats them:
   spaced exactly 1.0 s apart, 9 of 18 drew HTTP 429 "Rate limit is exceeded. Try again in
   1 seconds." (`Retry-After: 1`, `count_rate_limited.json`); at 1.5 s 2 of 39, at 2.0 s
   none of 10 (2026-10-23). So `RATE_LIMIT = RateLimit(per_minute=40, burst=1)`: one call
-  every 1.5 s, never a burst, within the limit upstream documents (sdk-core ADR-0010
+  every 1.5 s, never a burst, within the limit upstream documents (sdk-core ADR-0033
   decision 1: 1 a second and 60 a minute documented, 40 a minute chosen after the recorded
   429s, D41). Core retries a 429 after `Retry-After`, each retry a call, and `policy` holds
   the next call back until then. Offline tests skip the wait (core's plugin); a test marked
@@ -138,7 +138,7 @@ call, without `search` and without a cap of their own: the largest list has 41 r
 unknown `customs_code` or `mot_code` names the closest codes with their text (core's
 `closest` by code and by text, else the most similar code).
 
-`MCP_CAPS` in `tasks.py` gives four tasks result caps of their own (sdk-core ADR-0016),
+`MCP_CAPS` in `tasks.py` gives four tasks result caps of their own (sdk-core ADR-0038),
 each 400 rows or 100 KB: three list tasks and `get_world_share`. `list_reporters` (255
 rows, 69 KB) and `list_partners` (310, 83 KB) reach an agent whole, past Switzerland and the
 USA, where the default cap of 200 rows cut them in upstream's alphabetical order. A
@@ -324,7 +324,7 @@ uv run xippios-comtrade-mcp   # stdio; add --http for streamable HTTP
 ```
 
 `uv run pytest` is offline: core's plugin refuses the network and skips the rate limiter's
-waits in every test not marked `live` (conventions §10, sdk-core ADR-0013). A test that
+waits in every test not marked `live` (conventions §10, sdk-core ADR-0035). A test that
 asserts a limiter wait or a quota pause is marked `rate_limited`, one that must reach the
 network `network`.
 It sends the key's placeholder, with `COMTRADE_API_KEY` set to it because
@@ -368,7 +368,7 @@ and counts, never on a raw payload.
 - Never write a key, a token or another credential into a file or a commit.
 - Never put logic in `mcp.py` or `http.py`, and never add a route or a tool by hand: the
   adapters register `tasks.__all__` (sdk-core ADR-0001).
-- Never rename or re-map an upstream concept to another source's (sdk-core ADR-0003).
+- Never rename or re-map an upstream concept to another source's (sdk-core ADR-0028).
 - Never return a documented personal identifier in a task's projection, echo one in
   `meta.request`, or commit one in a fixture (sdk-core ADR-0017).
 - Never edit `docs/upstream/` by hand: `/refresh-upstream` fetches it, and the pull request

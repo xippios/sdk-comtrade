@@ -5,14 +5,15 @@ named as upstream names them in snake_case. The upstream spelling is the
 ``validation_alias``: it is read from upstream, while Python, the MCP tools and the HTTP
 routes all show the snake_case name, the same spelling the task parameters use.
 Within-source hygiene only: numbers become numbers, upstream enumerations become
-``StrEnum``. No cross-source normalisation (ADR-0003): an upstream concept stays an
+``StrEnum``. No cross-source normalisation (sdk-core ADR-0028): an upstream concept stays an
 upstream concept.
 
 Shapes come from ``components.schemas`` in ``docs/upstream/apidocs/comtrade.json`` and,
 for the Tools operations, ``comtradeTools.json`` and, for the public operations,
 ``public.json``, from the recorded fixtures under ``tests/fixtures/`` and, for the
-reference tables, from the public files under ``files/v1/app/reference/``. Trade values
-and quantities are ``Decimal`` (ADR-0008) and travel as JSON numbers through the adapters.
+reference tables, from the public files under ``files/v1/app/reference/``. Trade values and
+quantities are ``Decimal`` (sdk-core ADR-0031) and travel as JSON numbers through the
+adapters.
 """
 
 import re
@@ -155,9 +156,9 @@ class TradeFlowRecord(UpstreamModel):
     One reporter, one partner, one product code, one flow and one period, at the total
     of the breakdowns the slices pin (``partner2Code`` 0, ``customsCode`` ``C00``,
     ``motCode`` 0, ``breakdownMode`` ``classic``). Fields keep their upstream names in
-    snake_case (ADR-0003), with the values of ``TradeDataRecord``: nothing is renamed or
-    computed. ``primary_value`` is upstream's primary trade value (taken from the CIF or
-    FOB value, in ``cifvalue``/``fobvalue``). ``ref_month`` is 52 on annual rows, as
+    snake_case (sdk-core ADR-0028), with the values of ``TradeDataRecord``: nothing is
+    renamed or computed. ``primary_value`` is upstream's primary trade value (taken from the
+    CIF or FOB value, in ``cifvalue``/``fobvalue``). ``ref_month`` is 52 on annual rows, as
     upstream sends it. ``classification_code`` is the edition the reporter used (``"H6"``
     for Switzerland 2023 under ``clCode`` ``HS``). The ``*_iso`` and ``*_desc`` fields are
     filled because the slices send ``includeDesc``.
@@ -488,7 +489,7 @@ class BilateralData(UpstreamModel):
     (``UpstreamModel.project``), the envelope's ``timestampRequested``, ``note`` and
     ``data`` under upstream's names in snake_case. ``count`` goes to ``meta.total``;
     ``elapsedTime`` and ``error`` are left out, as for the other envelopes. The rows keep
-    upstream's name, ``data`` (ADR-0003), so a result reads ``result.data.data``.
+    upstream's name, ``data`` (sdk-core ADR-0028), so a result reads ``result.data.data``.
 
     Attributes:
         timestamp_requested: When upstream took the request, "UTC, yyyy-MM-dd
@@ -531,8 +532,9 @@ class MirrorFlowRecord(UpstreamModel):
     mirror of them (``mirror_primary_value``, ``mirror_qty``, ``mirror_alt_qty``,
     ``mirror_net_wgt``, ``mirror_gross_wgt``, with the mirror unit codes); for a reporter's
     exports the mirror is "the import data reported by" the partner (Help Center,
-    ``un-comtrade-tools.md``). Fields keep their upstream names in snake_case (ADR-0003),
-    with the values of ``BilateralDataRecord``: nothing is renamed or computed.
+    ``un-comtrade-tools.md``). Fields keep their upstream names in snake_case
+    (sdk-core ADR-0028), with the values of ``BilateralDataRecord``: nothing is renamed or
+    computed.
 
     ``primary_value_disc`` and ``mirror2_primary_value`` are upstream's, passed through;
     upstream states the meaning of neither. In every recorded row ``primary_value_disc``
@@ -1266,8 +1268,8 @@ class WorldShare(UpstreamModel):
             ``"Switzerland CM 2023-01"``.
         reporter_code: UN Comtrade's reporter code, e.g. ``757`` Switzerland.
         world_share: "the World Share (including estimates)" (the spec), a double read as
-            ``Decimal`` like the package's other upstream numbers (ADR-0008); the spec
-            states neither whether it is a fraction or a percentage nor of which trade.
+            ``Decimal`` like the package's other upstream numbers (sdk-core ADR-0031); the
+            spec states neither whether it is a fraction or a percentage nor of which trade.
             The 214 values recorded for 2023 (annual goods, every reporter) sum to 1.0.
         is_available: As upstream sends it; the spec states no meaning.
         data_count: As upstream sends it; 1 on every recorded row.

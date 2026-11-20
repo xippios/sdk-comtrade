@@ -2,7 +2,7 @@
 
 Fetches every list in ``LISTS`` and table in ``TABLES``, reads every list in
 ``SPEC_LISTS``, and only then writes each to ``reference/<name>.json`` with
-``PackagedList.write`` (conventions §3, ADR-0022): the list's name, the upstream
+``PackagedList.write`` (conventions §3, sdk-core ADR-0041): the list's name, the upstream
 operation it came from, the UTC time of the fetch to the second, upstream's records under
 upstream's field names and a ``note`` with its provenance in words. The time is the
 ``retrieved_at`` the wrapper returns: a file the client's cache answers, as it answers
@@ -15,7 +15,7 @@ Every record is checked against its list's model, ``params.PACKAGED_LISTS``. The
 ``enums.py`` is regenerated from the packaged files by one
 ``xippios.core.reference.render_enums`` call, one ``StrEnum`` per list, its members the
 values, each class naming the day its list was fetched, and formatted with ``ruff format``
-and ``ruff check --fix``, as it is committed (ADR-0008).
+and ``ruff check --fix``, as it is committed (sdk-core ADR-0031).
 
 - ``LISTS`` come from UN Comtrade's public reference files, fetched through the layer-1
   wrapper ``api.reference_rows`` (no key needed or sent): the ``id`` and ``text`` of

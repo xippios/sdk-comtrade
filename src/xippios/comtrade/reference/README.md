@@ -15,10 +15,10 @@ reporters.parse(Reporter, source="comtrade")  # 255 Reporter rows, no network ca
 ```
 
 Each file is `reference/<name>.json`, `{"param", "endpoint", "fetched", "records"}` and an
-optional `"note"` (conventions §3, ADR-0022): `endpoint` the upstream operation it came
-from, `fetched` when, `records` upstream's records under upstream's field names, and
-`note` its provenance in words. A list's record holds the value under the parameter's
-name and, beside it, the fields upstream words the value in, under upstream's names
+optional `"note"` (conventions §3, sdk-core ADR-0041): `endpoint` the upstream operation it
+came from, `fetched` when, `records` upstream's records under upstream's field names, and
+`note` its provenance in words. A list's record holds the value under the parameter's name
+and, beside it, the fields upstream words the value in, under upstream's names
 (`{"motCode": "2100", "text": "Sea"}`); a value without words is a record of one field.
 A table's records are upstream's rows. In the table below, Origin names the endpoint or
 URL a file was fetched from, or the `docs/upstream/` file it was rebuilt from; Fetched is

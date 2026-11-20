@@ -140,7 +140,7 @@ def test_every_parameter_is_explained(task: object) -> None:
 
 
 def test_the_adapters_name_no_task() -> None:
-    """mcp.py and http.py name no task (ADR-0001); the family check covers registration."""
+    """mcp.py and http.py name no task (sdk-core ADR-0001); the family check covers the rest."""
     package_dir = Path(tasks.__file__).parent
     sources = {
         adapter: (package_dir / adapter).read_text(encoding="utf-8")
@@ -1161,7 +1161,7 @@ def test_the_policy_reads_the_quota_and_pace_answers_and_no_other() -> None:
 def test_a_spent_daily_quota_refuses_the_next_call_before_sending(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """After the quota answer the next call is refused without a request (ADR-0010).
+    """After the quota answer the next call is refused unsent (sdk-core ADR-0033).
 
     Constructed route, not a fixture: the answer was never observed, and never provoked.
     Marked ``rate_limited``, since the plugin turns the policy's pause off otherwise.
@@ -1238,7 +1238,7 @@ async def test_a_pace_refusal_without_retry_after_holds_calls_back_seconds_not_a
 
 
 def test_the_list_tasks_have_caps_of_their_own() -> None:
-    """ADR-0016: the two tables whole, a classification with a note that says to search."""
+    """sdk-core ADR-0038: the two tables whole, a classification with a note to search."""
     tables = ResultCap(max_rows=400, max_bytes=100_000)
     assert tasks.MCP_CAPS["list_reporters"] == tasks.MCP_CAPS["list_partners"] == tables
     commodities = tasks.MCP_CAPS["list_commodities"]
@@ -1417,7 +1417,8 @@ def test_list_commodities_keeps_the_file_for_the_process(replay_fixture: ReplayF
 def test_a_cached_reference_file_was_retrieved_when_it_was_stored(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """On a cache hit ``retrieved_at`` is the time the entry was stored (ADR-0015, decision 5).
+    """On a cache hit ``retrieved_at`` is when the entry was stored (sdk-core ADR-0037,
+    decision 5).
 
     The plugin empties every ``MemoryCache`` around an offline test, so the first call
     fills it here; every later call answers from it with the one stored time, not its own.
@@ -1437,7 +1438,7 @@ def test_a_cached_reference_file_was_retrieved_when_it_was_stored(
 def test_the_cache_keeps_the_reference_files_and_nothing_else(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """One client: ``cache_filter`` admits the public reference files only (ADR-0015)."""
+    """One client: ``cache_filter`` admits the reference files only (sdk-core ADR-0037)."""
     keeps = config.cache_filter
     assert keeps is not None
     assert keeps(httpx.Request("GET", f"{BASE_URL}/files/v1/app/reference/HS.json"))
@@ -3577,7 +3578,7 @@ async def test_public_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
 
 
 def test_world_share_has_a_cap_of_its_own() -> None:
-    """ADR-0016: one period for every reporter (214 rows, 88.5 KB) reaches an agent whole."""
+    """sdk-core ADR-0038: one period for every reporter (214 rows, 88.5 KB) reaches an agent."""
     cap = tasks.MCP_CAPS["get_world_share"]
     assert (cap.max_rows, cap.max_bytes) == (400, 100_000)
     assert cap.note is not None

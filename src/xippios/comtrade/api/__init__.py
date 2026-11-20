@@ -1,6 +1,6 @@
 """Endpoint wrappers for UN Comtrade.
 
-Layer 1 of ADR-0001: one module per upstream operation, named after it. A wrapper
+Layer 1 of sdk-core ADR-0001: one module per upstream operation, named after it. A wrapper
 takes the parameters as upstream names them (snake_cased), calls
 ``xippios.comtrade._client.client`` (with ``auth=None`` for the public reference files
 and the public operations under ``public/v1``, so they never send the key) and returns

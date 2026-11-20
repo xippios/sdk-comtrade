@@ -5,11 +5,11 @@ lookups and checks need no network call; ``scripts/refresh_reference.py`` writes
 the matching ``StrEnum`` classes in ``enums.py``, never by hand. ``reference/README.md``
 carries the provenance of every file. Each is a packaged-list file,
 ``reference/<name>.json``, read with ``xippios.core.PackagedList.load(PACKAGE, name)``
-(ADR-0022): a list's records carry the value under the parameter's name and the fields
-upstream words it in, under upstream's names, parsed into the list's model
+(sdk-core ADR-0041): a list's records carry the value under the parameter's name and the
+fields upstream words it in, under upstream's names, parsed into the list's model
 (``PACKAGED_LISTS``), a table's records upstream's columns, parsed into its row model
 (``PACKAGED_TABLES``). ``validate_get`` checks the arguments of a ``data/v1/get`` call
-against them, and the free-form ones by shape, before anything is sent (ADR-0007);
+against them, and the free-form ones by shape, before anything is sent (sdk-core ADR-0007);
 ``validate_datasets`` does the same for ``data/v1/getDa`` and ``data/v1/getMetadata``,
 ``validate_trade_balance`` and ``validate_bilateral_data`` for the Tools operations
 ``tools/v1/getTradeBalance`` and ``tools/v1/getBilateralData``, ``validate_world_share``

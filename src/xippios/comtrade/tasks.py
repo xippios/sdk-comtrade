@@ -22,7 +22,7 @@ date. A single value for a whole result would be a guess.
 The lists packaged with this version (``list_reporters``, ``list_partners``,
 ``list_codes``, ``list_classifications``) carry the time the package fetched them as
 ``meta.retrieved_at``, and ``meta.vintage`` stays ``None``: upstream gives the files no
-release identifier (ADR-0022, rule 1).
+release identifier (sdk-core ADR-0041, decision 1).
 """
 
 from collections.abc import Mapping
@@ -97,16 +97,17 @@ __all__ = [
     "list_reporters",
 ]
 
-# A task named here is Python-only: no tool, no route; the adapters skip it (ADR-0019 decision 4).
+# A task named here is Python-only: no tool, no route; the adapters skip it
+# (sdk-core ADR-0040 decision 4).
 BULK_TASKS: frozenset[str] = frozenset()
 
-# Result caps of their own, keyed by the task function's name (conventions §8, ADR-0016):
-# the reporter (255) and partner (310) tables reach an agent whole; a classification file
-# (8,262 HS codes) cannot, and its note tells the agent to search. One period's world share
-# for every reporter (214 rows, 88.5 KB for 2023) reaches an agent whole too, where the
-# default cap cut it at 157 rows, dropping the USA (842): upstream sends the available rows
-# first, by reporter code, then the unavailable ones in an order the recording does not
-# explain.
+# Result caps of their own, keyed by the task function's name (conventions §8,
+# sdk-core ADR-0038): the reporter (255) and partner (310) tables reach an agent whole; a
+# classification file (8,262 HS codes) cannot, and its note tells the agent to search. One
+# period's world share for every reporter (214 rows, 88.5 KB for 2023) reaches an agent
+# whole too, where the default cap cut it at 157 rows, dropping the USA (842): upstream
+# sends the available rows first, by reporter code, then the unavailable ones in an order
+# the recording does not explain.
 MCP_CAPS: Mapping[str, ResultCap] = {
     "list_reporters": ResultCap(max_rows=400, max_bytes=100_000),
     "list_partners": ResultCap(max_rows=400, max_bytes=100_000),
