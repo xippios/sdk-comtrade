@@ -22,6 +22,7 @@ import httpx
 from xippios.core import (
     AsyncClient,
     ClientConfig,
+    EnvVar,
     HeaderKeyAuth,
     InvalidRequestError,
     MemoryCache,
@@ -38,6 +39,10 @@ from xippios.comtrade._version import __version__
 SOURCE = "comtrade"
 BASE_URL = "https://comtradeapi.un.org"
 API_KEY_ENV = "COMTRADE_API_KEY"  # pragma: allowlist secret (a variable name, not a key)
+ENV_VARS: tuple[EnvVar, ...] = (EnvVar(API_KEY_ENV, secret=True, required=True),)
+"""The variables the package reads, for a host (conventions §7; sdk-core ADR-0026, amendment
+2026-11-18, point c). An ``EnvVar`` names a variable and reads none; a variable the source reads
+beside these joins the list."""
 # Paced within the limit upstream documents (ADR-0010 decision 1): 1 call per second, 60
 # per minute, documented; 40 per minute chosen after the recorded 429s at 1.0 s (D41).
 RATE_LIMIT = RateLimit(per_minute=40, burst=1)
@@ -217,6 +222,7 @@ client = AsyncClient(config, auth=auth)
 __all__ = [
     "API_KEY_ENV",
     "BASE_URL",
+    "ENV_VARS",
     "RATE_LIMIT",
     "SOURCE",
     "TIMEOUTS",
