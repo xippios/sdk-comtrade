@@ -1345,7 +1345,7 @@ def test_http_route_end_to_end(replay_fixture: ReplayFixture) -> None:
 def test_list_reporters_returns_the_packaged_table(respx_mock: respx.MockRouter) -> None:
     result = tasks.list_reporters()
     assert not respx_mock.calls, "packaged: no upstream call"
-    assert len(result.data) == 255
+    assert len(result.data) == 256
     assert result.meta.endpoint == "files/v1/app/reference/Reporters.json"
     assert result.meta.retrieved_at == PackagedList.load(PACKAGE, "Reporters").fetched
     assert result.meta.vintage is None
@@ -1366,6 +1366,10 @@ def test_list_reporters_returns_the_packaged_table(respx_mock: respx.MockRouter)
     assert switzerland.is_group is False
     assert 756 not in by_code
     assert {842, 276, 156} <= set(by_code)
+    assert (by_code[238].text, by_code[238].reporter_code_iso_alpha3) == (
+        "Falkland Isds (Malvinas)",
+        "FLK",
+    )
     assert sorted(code for code, row in by_code.items() if row.is_group) == [97, 490, 975]
     assert all(isinstance(row.entry_effective_date, datetime) for row in result.data)
     assert sum(row.entry_expired_date is not None for row in result.data) == 33
@@ -1385,7 +1389,7 @@ def test_list_partners_returns_the_packaged_table(respx_mock: respx.MockRouter) 
     assert (world.text, world.partner_code_iso_alpha3, world.is_group) == ("World", "W00", True)
     assert world.partner_code_iso_alpha2 is None
     assert by_code[757].partner_desc == "Switzerland"
-    assert by_code[756].partner_desc == "Switzerland "  # upstream's trailing space, kept
+    assert by_code[756].partner_desc == "Switzerland"
     assert by_code[756].partner_note is None
 
 
@@ -1398,7 +1402,7 @@ def test_reporters_and_partners_share_one_code_space() -> None:
     reporters = {row.reporter_code: row for row in _table("Reporters", Reporter)}
     partners = {row.partner_code: row for row in _table("partnerAreas", PartnerArea)}
     assert set(reporters) - set(partners) == {97, 975}
-    assert len(set(partners) - set(reporters)) == 57
+    assert len(set(partners) - set(reporters)) == 56
     assert {0, 756, 899} <= set(partners) - set(reporters)
     for code in set(reporters) & set(partners):
         assert reporters[code].reporter_code_iso_alpha3 == partners[code].partner_code_iso_alpha3
@@ -1640,7 +1644,7 @@ async def test_list_tools_end_to_end(replay_fixture: ReplayFixture) -> None:
     fetched = PackagedList.load(PACKAGE, "Reporters").fetched
     assert reporters["meta"]["retrieved_at"] == f"{fetched:%Y-%m-%dT%H:%M:%SZ}"
     assert reporters["meta"]["vintage"] is None
-    assert len(reporters["data"]) == 255
+    assert len(reporters["data"]) == 256
     assert "note" not in reporters
     assert reporters["data"][0]["text"] == "Afghanistan"
     assert reporters["data"][0]["entry_effective_date"] == "1900-01-01T00:00:00"
@@ -1667,7 +1671,7 @@ def test_list_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
         assert answer.status_code == 200
         assert len(answer.json()["data"]) == 30
         reporters = http.get("/comtrade/list_reporters").json()
-        assert len(reporters["data"]) == 255, "HTTP results are not capped"
+        assert len(reporters["data"]) == 256, "HTTP results are not capped"
         partners = http.get("/comtrade/list_partners").json()["meta"]
         fetched = PackagedList.load(PACKAGE, "partnerAreas").fetched
         assert (partners["retrieved_at"], partners["vintage"]) == (
@@ -2484,7 +2488,7 @@ def test_the_list_tasks_search_code_iso3_and_text(respx_mock: respx.MockRouter) 
     assert sorted(row.partner_code for row in usa) == [840, 841, 842]
     assert tasks.list_partners(search="no such area").data == []
     whole = tasks.list_reporters()
-    assert (len(whole.data), whole.meta.request) == (255, {})
+    assert (len(whole.data), whole.meta.request) == (256, {})
     assert len(tasks.list_partners().data) == 310
     assert not respx_mock.calls, "packaged: no upstream call"
 
