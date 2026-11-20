@@ -33,7 +33,7 @@ and how `_client.py` treats them:
   every 1.5 s, never a burst, under the limit upstream documents (sdk-core ADR-0033
   decision 1: 1 a second and 60 a minute documented, 40 a minute chosen after the recorded
   429s, D41). Core retries a 429 after `Retry-After`, each retry a call, and `policy` holds
-  the next call back until then. Offline tests skip the wait (core's plugin); a test marked
+  the next keyed call back until then. Offline tests skip the wait (core's plugin); a test marked
   `rate_limited` keeps it.
 - **500 calls per day.** `countOnly` calls count against it, so `get_data` costs two
   calls (count, then data) and `get_counts` one. The client does not count calls. Over
@@ -41,7 +41,7 @@ and how `_client.py` treats them:
   replenished in HH:MM:SS"; `classify` maps a 403 that mentions a quota to
   `RateLimitError` with `retry_after`, and `policy`, `QuotaPolicy(limit_header=None,
   remaining_header=None, window=86400, spent=...)` installed on `config`, marks the quota
-  spent until then: the next call is refused with `RateLimitError` before it is sent
+  spent until then: the next keyed call is refused with `RateLimitError` before it is sent
   (a wait within 30 s is waited out). It reads no `x-ratelimit-*` header, since those
   describe the per-second pace. Its `spent` hook reads two answers, this 403, whose time
   `window` caps at a day, and a 429 without `Retry-After`, for the "Try again in N
@@ -253,7 +253,8 @@ src/xippios/comtrade/
   _client.py       the one configured AsyncClient (base URL, key, rate limit, classify),
                    ENV_VARS, its daily quota policy and the cache of the public reference
                    files
-  errors.py        RECORD_LIMIT, MAX_PERIODS and QueryTooLarge
+  errors.py        RECORD_LIMIT, MAX_PERIODS, QueryTooLarge and over_mcp, which names a
+                   task's MCP tool in a refusal
   models.py        pydantic models mirroring upstream payloads (UpstreamModel); by the
                    family's precedent also an enumeration written by hand, for a value set
                    upstream documents and no packaged list renders

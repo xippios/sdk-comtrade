@@ -611,9 +611,9 @@ async def get_bilateral_data_async(
     primary_value``, a relative difference (``-0.16`` for Switzerland's 2023 exports to the
     USA, ``-1.0`` where the mirror is 0). The ``mirror2_*`` fields are not described
     upstream and were ``None`` or 0 in every recorded row. A pair upstream holds nothing for
-    has no row. ``meta.total`` is upstream's ``count``. Over MCP the rows are not cut to the
-    result cap one by one: an answer above it (about 40 rows) comes as a preview of its
-    text, so name a few partners or periods per call. The query must name ``reporter_code``
+    has no row. ``meta.total`` is upstream's ``count``. Over MCP an answer above the result
+    cap (about 40 rows) keeps ``note`` and ``timestamp_requested`` and shows the rows that
+    fit, so name a few partners or periods per call. The query must name ``reporter_code``
     or ``partner_code``, and ``cmd_code``: upstream offers no count to check a query's size
     before the call (it ignores ``countOnly``), so a broader query is refused before it is
     sent. Arguments are checked before the call; an unknown reporter or partner code raises
@@ -1018,8 +1018,8 @@ async def get_mirror_flows_async(
     it is not sent; ``list_reporters`` and ``list_partners`` name the codes. Bounded by
     construction at product codes times periods rows, so there is no count call (upstream
     offers none here); a bound above 100,000 raises ``QueryTooLarge`` before the call.
-    Over MCP a result above 64 KB (about 60 rows) reaches the agent as a preview of its
-    text, so name a few product codes or periods per call. Arguments are resolved and
+    Over MCP a result above 64 KB (about 60 rows) keeps ``note`` and shows the rows that
+    fit, so name a few product codes or periods per call. Arguments are resolved and
     checked before the call; an unknown area raises ``UnknownCode``, an
     ``InvalidRequestError`` naming the packaged list and the closest area, another mistake
     ``InvalidRequestError`` naming the closest valid value. ``meta.request`` holds the

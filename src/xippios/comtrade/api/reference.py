@@ -9,9 +9,11 @@ package's one client with ``auth=None``, which sends none, and the client's cach
 every file it fetched for the life of the process (the classification files run to 2 MB).
 Both wrappers return core's ``Answer``: the rows as ``payload`` and ``retrieved_at``, on a
 cache hit the time the file was stored, else the time it arrived (sdk-core ADR-0037,
-decision 5). ``get_answer`` parses the file before the cache stores it, so a file whose
-answer fails is asked for again on the next call. A file that does not exist answers HTTP
-404 (``BlobNotFound``), raised as ``NotFoundError``.
+decision 5). ``get_answer`` reads the file's ``{"results": [...]}`` before the cache stores
+it, so an answer that is no JSON or holds no ``results`` is asked for again on the next
+call; the rows are parsed after, so a row the row model refuses fails from the cache for
+the life of the process. A file that does not exist answers HTTP 404 (``BlobNotFound``),
+raised as ``NotFoundError``.
 """
 
 from typing import Any
