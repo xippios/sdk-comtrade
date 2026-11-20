@@ -18,9 +18,13 @@ from typing import Any
 import httpx
 import pytest
 import respx
+from mcp.client import Client
+from mcp.types import TextContent
 from xippios.core import (
+    Answer,
     AsyncClient,
     AuthError,
+    EnvVar,
     InvalidRequestError,
     NotFoundError,
     PackagedList,
@@ -30,8 +34,10 @@ from xippios.core import (
     UnknownCode,
     UpstreamError,
     UpstreamModel,
+    ValidationError,
 )
 from xippios.core.http import status_for
+from xippios.core.mcp import ToolSet, build_server
 from xippios.core.testing import (
     CLOCK_SLACK,
     ReplayFixture,
@@ -50,6 +56,7 @@ from xippios.comtrade import api, enums, tasks
 from xippios.comtrade._client import (
     API_KEY_ENV,
     BASE_URL,
+    ENV_VARS,
     RATE_LIMIT,
     TIMEOUTS,
     _quota_reset,
@@ -59,7 +66,7 @@ from xippios.comtrade._client import (
     policy,
 )
 from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
-from xippios.comtrade.mcp import server
+from xippios.comtrade.mcp import build, server
 from xippios.comtrade.models import (
     BilateralData,
     BilateralDataRecord,
@@ -142,6 +149,31 @@ def test_the_adapters_name_no_task() -> None:
     for name in tasks.__all__:
         for adapter, source in sources.items():
             assert name not in source, f"{adapter} names {name}"
+
+
+def test_the_package_contract_names_the_key_and_builds_the_served_tools() -> None:
+    """What a host reads: the key's variable, and the tool set the entry point serves.
+
+    Conventions §7 and §8, sdk-core ADR-0026, amendment 2026-11-18, points c and d: the key
+    is the one variable the package reads, a secret the data operations need, and
+    ``build()`` hands a host every task with the caps of ``tasks.py``.
+    """
+    declared = ENV_VARS
+    assert declared == (EnvVar(API_KEY_ENV, secret=True, required=True),)
+    tools = build()
+    assert isinstance(tools, ToolSet)
+    assert (tools.source, tools.read_only) == ("comtrade", True)
+    assert [task.__name__ for task in tools.tasks] == list(tasks.__all__)
+    assert dict(tools.caps) == dict(tasks.MCP_CAPS)
+
+
+@pytest.mark.anyio
+async def test_a_host_serves_what_the_entry_point_serves() -> None:
+    """A server a host builds from ``build()`` lists the entry point's tools, no other."""
+    async with Client(server) as served, Client(build_server(build())) as hosted:
+        entry = sorted(tool.name for tool in (await served.list_tools()).tools)
+        host = sorted(tool.name for tool in (await hosted.list_tools()).tools)
+    assert entry == host == sorted(f"comtrade_{name}" for name in tasks.__all__)
 
 
 # Switzerland (reporter 757 in Reporters.json) exports to the World in 2023, all products.
@@ -241,6 +273,9 @@ def test_get_data_refuses_over_the_limit_before_fetching(
     message = str(info.value)
     assert "5,006,385" in message
     assert "Split by period (max 12 per call), then by reporter" in message
+    assert message.endswith(
+        "and check each part with get_counts (over MCP, the tool comtrade_get_counts)."
+    )
     assert not fetched.called
     assert len(respx_mock.calls) == counted.call_count == 1
     assert "reporterCode" not in sent_query(counted)
@@ -272,10 +307,15 @@ def _day(name: str) -> str:
 REFUSED_756 = (
     f"'756' is not a reporter_code in the packaged Reporters list (fetched {_day('Reporters')}). "
     "Did you mean 757 (Switzerland)? UN Comtrade answers a code it does not have with count "
-    "0, so the package refuses it before the call. list_reporters lists every code. If "
-    "upstream added it since, the packaged list needs a refresh (/refresh-reference-data)."
+    "0, so the package refuses it before the call. list_reporters lists every code (over "
+    "MCP, the tool comtrade_list_reporters). If upstream added it since, the packaged list is "
+    "out of date."
 )
-"""``UnknownCode``'s message for reporter 756 (conventions §5): core's text, comtrade's hint."""
+"""``UnknownCode``'s message for reporter 756 (conventions §5): core's text, comtrade's hint.
+
+The list task is named with its tool (conventions §8), and core 0.4.0's last sentence names
+no command an agent cannot run (https://github.com/xippios/sdk-core/issues/111).
+"""
 
 
 def _unknown(respx_mock: respx.MockRouter, **overrides: str) -> UnknownCode:
@@ -313,7 +353,9 @@ def test_unknown_partner_codes_are_refused(respx_mock: respx.MockRouter) -> None
         "'9999' is not a partner_code in the packaged partnerAreas list "
         f"(fetched {_day('partnerAreas')})."
     )
-    assert "list_partners lists every code" in str(unknown)
+    assert "list_partners lists every code (over MCP, the tool comtrade_list_partners)." in str(
+        unknown
+    )
     reporter_only = _unknown(respx_mock, partner2_code="97")
     assert (reporter_only.param, reporter_only.closest) == ("partner2_code", ())
     assert "'97' (European Union) is a reporter code only." in str(reporter_only)
@@ -323,6 +365,44 @@ def test_world_is_a_partner_not_a_reporter(respx_mock: respx.MockRouter) -> None
     refused = _unknown(respx_mock, reporter_code="0")
     assert str(refused).startswith("'0' is not a reporter_code in the packaged Reporters list")
     assert "'0' (World) is a partner code only." in str(refused)
+
+
+@pytest.mark.anyio
+async def test_a_refusal_that_names_another_task_names_a_served_tool(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Conventions §8: each task a refusal points to is named with its MCP tool.
+
+    The refusals of this package that name a task to call instead or the list task that
+    lists the codes, each with ``(over MCP, the tool comtrade_<task>)`` right after it.
+    """
+    refusals = [
+        str(QueryTooLarge(200_000)),
+        str(_unknown(respx_mock, reporter_code="756")),
+        str(_unknown(respx_mock, partner_code="9999")),
+        str(_unknown(respx_mock, customs_code="C16")),
+    ]
+    for call in (
+        lambda: tasks.get_bilateral_flows(
+            "CHE", "USA", "TOTAL", ",".join(map(str, range(2000, 2013))), "X"
+        ),
+        lambda: tasks.get_world_trade("AG2", "2023", "X"),
+        lambda: tasks.get_mirror_flows(
+            "CHE", "USA", "27", ",".join(map(str, range(2000, 2013))), "X"
+        ),
+    ):
+        with pytest.raises(InvalidRequestError) as info:
+            call()
+        refusals.append(str(info.value))
+    async with Client(server) as client:
+        served = {tool.name for tool in (await client.list_tools()).tools}
+    named = [re.findall(r"(\w+)\S* \(over MCP, the tool (\w+)\)", refusal) for refusal in refusals]
+    assert all(named), refusals
+    for pairs in named:
+        for task, tool in pairs:
+            assert tool == f"comtrade_{task}"
+            assert tool in served
+    assert not respx_mock.calls
 
 
 def test_every_member_of_an_area_list_is_checked() -> None:
@@ -737,8 +817,8 @@ REFUSED_C16 = (
     f"{_day('customsCode')}). Did you mean C15 (Relief consignments), C14 (Stores), C13 "
     "(Postal traffic)? UN Comtrade's answer to a customs or transport code it does not have "
     "is not recorded, so the package refuses it before the call, as it does an unknown "
-    "area. list_codes('customsCode') lists every code. If upstream added it since, the "
-    "packaged list needs a refresh (/refresh-reference-data)."
+    "area. list_codes('customsCode') lists every code (over MCP, the tool "
+    "comtrade_list_codes). If upstream added it since, the packaged list is out of date."
 )
 """``UnknownCode``'s message for customs_code C16 (conventions §5): the closest with their text."""
 
@@ -979,7 +1059,7 @@ async def test_reference_files_are_fetched_without_the_key(respx_mock: respx.Moc
     route = respx_mock.get(
         "https://comtradeapi.un.org/files/v1/app/reference/tradeRegimes.json"
     ).mock(return_value=httpx.Response(200, json={"results": [{"id": "X", "text": "Export"}]}))
-    rows = (await api.reference("tradeRegimes.json", ReferenceCode)).rows
+    rows = (await api.reference("tradeRegimes.json", ReferenceCode)).payload
     assert [row.id for row in rows] == ["X"]
     assert "Ocp-Apim-Subscription-Key" not in route.calls.last.request.headers
     assert "subscription-key" not in sent_query(route)
@@ -1100,6 +1180,31 @@ def test_a_spent_daily_quota_refuses_the_next_call_before_sending(
     assert refused.value.retry_after is not None
     assert 5 * 3600 < refused.value.retry_after <= 5 * 3600 + 12 * 60 + 34
     assert route.call_count == 1
+
+
+@pytest.mark.rate_limited
+def test_a_spent_key_quota_holds_no_keyless_call_back(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """The public operations and the reference files send no key and spend none of its quota.
+
+    Core 0.4.0's ``QuotaPolicy`` neither holds back nor reads a request sent with
+    ``auth=None`` (https://github.com/xippios/sdk-core/issues/163), so once the key's quota is
+    spent, the keyless calls still go out at the pace and the keyed ones wait. Constructed
+    quota answer, as above; the keyless answers are the recordings.
+    """
+    respx_mock.get(f"{BASE_URL}/data/v1/get/C/A/HS").mock(
+        return_value=httpx.Response(403, json=QUOTA_SPENT)
+    )
+    with pytest.raises(RateLimitError):
+        tasks.get_counts(**CH_EXPORTS_2023)
+    releases = replay_fixture("get_comtrade_releases", "calendar")
+    files = replay_fixture("reference", "b4")
+    assert len(tasks.get_comtrade_releases().data) == 38
+    assert len(tasks.list_commodities("B4").data) == 30
+    assert releases.call_count == files.call_count == 1
+    with pytest.raises(RateLimitError, match="nothing was sent for GET /data/v1/get/C/A/HS"):
+        tasks.get_counts(**CH_EXPORTS_2023)
 
 
 @pytest.mark.rate_limited
@@ -1378,11 +1483,96 @@ def test_a_classification_without_a_file_is_refused(respx_mock: respx.MockRouter
 
 
 @pytest.mark.anyio
+async def test_a_reference_file_is_core_s_typed_answer(replay_fixture: ReplayFixture) -> None:
+    """Both wrappers return ``Answer``: the rows as ``payload``, and when they arrived.
+
+    Core's ``Answer`` (https://github.com/xippios/sdk-core/issues/123) replaces the pair the
+    package kept of its own, so ``api`` exports no ``ReferenceFile``. The second call is
+    the cache's, with the stored time.
+    """
+    route = replay_fixture("reference", "b4")
+    rows = await api.reference_rows("B4.json")
+    models = await api.reference("B4.json", Commodity)
+    assert isinstance(rows, Answer)
+    assert isinstance(models, Answer)
+    assert route.call_count == 1
+    assert [row["id"] for row in rows.payload] == [model.id for model in models.payload]
+    assert len(models.payload) == 30
+    assert models.retrieved_at == rows.retrieved_at
+    assert not hasattr(api, "ReferenceFile")
+    assert "ReferenceFile" not in api.__all__
+
+
+def test_a_reference_file_whose_answer_fails_is_asked_for_again(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """A file whose answer the wrapper cannot read is not kept: the next call asks again.
+
+    NOT RECORDED: the first answer is the recorded ``reference/b4.json`` with its
+    ``results`` key renamed in memory, a form upstream was not seen to send; the second is
+    the recording. ``get_answer`` parses before the cache stores, so the cache, which keeps
+    a file for the life of the process, never keeps a body that failed.
+    """
+    recorded = response_from_fixture(load_fixture(FIXTURES / "reference" / "b4.json"))
+    body = json.loads(recorded.content)
+    broken = httpx.Response(200, json={"rows": body["results"]})
+    route = respx_mock.get(f"{BASE_URL}/files/v1/app/reference/B4.json").mock(
+        side_effect=[broken, recorded]
+    )
+    with pytest.raises(ValidationError):
+        tasks.list_commodities("B4")
+    assert len(tasks.list_commodities("B4").data) == 30
+    assert route.call_count == 2
+
+
+@pytest.mark.anyio
 async def test_a_missing_reference_file_is_not_found(replay_fixture: ReplayFixture) -> None:
     """Layer 1: upstream's blob store answers 404 BlobNotFound for BE.json."""
     replay_fixture("reference", "be_absent")
     with pytest.raises(NotFoundError, match="BlobNotFound"):
         await api.reference("BE.json", Commodity)
+
+
+async def _answer(name: str, arguments: dict[str, Any]) -> tuple[bool, str]:
+    """A tool's answer through an in-process client: its ``isError`` flag and its text."""
+    async with Client(server) as client:
+        result = await client.call_tool(name, arguments)
+    [content] = result.content
+    assert isinstance(content, TextContent)
+    return result.is_error, content.text
+
+
+@pytest.mark.anyio
+async def test_a_tool_refuses_an_argument_it_does_not_declare(respx_mock: respx.MockRouter) -> None:
+    """A misspelt argument is refused before the task runs, naming the ones the tool takes.
+
+    Core 0.4.0 (https://github.com/xippios/sdk-core/issues/84): under 0.3.0 the tool dropped
+    ``paramm`` and answered ``motCode``'s list as if it had not been sent.
+    """
+    flagged, text = await _answer("comtrade_list_codes", {"param": "motCode", "paramm": "x"})
+    assert (flagged, text) == (
+        True,
+        "error: InvalidRequestError: paramm: Not an argument of this tool; it takes param",
+    )
+    assert not respx_mock.calls
+
+
+@pytest.mark.anyio
+async def test_an_error_answer_is_flagged_beside_its_text(respx_mock: respx.MockRouter) -> None:
+    """Every error answer sets ``isError``, so a client tells it from data without the text.
+
+    Core 0.4.0 (https://github.com/xippios/sdk-core/issues/168): the refusal of an unknown
+    code and of an unknown list are flagged; a list's records are not.
+    """
+    unknown = await _answer("comtrade_get_data", {**CH_EXPORTS_2023, "reporter_code": "756"})
+    assert unknown == (True, f"error: UnknownCode: {REFUSED_756}")
+    flagged, text = await _answer("comtrade_list_codes", {"param": "nope"})
+    assert flagged
+    assert text.startswith("error: InvalidRequestError: param 'nope' is not a list")
+    flagged, text = await _answer("comtrade_list_codes", {"param": "motCode"})
+    assert not flagged
+    assert json.loads(text)["data"][0] == {"mot_code": "0", "text": "TOTAL modes of transport"}
+    assert not respx_mock.calls
 
 
 @pytest.mark.anyio
@@ -1439,6 +1629,38 @@ def test_list_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
         )
         refused = http.get("/comtrade/list_commodities", params={"cl_code": "BE"})
         assert refused.status_code == 422
+
+
+def test_a_route_answers_an_argument_its_schema_refuses_as_problem_details(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Status 422, the family's problem details, the argument and the message, no input.
+
+    Core 0.4.0 (https://github.com/xippios/sdk-core/issues/66): FastAPI's own 422 answered a
+    ``detail`` list that echoed the value sent.
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.comtrade.http import router
+
+    app = FastAPI()
+    app.include_router(router)
+    top = {"reporter": "CHE", "commodity": "TOTAL", "period": "2023", "flow": "X"}
+    with TestClient(app) as http:
+        typed = http.get("/comtrade/get_top_partners", params={**top, "n": "five"})
+        missing = http.get("/comtrade/get_top_partners", params=top)
+    assert (typed.status_code, typed.headers["content-type"]) == (422, "application/problem+json")
+    assert typed.json() == {
+        "type": "urn:xippios:error:InvalidRequestError",
+        "title": "InvalidRequestError",
+        "status": 422,
+        "detail": "n: Input should be a valid integer, unable to parse string as an integer",
+        "source": "comtrade",
+    }
+    assert "five" not in typed.text
+    assert (missing.status_code, missing.json()["detail"]) == (422, "n: Field required")
+    assert not respx_mock.calls
 
 
 # The packaged lists and the index of the reference files, with upstream's words.
@@ -2067,11 +2289,15 @@ def _slice_refused(respx_mock: respx.MockRouter, call: Callable[[], object]) -> 
         ),
         (
             lambda: tasks.get_bilateral_flows("CHE", "USA", "TOTAL", SERIES[:-5], "X"),
-            "periods has 13 values; UN Comtrade takes at most 12 per call",
+            "periods has 13 values; UN Comtrade takes at most 12 per call, and "
+            "get_commodity_series (over MCP, the tool comtrade_get_commodity_series) splits "
+            "longer series",
         ),
         (
             lambda: tasks.get_bilateral_flows("CHE", "USA", "TOTAL,AG2", "2023", "X"),
-            "commodities 'AG2' expands to many product codes",
+            "commodities 'AG2' expands to many product codes; the slices take codes such as "
+            "'TOTAL', '27' or '2709', and get_data (over MCP, the tool comtrade_get_data) "
+            "takes levels and wildcards and counts first",
         ),
         (
             lambda: tasks.get_world_trade("27??", "2023", "M"),
@@ -2653,6 +2879,31 @@ def test_bilateral_data_takes_more_than_12_periods(replay_fixture: ReplayFixture
     assert result.data.note.startswith("EXPERIMENTAL: We have good news!")
 
 
+@pytest.mark.anyio
+async def test_a_bilateral_answer_over_its_cap_keeps_the_note_beside_the_rows_that_fit(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Over MCP, a ``BilateralData`` over its byte cap is cut by its rows, its note kept.
+
+    Core 0.4.0 cuts the rows of a result whose data is a model holding one list
+    (https://github.com/xippios/sdk-core/issues/131), where 0.3.0 sent such an answer as a
+    note and a text preview. The thirteen recorded periods fit the default 64 KB, so a
+    server built from ``build()`` with an 8 KB cap on the tool shows the cut.
+    """
+    replay_fixture("get_bilateral_data", "ch_us_exports_13_periods", match_params=["period"])
+    cap = ResultCap(max_rows=200, max_bytes=8_000)
+    small = dataclasses.replace(build(), caps={**tasks.MCP_CAPS, "get_bilateral_data": cap})
+    arguments = {**CH_US_EXPORTS_2023, "period": THIRTEEN}
+    answer = json.loads(
+        await mcp_call_text(build_server(small), "comtrade_get_bilateral_data", arguments)
+    )
+    assert set(answer["data"]) == {"timestamp_requested", "note", "data"}
+    assert answer["data"]["note"].startswith("EXPERIMENTAL: We have good news!")
+    shown = len(answer["data"]["data"])
+    assert 0 < shown < 13
+    assert answer["note"].startswith(f"showing {shown} of 13 rows (cap: 200 rows or 8000 bytes)")
+
+
 def test_bilateral_data_takes_one_flow(respx_mock: respx.MockRouter) -> None:
     both = _tools_refused(
         respx_mock,
@@ -2915,7 +3166,8 @@ def test_mirror_flows_resolve_iso3_codes_and_ask_monthly_data_for_months(
         (
             lambda: tasks.get_mirror_flows("CHE", "USA", "27", THIRTEEN, "X"),
             "periods has 13 values; get_mirror_flows takes at most 12 per call, the bound of "
-            "the slices; split the periods (get_bilateral_data takes more)",
+            "the slices; split the periods, or ask get_bilateral_data (over MCP, the tool "
+            "comtrade_get_bilateral_data), which takes more",
         ),
         (
             lambda: tasks.get_mirror_flows("CHE", "USA", "AG2", "2023", "X"),

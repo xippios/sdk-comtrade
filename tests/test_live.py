@@ -77,7 +77,7 @@ async def test_get_data_live() -> None:
 async def test_list_reporters_live() -> None:
     """The packaged table still matches upstream's file; a mismatch means a refresh is due."""
     packaged = (await tasks.list_reporters_async()).data
-    upstream = (await api.reference_rows("Reporters.json")).rows
+    upstream = (await api.reference_rows("Reporters.json")).payload
     assert {row.reporter_code for row in packaged} == {row["reporterCode"] for row in upstream}
     assert any(row.reporter_code == 757 for row in packaged)
 
@@ -85,7 +85,7 @@ async def test_list_reporters_live() -> None:
 async def test_list_partners_live() -> None:
     """The packaged table still matches upstream's file; a mismatch means a refresh is due."""
     packaged = (await tasks.list_partners_async()).data
-    upstream = (await api.reference_rows("partnerAreas.json")).rows
+    upstream = (await api.reference_rows("partnerAreas.json")).payload
     assert {row.partner_code for row in packaged} == {row["PartnerCode"] for row in upstream}
 
 
@@ -101,7 +101,7 @@ async def test_list_commodities_live() -> None:
 async def test_list_codes_live() -> None:
     """The packaged motCode list still holds upstream's codes and texts; else a refresh is due."""
     packaged = (await tasks.list_codes_async("motCode")).data
-    upstream = (await api.reference_rows("ModeOfTransportCodes.json")).rows
+    upstream = (await api.reference_rows("ModeOfTransportCodes.json")).payload
     assert [row.model_dump() for row in packaged] == [
         {"mot_code": row["id"], "text": row["text"]} for row in upstream
     ]
@@ -110,7 +110,7 @@ async def test_list_codes_live() -> None:
 async def test_list_classifications_live() -> None:
     """The packaged index still lists upstream's categories; a mismatch means a refresh is due."""
     packaged = (await tasks.list_classifications_async()).data
-    upstream = (await api.reference_rows("ListofReferences.json")).rows
+    upstream = (await api.reference_rows("ListofReferences.json")).payload
     assert [row.category for row in packaged] == [row["category"] for row in upstream]
 
 
