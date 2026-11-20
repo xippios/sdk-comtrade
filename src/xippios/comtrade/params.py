@@ -1147,8 +1147,8 @@ _MIRROR_TOO_MANY = (
 
 ``tools/v1/getBilateralData`` answered 13 periods with 13 rows
 (``tests/fixtures/get_bilateral_data/ch_us_exports_13_periods.json``); the mirror slice
-keeps the 12 of the other slices (0.2.0 briefing, D91), which ``get_bilateral_data``
-does not.
+keeps the 12 of the other slices, which ``get_bilateral_data`` does not, as
+https://github.com/xippios/sdk-comtrade/pull/12 decided.
 """
 
 
