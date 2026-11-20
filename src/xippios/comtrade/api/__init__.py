@@ -16,10 +16,9 @@ from xippios.comtrade.api.get_live_update import get_live_update
 from xippios.comtrade.api.get_metadata import get_metadata
 from xippios.comtrade.api.get_trade_balance import get_trade_balance
 from xippios.comtrade.api.get_world_share import get_world_share
-from xippios.comtrade.api.reference import ReferenceFile, reference, reference_rows
+from xippios.comtrade.api.reference import reference, reference_rows
 
 __all__ = [
-    "ReferenceFile",
     "get",
     "get_bilateral_data",
     "get_comtrade_releases",

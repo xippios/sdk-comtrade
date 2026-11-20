@@ -1166,7 +1166,7 @@ async def list_commodities_async(
     fetched = await api.reference(f"{cl_code}.json", Commodity)
     rows = [
         row
-        for row in fetched.rows
+        for row in fetched.payload
         if matches(search, row.id, row.cmd_code, row.text, row.description_original)
     ]
     meta = ResultMeta(

@@ -104,7 +104,7 @@ async def _rows[M: UpstreamModel](file: str, model: type[M]) -> tuple[list[M], d
     endpoint = f"{FILES}{file}"
     answer = await api.reference_rows(file)
     rows: list[M] = []
-    for row in answer.rows:
+    for row in answer.payload:
         parsed = parse(model, row, source=SOURCE, endpoint=endpoint)
         unknown = sorted(set(row) - set(parsed.dump_upstream()))
         if unknown:
@@ -449,16 +449,20 @@ def _table(name: str) -> PackagedList:
     file = TABLES[name]
     model = PACKAGED_TABLES[name]
     endpoint = f"{FILES}{file}"
-    rows, fetched = sync(api.reference_rows)(file)
+    answer = sync(api.reference_rows)(file)
     records: list[dict[str, Any]] = []
-    for row in rows:
+    for row in answer.payload:
         dumped = parse(model, row, source=SOURCE, endpoint=endpoint).dump_upstream()
         unknown = sorted(set(row) - set(dumped))
         if unknown:
             raise SystemExit(f"{file}: keys {unknown} are not in {model.__name__}")
         records.append({key: value for key, value in dumped.items() if key in row})
     return PackagedList(
-        param=name, endpoint=endpoint, fetched=fetched, note=TABLE_NOTES.get(name), records=records
+        param=name,
+        endpoint=endpoint,
+        fetched=answer.retrieved_at,
+        note=TABLE_NOTES.get(name),
+        records=records,
     )
 
 
