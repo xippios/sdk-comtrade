@@ -478,13 +478,15 @@ def render() -> None:
     """Regenerate ``enums.py`` from the packaged value lists and format it as committed."""
     lists: dict[str, Sequence[str]] = {}
     fetched: dict[str, str] = {}
-    # Classes in the order of their names, as enums.py has always listed them.
+    # Classes in the order of their names, as enums.py has always listed them. Core's
+    # default class name is each of these, the first letter upper-cased and every camelCase
+    # hump kept (sdk-core ADR-0031), so render_enums is given none.
     class_names = {name: name[0].upper() + name[1:] for name in PACKAGED_LISTS}
     for name in sorted(PACKAGED_LISTS, key=class_names.__getitem__):
         packaged = read(name)
         lists[name] = [str(record[name]) for record in packaged.records]
         fetched[name] = f"{packaged.fetched:%Y-%m-%d}"
-    module = render_enums(lists, fetched=fetched, class_names=class_names, generator=GENERATOR)
+    module = render_enums(lists, fetched=fetched, generator=GENERATOR)
     ENUMS.write_text(module, encoding="utf-8")
     sys.stdout.flush()
     for command in (["format"], ["check", "--fix"]):
