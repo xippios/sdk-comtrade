@@ -66,16 +66,16 @@ them with `auth=None`, without the key, and its cache, narrowed to those paths b
 `cache_filter`, keeps each for the life of the process (core's plugin clears every
 `MemoryCache` around each offline test); `list_commodities`' `meta.retrieved_at` is the
 time its file was stored. So `scripts/refresh_reference.py` and `list_commodities` need
-no key and cost no quota; a reference fetch still takes the 1.5 s pace, and a spent quota
-holds it back too.
+no key and cost no quota; a reference fetch takes the 1.5 s pace alone, since `policy`
+neither holds back nor reads a request sent with `auth=None`.
 
 The public operations under `public/v1`, `getComtradeReleases` and `getWorldShare`
 (`docs/upstream/apidocs/public.json`, whose `security` is `[{}, apiKeyHeader,
 apiKeyQuery]`, a key optional, and whose `info` says "No subscription key required"), go
 through the same client with `auth=None` too: `get_comtrade_releases` and
-`get_world_share` send no key and spend no daily quota, but they share `RATE_LIMIT`'s pace
-(the Public tier allows 1 call per second) and `policy`, so a spent key quota holds them
-back too, as it does the reference files. `cache_filter` keeps their answers out of the
+`get_world_share` send no key and spend no daily quota, and they take `RATE_LIMIT`'s pace
+(the Public tier allows 1 call per second) alone: a spent key quota does not hold them
+back, nor the reference files. `cache_filter` keeps their answers out of the
 cache, so a release calendar always comes from upstream. Their operationIds are opaque hex
 ids, so the wrappers are named after the paths (conventions §2). What the keyless
 recordings of 2026-10-28 established (`tests/fixtures/get_comtrade_releases/`,

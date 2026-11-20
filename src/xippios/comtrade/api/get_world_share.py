@@ -12,9 +12,9 @@ operation.
 Public, keyless: ``public.json``'s ``security`` is ``[{}, apiKeyHeader, apiKeyQuery]``, a
 key optional, and its ``info`` says "No subscription key required", so the call goes
 through the package's one client with ``auth=None`` and sends none. It spends no daily
-quota but still takes the client's pace and its ``policy``: once upstream has said the
-key's quota is spent, this call is held back too. The client's cache keeps the reference
-files only, never this answer.
+quota and takes the client's pace alone, so a spent key quota does not hold it back: the
+client's ``policy`` skips a request sent with ``auth=None``. The client's cache keeps the
+reference files only, never this answer.
 
 Recorded answers (2026-10-28, under ``tests/fixtures/get_world_share/``):
 

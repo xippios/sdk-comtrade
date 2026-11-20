@@ -10,9 +10,9 @@ live update page" (https://comtradeplus.un.org/RecentReleases).
 Public, keyless: ``public.json``'s ``security`` is ``[{}, apiKeyHeader, apiKeyQuery]``, a
 key optional, and its ``info`` says "No subscription key required", so the call goes
 through the package's one client with ``auth=None`` and sends none. It spends no daily
-quota but still takes the client's pace and its ``policy``: once upstream has said the
-key's quota is spent, this call is held back too. The client's cache keeps the reference
-files only, never this answer.
+quota and takes the client's pace alone, so a spent key quota does not hold it back: the
+client's ``policy`` skips a request sent with ``auth=None``. The client's cache keeps the
+reference files only, never this answer.
 
 Recorded 2026-10-28 (``tests/fixtures/get_comtrade_releases/calendar.json``): 38 rows,
 ``count`` 38, released from 2026-10-22 to 2026-10-28, newest first, every

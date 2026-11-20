@@ -675,14 +675,14 @@ async def get_comtrade_releases_async() -> Result[list[ComtradeRelease]]:
     Upstream's public ``getComtradeReleases``, "the list of the recent releases, the same
     with the UI live update page" (https://comtradeplus.un.org/RecentReleases); the spec
     calls each row "A recent or upcoming dataset release". Keyless: no key is sent and no
-    daily quota is spent, but the call shares the client's pace (the Public tier allows 1
-    call per second) and its quota policy, so once upstream has said the key's daily quota
-    is spent it is held back too; the Public tier's preview API's 500 records a call is far
-    above the rows recorded. One row per release: ``reporter_code`` (UN Comtrade's code,
-    e.g. 757 Switzerland), ``dataset_desc`` (e.g. ``"Switzerland CM 202601"``),
-    ``flag_code`` and ``nr``, whose meanings upstream does not state (recorded: two letters,
-    ``"CH"`` for 757; ``"N"`` or ``"R"``), and ``date_release``, a naive datetime: upstream
-    prints it without a UTC offset and states no zone, so none is attached. When recorded on
+    daily quota is spent, so the call goes out once the key's daily quota is spent too, at
+    the client's pace (the Public tier allows 1 call per second); the Public tier's preview
+    API's 500 records a call is far above the rows recorded. One row per release:
+    ``reporter_code`` (UN Comtrade's code, e.g. 757 Switzerland), ``dataset_desc`` (e.g.
+    ``"Switzerland CM 202601"``), ``flag_code`` and ``nr``, whose meanings upstream does
+    not state (recorded: two letters, ``"CH"`` for 757; ``"N"`` or ``"R"``), and
+    ``date_release``, a naive datetime: upstream prints it without a UTC offset and states
+    no zone, so none is attached. When recorded on
     2026-10-28 it listed 38 releases from 2026-10-22 to 2026-10-28, newest first, every one
     at midnight, none in the future; the spec states no order. UN Comtrade keeps one version
     of each dataset, so a revised release replaces the earlier data, which is not archived.
@@ -714,9 +714,9 @@ async def get_world_share_async(
     not a release; upstream states no meaning for ``is_available`` or ``data_count``. The
     four times (``first_released``, ``last_released``, ``created``, ``updated``) are naive
     datetimes: upstream prints them without a UTC offset and states no zone, so none is
-    attached. Keyless: no key is sent and no daily quota is spent, but the call shares the
-    client's pace (the Public tier allows 1 call per second) and its quota policy, so once
-    upstream has said the key's daily quota is spent it is held back too. Upstream's
+    attached. Keyless: no key is sent and no daily quota is spent, so the call goes out once
+    the key's daily quota is spent too, at the client's pace (the Public tier allows 1 call
+    per second). Upstream's
     subscription page limits the Public tier's preview API to 500 records a call; whether
     that binds this operation is not stated, and the recorded answers (214 rows at most) did
     not reach it. One call, rows in upstream's order; a period nobody reported returns an
