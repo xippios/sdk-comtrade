@@ -102,7 +102,7 @@ __all__ = [
 BULK_TASKS: frozenset[str] = frozenset()
 
 # Result caps of their own, keyed by the task function's name (conventions §8,
-# sdk-core ADR-0038): the reporter (255) and partner (310) tables reach an agent whole; a
+# sdk-core ADR-0038): the reporter (256) and partner (310) tables reach an agent whole; a
 # classification file (8,262 HS codes) cannot, and its note tells the agent to search. One
 # period's world share for every reporter (214 rows, 88.5 KB for 2023) reaches an agent
 # whole too, where the default cap cut it at 157 rows, dropping the USA (842): upstream
@@ -892,7 +892,7 @@ async def get_world_trade_async(
     (``partner2Code`` 0, ``customsCode`` C00, ``motCode`` 0, ``breakdownMode`` classic),
     with descriptions (``includeDesc``): one row per reporter that reported the period
     (167 for 2023 imports of HS chapter 27 when recorded), sorted by ``primary_value``,
-    largest first. Bounded by construction at one row per reporter (255 in the packaged
+    largest first. Bounded by construction at one row per reporter (256 in the packaged
     ``Reporters.json``), so there is no count call. Arguments are checked before the
     call; a mistake raises ``InvalidRequestError`` naming the closest valid value.
     ``meta.request`` holds the ``get_data`` arguments that were sent.
@@ -1074,7 +1074,7 @@ async def list_reporters_async(search: str | None = None) -> Result[list[Reporte
 
     Answered from upstream's ``Reporters.json`` as packaged with this version
     (``reference/Reporters.json``), without an upstream call; ``meta.retrieved_at`` is
-    when the package fetched it, ``meta.vintage`` is ``None``. 255 rows when packaged,
+    when the package fetched it, ``meta.vintage`` is ``None``. 256 rows when packaged,
     one per reporter code, current and historical (``entry_expired_date`` is set on codes
     no longer used, such as ``280`` Fed. Rep. of Germany until 1990 or ``810`` USSR).
     Codes are UN Comtrade's, not always ISO numeric: ``757`` Switzerland (not 756),

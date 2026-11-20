@@ -1,7 +1,7 @@
 {
   "param": "Reporters",
   "endpoint": "files/v1/app/reference/Reporters.json",
-  "fetched": "2026-10-28T22:02:10Z",
+  "fetched": "2026-11-20T18:35:44Z",
   "records": [
     {
       "id": 4,
@@ -888,6 +888,17 @@
       "reporterNote": "Faroe Islands",
       "reporterCodeIsoAlpha2": "FO",
       "reporterCodeIsoAlpha3": "FRO",
+      "entryEffectiveDate": "1900-01-01T00:00:00",
+      "isGroup": false
+    },
+    {
+      "id": 238,
+      "text": "Falkland Isds (Malvinas)",
+      "reporterCode": 238,
+      "reporterDesc": "Falkland Isds (Malvinas)",
+      "reporterNote": "Falkland Islands (Malvinas)",
+      "reporterCodeIsoAlpha2": "FK",
+      "reporterCodeIsoAlpha3": "FLK",
       "entryEffectiveDate": "1900-01-01T00:00:00",
       "isGroup": false
     },

@@ -118,10 +118,10 @@ list lacks, where upstream's answer is not recorded. The other lists (`clCode` a
 `breakdownMode`, `aggregateBy`) keep one `InvalidRequestError` naming every problem
 found; the first unknown code ends the checks, so other problems show once it is fixed.
 Both tables share one code space (a code in both is the same area) but differ: 0 World
-and 56 other areas are partners only, 97 European Union and 975 ASEAN reporters only.
+and 55 other areas are partners only, 97 European Union and 975 ASEAN reporters only.
 
 The packaged lists carry upstream's words beside each value, under upstream's names, as
-`scripts/refresh_reference.py` fetched them (2026-10-28, keyless): `text` from
+`scripts/refresh_reference.py` fetched them (2026-11-20, keyless): `text` from
 `tradeRegimes.json` (`flowCode`), `CustomsCodes.json`, `ModeOfTransportCodes.json` and
 `ModeOfSupply.json` (`mosCode`); `qtyAbbr` and `qtyDescription` from `QuantityUnits.json`
 (`qtyUnitCode`), which has no `text`; `variable` and `description` from the `cmd:<clCode>`
@@ -139,7 +139,7 @@ unknown `customs_code` or `mot_code` names the closest codes with their text (co
 `closest` by code and by text, else the most similar code).
 
 `MCP_CAPS` in `tasks.py` gives four tasks result caps of their own (sdk-core ADR-0038),
-each 400 rows or 100 KB: three list tasks and `get_world_share`. `list_reporters` (255
+each 400 rows or 100 KB: three list tasks and `get_world_share`. `list_reporters` (256
 rows, 69 KB) and `list_partners` (310, 83 KB) reach an agent whole, past Switzerland and the
 USA, where the default cap of 200 rows cut them in upstream's alphabetical order. A
 classification does not fit (8,262 HS codes); the cap's note tells the agent to search.
@@ -213,7 +213,7 @@ The task-shaped slices (`get_bilateral_flows`, `get_commodity_series`,
 `params.SLICE_PINS`: `typeCode` C, `breakdownMode` classic, `partner2Code` 0, `motCode` 0,
 `customsCode` C00, `includeDesc` true, so one row is reporter × partner × product code ×
 period, projected into `TradeFlowRecord` with `UpstreamModel.project`. Each is bounded by
-its arguments (product codes × periods; periods; 255 reporters; 310 partners), so none
+its arguments (product codes × periods; periods; 256 reporters; 310 partners), so none
 counts first; `QueryTooLarge(bound, bound=True)` refuses a bound over 100,000 before the
 call, which is why the slices take single product codes, not `AG2` or `27??`. A
 commodity series is capped by calls instead: at most 120 periods

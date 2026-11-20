@@ -62,7 +62,7 @@ from xippios.comtrade import (
     list_reporters,
 )
 
-list_reporters().data  # 255 reporters, packaged with this version: no call
+list_reporters().data  # 256 reporters, packaged with this version: no call
 list_reporters(search="switz").data  # code, ISO alpha-3 or name, any case: 757
 list_partners().data  # 310 partner areas, 0 World among them
 list_commodities("HS", search="coffee").data  # from 8,262 HS codes, fetched keyless once
