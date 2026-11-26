@@ -124,8 +124,8 @@ BULK_TASKS: frozenset[str] = frozenset()
 # sends the available rows first, by reporter code, then the unavailable ones in an order
 # the recording does not explain. No cap is paged: an answer of get_data can pass the
 # cache's bound of 8 MiB, core's cache_max_bytes, which the client keeps, and a
-# continuation past it would send its count and its data again (conventions §8, sdk-core
-# ADR-0061, decision 9).
+# continuation past it would send its data request again, a keyed call, while the cache
+# keeps its count for 300 s (conventions §8, sdk-core ADR-0061, decision 9).
 MCP_CAPS: Mapping[str, ResultCap] = {
     "list_reporters": ResultCap(max_rows=400, max_bytes=100_000),
     "list_partners": ResultCap(max_rows=400, max_bytes=100_000),

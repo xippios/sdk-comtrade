@@ -1685,9 +1685,10 @@ async def test_no_tool_is_paged_while_its_answer_can_pass_the_cache_bound(
 
     The client keeps a body up to core's ``cache_max_bytes`` of 8 MiB, and an answer of
     ``get_data`` can hold 100,000 rows of about 900 bytes, so a continuation past the bound
-    would send its count and its data again: conventions §8 leave such a tool unpaged
-    (sdk-core ADR-0061, decision 9). The default cap cuts the datasets of every reporter for
-    one period at 108 of 169 rows, and its note says to narrow the query.
+    would send its data request again, while the cache keeps its count for 300 s:
+    conventions §8 leave such a tool unpaged (sdk-core ADR-0061, decision 9). The default
+    cap cuts the datasets of every reporter for one period at 108 of 169 rows, and its note
+    says to narrow the query.
     """
     assert config.cache_max_bytes == 8 * 1024 * 1024
     assert not [name for name, cap in tasks.MCP_CAPS.items() if cap.paged]
