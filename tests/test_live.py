@@ -1,16 +1,14 @@
 """Live smoke tests: skipped unless XIPPIOS_LIVE_TESTS=1 (conventions §10).
 
 Every task function gets one live smoke test here, next to the reachability probe, which
-spends no keyed call. The whole module costs thirteen keyed calls: one count, the count
+spends no keyed call. The whole module costs eight keyed calls: one count, the count
 plus the data call of ``get_data``, one call each for ``get_data_availability``,
-``get_metadata`` and ``get_live_update``, one for each of the four slices (the
-commodity series asks for two periods, one call), one each for the two Tools
-operations, ``get_trade_balance`` and ``get_bilateral_data``, and one for
-``get_mirror_flows``, the mirror slice over getBilateralData. A Basic Individual key
-allows 500 calls per day. The probe, the list tasks and the public operations spend none:
-the probe sends no key, ``list_commodities`` and the checks of the packaged lists and
-tables fetch the public reference files without it, and ``get_comtrade_releases`` and
-``get_world_share`` call ``public/v1`` without it (eight keyless requests).
+``get_metadata`` and ``get_live_update``, and one each for the two Tools operations,
+``get_trade_balance`` and ``get_bilateral_data``. A Basic Individual key allows 500 calls
+per day. The probe, the list tasks and the public operations spend none: the probe sends
+no key, ``list_commodities`` and the checks of the packaged lists and tables fetch the
+public reference files without it, and ``get_comtrade_releases`` and ``get_world_share``
+call ``public/v1`` without it (eight keyless requests).
 """
 
 from datetime import datetime
@@ -137,37 +135,6 @@ async def test_get_live_update_live() -> None:
     assert all(row.started_at is None or row.started_at.tzinfo for row in result.data)
 
 
-async def test_get_bilateral_flows_live() -> None:
-    result = await tasks.get_bilateral_flows_async("CHE", "USA", "TOTAL", "2023", "X")
-    [row] = result.data
-    assert (row.reporter_code, row.partner_code, row.cmd_code) == (757, 842, "TOTAL")
-    assert (row.reporter_iso, row.partner_iso) == ("CHE", "USA")
-    assert isinstance(row.primary_value, Decimal)
-    assert row.primary_value > 0
-
-
-async def test_get_commodity_series_live() -> None:
-    result = await tasks.get_commodity_series_async("757", "27", "X", "2022,2023")
-    assert [row.period for row in result.data] == ["2022", "2023"]
-    assert {row.partner_code for row in result.data} == {0}
-
-
-async def test_get_world_trade_live() -> None:
-    result = await tasks.get_world_trade_async("27", "2023", "M")
-    assert len(result.data) > 100
-    assert len({row.reporter_code for row in result.data}) == len(result.data)
-    values = [row.primary_value for row in result.data]
-    assert values == sorted(values, reverse=True)
-
-
-async def test_get_top_partners_live() -> None:
-    result = await tasks.get_top_partners_async("757", "TOTAL", "2023", "X", 5)
-    assert len(result.data) == 5
-    assert 0 not in {row.partner_code for row in result.data}
-    values = [row.primary_value for row in result.data]
-    assert values == sorted(values, reverse=True)
-
-
 async def test_get_trade_balance_live() -> None:
     result = await tasks.get_trade_balance_async(
         "C", "A", "HS", reporter_code="757", period="2023", partner_code="0",
@@ -194,24 +161,6 @@ async def test_get_bilateral_data_live() -> None:
     assert isinstance(row.mirror_primary_value, Decimal)
     assert row.primary_value > 0
     assert row.mirror_primary_value > 0
-
-
-async def test_get_mirror_flows_live() -> None:
-    result = await tasks.get_mirror_flows_async("CHE", "USA", "27", "2023", "X")
-    assert result.data.note, "upstream's data-gap note"
-    assert result.data.timestamp_requested is not None
-    assert result.data.timestamp_requested.tzinfo is not None
-    [row] = result.data.data
-    assert (row.reporter_code, row.partner_code, row.cmd_code, row.flow_code) == (
-        757,
-        842,
-        "27",
-        "X",
-    )
-    assert isinstance(row.mirror_primary_value, Decimal)
-    assert row.primary_value > 0
-    assert row.mirror_primary_value > 0
-    assert result.meta.total == 1
 
 
 async def test_get_comtrade_releases_live() -> None:
