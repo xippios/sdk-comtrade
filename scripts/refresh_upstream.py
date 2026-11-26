@@ -1,79 +1,56 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "beautifulsoup4==4.15.0",
-#     "markdownify==1.2.3",
-# ]
-#
-# [tool.uv]
-# exclude-newer = "2026-10-23T00:00:00Z"
-# ///
 """Refresh the upstream documentation snapshot in ``docs/upstream/`` (``/refresh-upstream``).
 
-ApiDocs (https://comtradeplus.un.org/ApiDocs) is a React app that embeds Swagger UI. Its
-bundle ``/static/js/main.<hash>.js`` holds the table of API products (key, label, OpenAPI
-file, subscription tiers) and the base URL the files are loaded from. The page shows only
-the products of the viewer's tier; this script reads the table from the bundle and saves
-every product file as served, so the snapshot covers all of them. It writes:
+The script declares the snapshot, ``SNAPSHOT``, and core's frame runs it
+(``xippios.core.refresh``, sdk-core ADR-0062): the fetch, the attribution check,
+``FETCHED.md``, the write and ``--check`` are the frame's. Every page is public, on three
+hosts, so the snapshot hands the frame no client: the frame's own, built from the slug,
+holds no credentials, and the script reads no environment variable. What is UN Comtrade's
+own are its pages, its attribution and its hooks:
 
-- ``apidocs/<file>``: each product's OpenAPI document, byte for byte;
-- ``help/<slug>.md``: each Help Center article in ``HELP_SLUGS``, the article body from
-  the WordPress REST API converted to Markdown under a two-line provenance header;
-- ``reference/<name>``: each file in ``REFERENCE_FILES``, byte for byte;
-- ``FETCHED.md``: regenerated entirely (conventions §3): the attribution, the products
-  found and one row per file and per page read without one (the ApiDocs page and its
-  bundle, a slug the REST API does not know, the page ``ATTRIBUTION`` is read from), each
-  with the UTC time of the run, the HTTP status, the size and sha256 of the body as
-  fetched, and the ETag and Last-Modified where sent.
+- ``linked``: ApiDocs (https://comtradeplus.un.org/ApiDocs) is a React app that embeds
+  Swagger UI. Its bundle ``/static/js/main.<hash>.js`` holds the table of API products
+  (key, label, OpenAPI file, subscription tiers) and the base URL the files are loaded
+  from. The page shows only the products of the viewer's tier; ``linked`` reads the
+  bundle from the page and the table from the bundle, so every product file is saved as
+  served, ``apidocs/<file>``;
+- ``reduce``: each Help Center article in ``HELP_SLUGS`` is the article body from the
+  WordPress REST API converted to Markdown under a two-line provenance header,
+  ``help/<slug>.md``, and ``note`` words its row from the answer;
+- ``sections``: the products found, with their OpenAPI versions.
 
-Everything is fetched before anything is written, one request at a time, each URL retried
-at most once; files a previous snapshot had and this one does not are removed, and
-``OBSERVED.md``, the notes written by hand, gets a row of ``FETCHED.md`` where it exists
-and is never touched. The same
-upstream gives the same bytes on disk, ``FETCHED.md``'s ``Fetched`` time aside. No key is
-needed or read. Every run stops, before writing, when a page states a copyright line, a
-licence or terms of use that ``ATTRIBUTION`` does not record, or when the page a recorded
-statement is read from no longer prints it; an article that is upstream's statement of its
-terms is kept whole and not searched beyond the lines ``ATTRIBUTION`` quotes from it. Run
-from the repository root::
+Each file in ``REFERENCE_FILES`` is kept byte for byte as ``reference/<name>``, and the
+Help Center's home page is read for its footer alone. Run from the repository root::
 
     uv run scripts/refresh_upstream.py            # fetch, then write the snapshot
     uv run scripts/refresh_upstream.py --check    # fetch and compare; write nothing
-
-``--check`` exits 1 when the snapshot differs from what upstream serves now, ``Fetched``
-aside, and names the files that differ.
 """
 
-import argparse
-import gzip
-import hashlib
 import html
-import http.client
-import json
 import re
-import textwrap
-import time
-import urllib.error
-import urllib.request
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup, Tag
 from markdownify import ATX, BACKSLASH, MarkdownConverter
+from xippios.core.refresh import (
+    Page,
+    Response,
+    Row,
+    Section,
+    Snapshot,
+    Statement,
+    changed,
+    decode,
+    parse_json,
+    run,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUT = ROOT / "docs/upstream"
-COMMAND = "uv run scripts/refresh_upstream.py"
-
 APIDOCS_URL = "https://comtradeplus.un.org/ApiDocs"
 HELP_HOME = "https://uncomtrade.org/"
-POLICY = "https://uncomtrade.org/docs/policy-on-comtrade-data-use/"
-DISCLAIMER = "https://uncomtrade.org/docs/read-me-first-disclaimer/"
 HELP_API = "https://uncomtrade.org/wp-json/wp/v2/docs"
 HELP_FIELDS = "id,slug,link,modified,title,content"
 HELP_SLUGS = (
@@ -99,81 +76,58 @@ HELP_SLUGS = (
 """Help Center articles to capture, by WordPress slug (``uncomtrade.org/docs/<slug>/``)."""
 REFERENCE_BASE = "https://comtradeapi.un.org/files/v1/app/reference/"
 REFERENCE_FILES = ("ListofReferences.json", "TradeDataItems.json")
-
-USER_AGENT = "xippios-comtrade refresh_upstream (+https://github.com/xippios/sdk-comtrade)"
-TIMEOUT = 60.0
-PAUSE = 2.0
-"""Seconds before every request; requests never run in parallel."""
-RETRY_PAUSE = 10.0
-"""Seconds before the one retry; uncomtrade.org now and then refuses a connection."""
-SUBDIRS = ("apidocs", "help", "reference")
-OBSERVED = "OBSERVED.md"
-"""The one file under ``docs/upstream/`` written by hand: what upstream does but never
-documents (conventions §3). The script neither writes nor checks it, and ``FETCHED.md``
-lists it in a row of its own where it exists."""
-REQUESTS: list[str] = []
-"""Every request the run sent, retries included, by URL: the count the run reports."""
-CHECKED: set[str] = set()
-"""The pages ``check_attribution`` read this run, by the URL statements are recorded at."""
+UNSTABLE = frozenset(
+    {"what-is-data-preview", "data", "data-availability", "un-comtrade-data-pipeline"}
+)
+"""The articles whose body carries a WordPress image id (``data-wp-key``) that is new on
+every request, so their rows record no size or sha256: the frame declares a page's
+stability, and ``note`` stops the run where an article's answer no longer agrees."""
+TERMS = frozenset({"policy-on-comtrade-data-use", "read-me-first-disclaimer"})
+"""The articles that are upstream's statement of its terms, kept whole and not searched."""
 
 
-@dataclass(frozen=True)
-class Statement:
-    """A copyright line, licence or terms of use upstream prints, and where it is read.
-
-    ``url`` is the page that prints it: a Help Center article by its link, read through the
-    REST API with the other articles, or a page fetched for it alone. ``terms_page`` marks
-    an article that is upstream's statement of its terms, kept whole in the snapshot: the
-    check requires the line on it and does not search the rest of it.
-    """
-
-    text: str
-    where: str
-    url: str
-    terms_page: bool = False
+def article_url(slug: str) -> str:
+    """The WordPress REST API's URL of the article ``slug``, its fields named."""
+    return f"{HELP_API}?{urlencode({'slug': slug, '_fields': HELP_FIELDS}, safe=',')}"
 
 
 ATTRIBUTION: tuple[Statement, ...] = (
     Statement(
         "\N{COPYRIGHT SIGN} 2026 UN Comtrade Help Center",
-        "in the footer of the UN Comtrade Help Center's pages",
         HELP_HOME,
+        "in the footer of the UN Comtrade Help Center's pages",
     ),
     Statement(
-        "The United Nations copyright UN Comtrade data. UN Comtrade data are provided for "
-        "internal use only and may not be re-disseminated in any form without "
-        "UNSD\N{RIGHT SINGLE QUOTATION MARK}s permission. The exemption (e.g., a small "
-        "amount of data) is explained in the section on re-dissemination.",
-        'under "Copyright Statement and Citation" in the Policy on Comtrade Data Use',
-        POLICY,
-        terms_page=True,
+        "The United Nations copyright UN Comtrade data.",
+        article_url("policy-on-comtrade-data-use"),
+        'under "Copyright Statement and Citation" in the Policy on Comtrade Data Use, '
+        "https://uncomtrade.org/docs/policy-on-comtrade-data-use/",
     ),
     Statement(
-        "Use of UN Comtrade data is subject to a license agreement found at "
-        "https://comtrade.un.org/licenseagreement.html, regardless of whether the data is "
-        "accessed via free or premium access.",
-        'under "License Agreement" in the Policy on Comtrade Data Use',
-        POLICY,
-        terms_page=True,
+        "Use of UN Comtrade data is subject to a license agreement found at",
+        article_url("policy-on-comtrade-data-use"),
+        'under "License Agreement" in the Policy on Comtrade Data Use, up to its link to the '
+        "agreement, https://comtrade.un.org/licenseagreement.html",
     ),
     Statement(
         "The License Agreement specifies that the UN Comtrade data are copyrighted by the "
         "United Nations and are made available for your internal use only. They may not be "
         "re-disseminated in any form without prior written consent of the United Nations "
-        "Statistics Division subject to the clarification at Policy on use and "
-        "re-dissemination.",
-        'under "License Agreement" in Read Me First (Disclaimer)',
-        DISCLAIMER,
-        terms_page=True,
+        "Statistics Division subject to the clarification at",
+        article_url("read-me-first-disclaimer"),
+        'under "License Agreement" in Read Me First (Disclaimer), '
+        "https://uncomtrade.org/docs/read-me-first-disclaimer/, up to its link to the Policy "
+        "on use and re-dissemination",
     ),
 )
 """Every copyright line, licence or terms of use the documentation states, as printed.
 
 The REST API serves an article's body without the Help Center's footer, so the footer's
-line is read from the Help Center's home page (its article pages print the same footer).
-The data's terms are two articles of their own, captured with the others. Every run stops
-when a page states one that is not here, and when the page a statement is read from no
-longer prints it (a new year, say).
+line is read from the Help Center's home page. The data's terms are two articles of their
+own, captured with the others and marked ``terms``: each must print its lines. The frame
+reads a JSON answer as its text, the article's HTML in a string, so a line quoted from an
+article stops where the printed text meets markup or a character outside ASCII, a link, a
+paragraph's end or a curly apostrophe; the articles are kept whole under ``help/``.
 """
 
 _IDENT = r"[A-Za-z_$][\w$]*"
@@ -186,246 +140,9 @@ _PRODUCT_FIELDS = re.compile(
 )
 _APIM_BASE = re.compile(r'"(https://[^"\s]+/apim/)"\s*\+')
 _SAFE_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\.json")
-_STATEMENT = re.compile(
-    r"\N{COPYRIGHT SIGN}|copyright|licen[cs]e|terms of (?:use|service)|public domain",
-    re.IGNORECASE,
-)
+_BUNDLE_PATH = re.compile(r"/static/js/main\.[0-9a-f]+\.js$")
 _RENDER_ID = re.compile(r"data-wp-key=")
 """WordPress's lightbox image block, whose ``data-wp-key`` id is new on every render."""
-_FETCHED = re.compile(r"^\| [^|]+ \| \S+ \| (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z) \|", re.M)
-
-
-@dataclass(frozen=True)
-class Response:
-    """One GET as served: the status, the body and the validators sent with it."""
-
-    url: str
-    status: int
-    body: bytes
-    etag: str | None
-    last_modified: str | None
-
-
-@dataclass(frozen=True)
-class Product:
-    """One row of the ApiDocs product table."""
-
-    key: str
-    label: str
-    file: str
-    tiers: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class Entry:
-    """One row of ``FETCHED.md``: a response, the file it is kept as, if any, and a note.
-
-    ``stable`` is ``False`` for a body that changes on every request: its row records no
-    size, sha256 or validators.
-    """
-
-    path: str | None
-    response: Response
-    note: str
-    content: bytes | None = None
-    stable: bool = True
-
-
-class _RetryableError(Exception):
-    """A network error or a 5xx: worth one more attempt."""
-
-
-def _log(message: str) -> None:
-    print(message, flush=True)  # noqa: T201
-
-
-def _get(url: str, accept: frozenset[int]) -> Response:
-    REQUESTS.append(url)
-    request = urllib.request.Request(
-        url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"}
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            body: bytes = response.read()
-            status: int = response.status
-            headers = response.headers
-    except urllib.error.HTTPError as error:
-        if error.code >= 500:
-            raise _RetryableError(f"HTTP {error.code} {error.reason}") from None
-        if error.code not in accept:
-            raise SystemExit(f"GET {url}: HTTP {error.code} {error.reason}") from None
-        body, status, headers = error.read(), error.code, error.headers
-    except (http.client.HTTPException, OSError) as error:  # URLError is an OSError
-        raise _RetryableError(str(error)) from None
-    if status not in accept:
-        raise SystemExit(f"GET {url}: expected HTTP {sorted(accept)}, got {status}")
-    encoding = headers.get("Content-Encoding", "identity").strip().lower()
-    if encoding == "gzip":
-        body = gzip.decompress(body)
-    elif encoding != "identity":
-        raise SystemExit(f"GET {url}: unexpected Content-Encoding {encoding!r}")
-    return Response(url, status, body, headers.get("ETag"), headers.get("Last-Modified"))
-
-
-def fetch(url: str, accept: frozenset[int] = frozenset({200})) -> Response:
-    """GET ``url`` after a polite pause; retry once on a network error or a 5xx."""
-    time.sleep(PAUSE)
-    try:
-        return _get(url, accept)
-    except _RetryableError as error:
-        _log(f"  {url}: {error}; retrying once in {RETRY_PAUSE:.0f} s")
-    time.sleep(RETRY_PAUSE)
-    try:
-        return _get(url, accept)
-    except _RetryableError as error:
-        raise SystemExit(f"GET {url}: {error} (after one retry)") from None
-
-
-def _html_text(markup: str) -> str:
-    """The text a browser shows of HTML: no script, style or markup, whitespace collapsed.
-
-    Inline markup joins without a separator, so a line reads as printed (a link followed
-    by its comma); WordPress separates blocks with whitespace of its own.
-    """
-    soup = BeautifulSoup(markup, "html.parser")
-    for tag in _tags(soup, "script", "style", "noscript", "template"):
-        tag.decompose()
-    return " ".join(soup.get_text().split())
-
-
-def check_attribution(url: str, text: str) -> None:
-    """Stop when ``text`` states a copyright, licence or terms that ``ATTRIBUTION`` lacks.
-
-    ``text`` is what a reader sees of the page at ``url`` (an article's title and body, an
-    HTML page's text) or, for a JSON file, the file decoded. The page a statement is read
-    from must still print it; the rest of a terms page is not searched.
-    """
-    CHECKED.add(url)
-    for statement in ATTRIBUTION:
-        if statement.url == url and statement.text not in text:
-            raise SystemExit(
-                f"{url}: the page no longer prints {statement.text!r}, which ATTRIBUTION "
-                "records.\nRead it by hand and update ATTRIBUTION in "
-                "scripts/refresh_upstream.py. Nothing was written."
-            )
-        text = text.replace(statement.text, "")
-    if any(s.url == url and s.terms_page for s in ATTRIBUTION):
-        return
-    match = _STATEMENT.search(text)
-    if match:
-        around = " ".join(text[max(match.start() - 60, 0) : match.end() + 60].split())
-        raise SystemExit(
-            f"{url}: the page states {match.group(0)!r} ({around!r}), a copyright, "
-            "licence or terms of use that ATTRIBUTION does not record.\nRead it by hand, "
-            "record it in ATTRIBUTION in scripts/refresh_upstream.py. Nothing was written."
-        )
-
-
-def _bundle_changed(what: str, where: str) -> SystemExit:
-    return SystemExit(
-        f"The ApiDocs bundle changed: {what}.\n"
-        f"Inspect {where} (the page is {APIDOCS_URL}; the bundle is the main.<hash>.js it "
-        'loads) for the product table [{key:"...",label:"...",file:"....json",access:[...]}], '
-        'the tier constants X="anonymous",Y="free",Z="premium" and the '
-        '"https://.../apim/"+file base URL, then update the patterns in '
-        "scripts/refresh_upstream.py. Nothing was written."
-    )
-
-
-def discover() -> tuple[Response, Response, str, list[Product]]:
-    """Fetch ApiDocs and its bundle; read the apim base URL and the product table.
-
-    The page is checked for attribution, the bundle is not: it is code, which carries its
-    libraries' licence headers.
-    """
-    shell = fetch(APIDOCS_URL)
-    _report("(no file)", shell)
-    page = shell.body.decode("utf-8")
-    check_attribution(APIDOCS_URL, _html_text(page))
-    bundles = sorted(set(_BUNDLE.findall(page)))
-    if len(bundles) != 1:
-        raise _bundle_changed(f"expected one main.<hash>.js, found {bundles}", APIDOCS_URL)
-    bundle_url = urljoin(APIDOCS_URL, bundles[0])
-    bundle = fetch(bundle_url)
-    _report("(no file)", bundle)
-    source = bundle.body.decode("utf-8")
-
-    constants = _TIERS.findall(source)
-    if len(constants) != 1:
-        raise _bundle_changed(f"found {len(constants)} sets of tier constants", bundle_url)
-    tier_names = dict(zip(constants[0], ("anonymous", "free", "premium"), strict=True))
-
-    tables = _PRODUCT_TABLE.findall(source)
-    if len(tables) != 1:
-        raise _bundle_changed(f"found {len(tables)} product tables", bundle_url)
-    products: list[Product] = []
-    for key, label, file, access in _PRODUCT_FIELDS.findall(tables[0]):
-        idents = [ident for ident in access.split(",") if ident]
-        if not idents or any(ident not in tier_names for ident in idents):
-            raise _bundle_changed(f"product {key!r} has access [{access}]", bundle_url)
-        if not _SAFE_FILE.fullmatch(file):
-            raise _bundle_changed(f"product {key!r} names the file {file!r}", bundle_url)
-        products.append(Product(key, label, file, tuple(tier_names[i] for i in idents)))
-    files = [product.file for product in products]
-    if not products or len(set(files)) != len(files):
-        raise _bundle_changed(f"product files are {files}", bundle_url)
-
-    bases = sorted(set(_APIM_BASE.findall(source)))
-    if len(bases) != 1:
-        raise _bundle_changed(f"expected one apim base URL, found {bases}", bundle_url)
-    return shell, bundle, bases[0], products
-
-
-def _iso_http_date(value: str | None) -> str:
-    if value is None:
-        return "-"
-    return parsedate_to_datetime(value).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _json(response: Response) -> Any:
-    try:
-        return json.loads(response.body)
-    except ValueError as error:
-        raise SystemExit(f"GET {response.url}: not JSON ({error})") from None
-
-
-def _report(path: str, response: Response) -> None:
-    digest = hashlib.sha256(response.body).hexdigest()
-    _log(
-        f"  {path}: HTTP {response.status}, {len(response.body)} bytes, sha256 {digest}, "
-        f"Last-Modified {response.last_modified or '-'}, ETag {response.etag or '-'}"
-    )
-
-
-def fetch_spec(base: str, product: Product) -> tuple[Entry, str]:
-    """Fetch one product's OpenAPI document as served, with its ``openapi`` version."""
-    response = fetch(base + product.file)
-    document = _json(response)
-    version = document.get("openapi") if isinstance(document, dict) else None
-    if not (isinstance(version, str) and version.startswith("3.")):
-        raise SystemExit(f"GET {response.url}: expected OpenAPI 3.x, found openapi={version!r}")
-    check_attribution(response.url, json.dumps(document, ensure_ascii=False))
-    path = f"apidocs/{product.file}"
-    _report(path, response)
-    return Entry(path, response, f"OpenAPI {version}, as served", response.body), version
-
-
-def fetch_reference(name: str) -> Entry:
-    """Fetch one reference file as served; it must parse as JSON."""
-    response = fetch(REFERENCE_BASE + name)
-    check_attribution(response.url, json.dumps(_json(response), ensure_ascii=False))
-    path = f"reference/{name}"
-    _report(path, response)
-    return Entry(path, response, "as served", response.body)
-
-
-def fetch_attribution(url: str) -> Entry:
-    """Fetch a page ``ATTRIBUTION`` reads a statement from; it must still print it."""
-    response = fetch(url)
-    check_attribution(url, _html_text(response.body.decode("utf-8", "replace")))
-    _report("(no file)", response)
-    return Entry(None, response, "read for the Attribution above, kept without a file")
-
 
 _TABLE_TAGS = {"table", "thead", "tbody", "tfoot", "tr", "th", "td"}
 _KEPT_TAGS = _TABLE_TAGS | {"a", "br", "strong", "em", "b", "i", "code"}
@@ -503,291 +220,211 @@ def _merged_tables(fragment: str) -> int:
     return sum(1 for table in tables if _has_merged_cells(table))
 
 
-def fetch_article(slug: str) -> Entry:
-    """Fetch one Help Center article through the WordPress REST API as Markdown.
+@dataclass(frozen=True)
+class Product:
+    """One row of the ApiDocs product table."""
 
-    A slug the REST API does not know, an empty list or a 404, is recorded without a file.
-    """
-    url = f"{HELP_API}?{urlencode({'slug': slug, '_fields': HELP_FIELDS}, safe=',')}"
-    response = fetch(url, frozenset({200, 404}))
-    articles = _json(response) if response.status == 200 else []
-    if articles == []:
-        what = "an empty list" if response.status == 200 else f"HTTP {response.status}"
-        _report("(no file)", response)
-        _log(f"  {slug}: no article, the REST API answered {what}; recorded without a file")
-        return Entry(None, response, f"no article {slug!r}: the WordPress REST API answered {what}")
+    key: str
+    label: str
+    file: str
+    tiers: tuple[str, ...]
+
+
+def bundle_url(shell: Response) -> str:
+    """The URL of the one ``main.<hash>.js`` the ApiDocs page loads."""
+    bundles: list[str] = sorted(set(_BUNDLE.findall(decode(shell))))
+    if len(bundles) != 1:
+        raise _bundle_changed(f"expected one main.<hash>.js, found {bundles}", APIDOCS_URL)
+    return urljoin(APIDOCS_URL, bundles[0])
+
+
+def products(bundle: Response) -> tuple[str, list[Product]]:
+    """The apim base URL and the product table the ApiDocs bundle holds."""
+    source = decode(bundle)
+    constants = _TIERS.findall(source)
+    if len(constants) != 1:
+        raise _bundle_changed(f"found {len(constants)} sets of tier constants", bundle.url)
+    tier_names = dict(zip(constants[0], ("anonymous", "free", "premium"), strict=True))
+    tables = _PRODUCT_TABLE.findall(source)
+    if len(tables) != 1:
+        raise _bundle_changed(f"found {len(tables)} product tables", bundle.url)
+    found: list[Product] = []
+    for key, label, file, access in _PRODUCT_FIELDS.findall(tables[0]):
+        idents = [ident for ident in access.split(",") if ident]
+        if not idents or any(ident not in tier_names for ident in idents):
+            raise _bundle_changed(f"product {key!r} has access [{access}]", bundle.url)
+        if not _SAFE_FILE.fullmatch(file):
+            raise _bundle_changed(f"product {key!r} names the file {file!r}", bundle.url)
+        found.append(Product(key, label, file, tuple(tier_names[i] for i in idents)))
+    files = [product.file for product in found]
+    if not found or len(set(files)) != len(files):
+        raise _bundle_changed(f"product files are {files}", bundle.url)
+    bases = sorted(set(_APIM_BASE.findall(source)))
+    if len(bases) != 1:
+        raise _bundle_changed(f"expected one apim base URL, found {bases}", bundle.url)
+    return bases[0], found
+
+
+def _bundle_changed(what: str, where: str) -> SystemExit:
+    return changed(
+        where,
+        f"the ApiDocs bundle changed: {what}. Look for the product table "
+        '[{key:"...",label:"...",file:"....json",access:[...]}], the tier constants '
+        'X="anonymous",Y="free",Z="premium" and the "https://.../apim/"+file base URL',
+    )
+
+
+def linked(row: Row) -> Sequence[Page]:
+    """The bundle after the ApiDocs page, and every product file after the bundle."""
+    if row.page.url == APIDOCS_URL:
+        note = "the ApiDocs bundle: the product table and apim base are read here"
+        return (Page(bundle_url(row.response), note=note),)
+    if _BUNDLE_PATH.search(urlsplit(row.page.url).path):
+        base, found = products(row.response)
+        return tuple(Page(base + product.file, f"apidocs/{product.file}") for product in found)
+    return ()
+
+
+def openapi_version(response: Response) -> str:
+    """The ``openapi`` version of a product file, which must be 3.x."""
+    document = parse_json(response)
+    version = document.get("openapi") if isinstance(document, dict) else None
+    if not (isinstance(version, str) and version.startswith("3.")):
+        raise changed(response.url, f"expected OpenAPI 3.x, found openapi={version!r}")
+    return version
+
+
+def _article(page: Page, response: Response) -> dict[str, Any]:
+    """The one article the REST API answers for the page's slug."""
+    articles = parse_json(response)
     if not (isinstance(articles, list) and len(articles) == 1 and isinstance(articles[0], dict)):
-        raise SystemExit(f"GET {url}: expected one article, got {str(articles)[:200]}")
+        raise changed(page.url, f"expected one article, got {str(articles)[:200]}")
     article: dict[str, Any] = articles[0]
+    slug = Path(page.file or "").stem
+    content = article.get("content")
+    body = content.get("rendered") if isinstance(content, dict) else None
+    if article.get("slug") != slug or not isinstance(body, str) or not body.strip():
+        raise changed(page.url, f"no article body for {slug!r}")
+    return article
+
+
+def reduce(page: Page, response: Response) -> bytes:
+    """An article as Markdown under its title and WordPress ``modified``; any other as served."""
+    if not (page.file or "").startswith("help/"):
+        return response.body
+    article = _article(page, response)
     try:
         link, modified = str(article["link"]), str(article["modified"])
         title = html.unescape(str(article["title"]["rendered"])).strip()
-        body = str(article["content"]["rendered"])
     except (KeyError, TypeError) as error:
-        raise SystemExit(f"GET {url}: article without {error}") from None
-    if article.get("slug") != slug or not body.strip():
-        raise SystemExit(f"GET {url}: no article body for {slug!r}")
+        raise changed(page.url, f"article without {error}") from None
     escaped = title.replace("[", r"\[").replace("]", r"\]")
     header = f"# [{escaped}]({link})\n\nUpstream modified: {modified}\n\n"
-    markdown = header + to_markdown(body, link)
-    check_attribution(link, f"{title} {_html_text(body)}")
-    path = f"help/{slug}.md"
-    note = f"article {link}, WordPress modified {modified} (site time), converted to Markdown"
+    return (header + to_markdown(str(article["content"]["rendered"]), link)).encode("utf-8")
+
+
+def note(row: Row) -> str:
+    """An article's note from its answer, a product file's its version; else the page's."""
+    file = row.page.file or ""
+    if file.startswith("apidocs/"):
+        return f"OpenAPI {openapi_version(row.response)}, as served"
+    if not file.startswith("help/"):
+        return row.page.note
+    article = _article(row.page, row.response)
+    body = str(article["content"]["rendered"])
+    text = (
+        f"article {article['link']}, WordPress modified {article['modified']} (site time), "
+        "converted to Markdown"
+    )
     merged = _merged_tables(body)
     if merged:
-        note += f"; {merged} table{'s' if merged > 1 else ''} with merged cells kept as HTML"
-    stable = _RENDER_ID.search(body) is None
-    if not stable:
-        note += (
+        text += f"; {merged} table{'s' if merged > 1 else ''} with merged cells kept as HTML"
+    if (_RENDER_ID.search(body) is None) != row.page.stable:
+        raise changed(row.page.url, "the article's data-wp-key image id came or went: see UNSTABLE")
+    if not row.page.stable:
+        text += (
             "; the body carries a WordPress image id (data-wp-key) that is new on every "
             "request, so no size or sha256"
         )
-    _log(f"  {path}: HTTP {response.status}, {len(markdown)} characters, modified {modified}")
-    return Entry(path, response, note, markdown.encode("utf-8"), stable)
+    return text
+
+
+def sections(rows: Sequence[Row]) -> Sequence[Section]:
+    """The section "Products found": the bundle, the apim base and each product's version."""
+    bundles = [row for row in rows if _BUNDLE_PATH.search(urlsplit(row.page.url).path)]
+    if len(bundles) != 1:
+        return ()
+    base, found = products(bundles[0].response)
+    versions = {
+        row.page.file: openapi_version(row.response)
+        for row in rows
+        if (row.page.file or "").startswith("apidocs/")
+    }
+    name = bundles[0].page.url.rsplit("/", 1)[-1]
+    lines = [
+        f"In the ApiDocs bundle `{name}`, each an OpenAPI file under `{base}`:",
+        "",
+        "| Key | Label | File | Tiers | OpenAPI |",
+        "| --- | --- | --- | --- | --- |",
+        *(
+            f"| {_cell(p.key)} | {_cell(p.label)} | {p.file} | {', '.join(p.tiers)} | "
+            f"{_cell(versions.get(f'apidocs/{p.file}', '-'))} |"
+            for p in found
+        ),
+    ]
+    return (Section("Products found", "\n".join(lines)),)
 
 
 def _cell(value: str) -> str:
     return value.replace("|", r"\|")
 
 
-def _paragraph(*sentences: str) -> list[str]:
-    text = " ".join(sentences)
-    wrapped = textwrap.fill(text, width=88, break_long_words=False, break_on_hyphens=False)
-    return [*wrapped.splitlines(), ""]
+CAPTURE = """ApiDocs is a React app that embeds Swagger UI. Its JavaScript bundle holds a table
+of API products, each an OpenAPI file with the subscription tiers that may see it. The page
+loads only the products of the viewer's tier (anonymous, free or premium) and merges them
+client-side into one document, "UN Comtrade API Products", with one collapsible Swagger UI
+tag per product. The script reads the product table from the bundle and saves every product
+file byte for byte as served, so the snapshot holds every product, including the premium
+ones a free-tier browser never shows; "Products found" lists them.
 
+Help Center articles come from the WordPress REST API, as the article body only (no theme,
+no navigation), converted to Markdown. A table with merged cells (`rowspan`/`colspan`)
+stays an HTML table that keeps only the spans and links, with images as their alt text or
+file name, and the article's row says so; every other table becomes a pipe table. The two
+articles that state the data's terms are kept whole and not searched beyond the lines the
+Attribution quotes, each up to the first markup or character outside ASCII in its printed
+text, since the check reads the REST API's answer as its JSON text."""
 
-def _row(entry: Entry, fetched: str) -> str:
-    response, kept = entry.response, entry.stable
-    cells = [
-        entry.path or "(no file)",
-        response.url,
-        fetched,
-        str(response.status),
-        str(len(response.body)) if kept else "-",
-        hashlib.sha256(response.body).hexdigest() if kept else "-",
-        (response.etag or "-") if kept else "-",
-        _iso_http_date(response.last_modified) if kept else "-",
-        entry.note,
-    ]
-    return "| " + " | ".join(_cell(cell) for cell in cells) + " |"
-
-
-def render_fetched(
-    bundle: str,
-    apim_base: str,
-    products: list[Product],
-    versions: list[str],
-    entries: list[Entry],
-    fetched: str,
-    observed: bool = False,
-) -> str:
-    """The whole of ``FETCHED.md``; ``versions`` holds each product's ``openapi`` value.
-
-    ``fetched`` is the UTC time the run started, ``2026-10-24T09:15:00Z`` (conventions §3),
-    and ``observed`` whether ``docs/upstream/`` holds ``OBSERVED.md``, which then has a row.
-    """
-    found = ", ".join(sorted(set(versions)))
-    stated = [
-        f"- `{s.text}`, {s.where}, as printed at {s.url}, fetched {fetched}." for s in ATTRIBUTION
-    ]
-    hand = (
-        f"never edited by hand but `{OBSERVED}`, the notes on what upstream does but never "
-        "documents, which the script neither writes nor checks,"
-        if observed
-        else "never edited by hand,"
-    )
-    lines = [
-        "# Upstream documentation snapshot \N{EM DASH} UN Comtrade",
-        "",
-        *_paragraph(
-            "Source of truth for every endpoint wrapper (sdk-core ADR-0028). Files in this",
-            f"directory are fetched from {APIDOCS_URL}, the UN Comtrade Help Center and",
-            "the Comtrade reference files by `scripts/refresh_upstream.py` (`/refresh-upstream`),",
-            hand,
-            "and refreshed deliberately by PR so that changes show up as diffs. This file is",
-            "generated by the same script.",
+SNAPSHOT = Snapshot(
+    name="UN Comtrade",
+    slug="comtrade",
+    pages=(
+        Page(APIDOCS_URL, note="the ApiDocs page, a client-rendered shell that names the bundle"),
+        *(
+            Page(
+                article_url(slug),
+                f"help/{slug}.md",
+                stable=slug not in UNSTABLE,
+                terms=slug in TERMS,
+            )
+            for slug in HELP_SLUGS
         ),
-        "## Attribution",
-        "",
-        *(stated or ["- None stated."]),
-        "",
-        *_paragraph(
-            "Every other page the script reads states none: it stops, before writing, when a",
-            "page states a copyright line, a licence or terms of use not listed here, or when",
-            "the page a line is read from no longer prints it. The two articles that state the",
-            "data's terms are kept whole under `help/` and not searched beyond the lines quoted",
-            "here. ApiDocs is rendered in the",
-            "browser, so a plain fetch receives no footer text from it; its bundle is code,",
-            "which carries its libraries' licence headers, and is not checked. The",
-            "documentation's text is reproduced here as this package's reference",
-            "(sdk-core ADR-0028); the publisher's objection is met by replacing it with a",
-            "summary that keeps the",
-            "names and semantics the wrappers rely on.",
+        *(
+            Page(REFERENCE_BASE + name, f"reference/{name}", note="as served")
+            for name in REFERENCE_FILES
         ),
-        "## How ApiDocs is captured",
-        "",
-        "ApiDocs is a React app that embeds Swagger UI. Its JavaScript bundle holds a table of",
-        f"API products, each an OpenAPI file (version {found} as fetched) under",
-        f"`{apim_base}` with the subscription tiers that may",
-        "see it. The page loads only the products of the viewer's tier (anonymous, free or",
-        'premium) and merges them client-side into one document, "UN Comtrade API Products",',
-        "with one collapsible Swagger UI tag per product, paths prefixed with the product's",
-        "server path and operationIds with its key. The script reads the product table from",
-        "the bundle and saves every product file byte for byte as served, so the snapshot",
-        "holds every product, including the premium ones a free-tier browser never shows.",
-        "",
-        "Help Center articles come from the WordPress REST API,",
-        f"`{HELP_API}?slug=<slug>`, as the article body only",
-        "(no theme, no navigation), converted to Markdown. A table with merged cells",
-        "(`rowspan`/`colspan`) stays an HTML table that keeps only the spans and links, with",
-        "images as their alt text or file name, and the article's row says so; every other",
-        "table becomes a pipe table.",
-        "",
-        f"Regenerate: `{COMMAND}`",
-        "",
-        "## Products found",
-        "",
-        f"In the ApiDocs bundle `{bundle}`:",
-        "",
-        "| Key | Label | File | Tiers | OpenAPI |",
-        "| --- | --- | --- | --- | --- |",
-    ]
-    lines += [
-        f"| {_cell(p.key)} | {_cell(p.label)} | {p.file} | {', '.join(p.tiers)} | {_cell(v)} |"
-        for p, v in zip(products, versions, strict=True)
-    ]
-    lines += [
-        "",
-        "## Files and pages",
-        "",
-        *_paragraph(
-            "Fetched is the UTC time the run started, in ISO 8601 with an explicit Z, the",
-            "same for every row. HTTP, Bytes and sha256 are those of the body as fetched: for",
-            "a Help Center article the REST API's JSON, whose `content` the Markdown file is",
-            "converted from, the article's WordPress `modified` field (site time) being in",
-            "its note. ETag is as sent, Last-Modified the HTTP header in UTC, `-` where not",
-            "sent; a body that changes on every request records none of the four, and its",
-            "note says why. A page read without a file is `(no file)`. Requests go one at a",
-            "time,",
-            f"{PAUSE:g} s apart, each retried at most once after a network error or a 5xx,",
-            f"identified as `{USER_AGENT}`; no API key is sent or read.",
-        ),
-        "| File | URL | Fetched | HTTP | Bytes | sha256 | ETag | Last-Modified | Note |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-    ]
-    lines += [_row(entry, fetched) for entry in entries]
-    if observed:
-        note = "written by hand: what upstream does but never documents; not fetched or checked"
-        lines.append("| " + " | ".join([OBSERVED, *["-"] * 7, note]) + " |")
-    return "\n".join(lines) + "\n"
-
-
-def _files(entries: Sequence[Entry]) -> dict[str, bytes]:
-    return {e.path: e.content for e in entries if e.path is not None and e.content is not None}
-
-
-def _stale(out: Path, files: dict[str, bytes]) -> list[str]:
-    """The files under ``SUBDIRS`` that this run does not produce."""
-    found = [
-        f"{subdir}/{path.name}"
-        for subdir in SUBDIRS
-        if (out / subdir).is_dir()
-        for path in sorted((out / subdir).iterdir())
-        if path.is_file()
-    ]
-    return [name for name in found if name not in files]
-
-
-def write_snapshot(out: Path, entries: Sequence[Entry], fetched_md: str) -> None:
-    """Write every file, drop files the new snapshot no longer has, write ``FETCHED.md``."""
-    if out.exists() and any(out.iterdir()) and not (out / "FETCHED.md").is_file():
-        raise SystemExit(f"{out} is neither empty nor a snapshot (no FETCHED.md); not writing")
-    files = _files(entries)
-    for name in _stale(out, files):
-        (out / name).unlink()
-        _log(f"  removed {name}: no longer upstream")
-    for name, content in files.items():
-        (out / name).parent.mkdir(parents=True, exist_ok=True)
-        (out / name).write_bytes(content)
-    (out / "FETCHED.md").write_text(fetched_md, encoding="utf-8")
-
-
-def compare(out: Path, entries: Sequence[Entry], render: Callable[[str], str]) -> list[str]:
-    """The snapshot's files that differ from this run's, ``FETCHED.md``'s ``Fetched`` aside."""
-    files = _files(entries)
-    differ = [
-        name
-        for name, content in files.items()
-        if not (out / name).is_file() or (out / name).read_bytes() != content
-    ]
-    differ += [f"{name} (no longer upstream)" for name in _stale(out, files)]
-    current = out / "FETCHED.md"
-    old = current.read_text(encoding="utf-8") if current.is_file() else ""
-    match = _FETCHED.search(old)
-    if match is None or render(match.group(1)) != old:
-        differ.append("FETCHED.md")
-    return differ
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    """Discover the ApiDocs products, fetch everything, then write or compare the snapshot."""
-    parser = argparse.ArgumentParser(description="Refresh docs/upstream/ from UN Comtrade.")
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="snapshot directory")
-    parser.add_argument(
-        "--check", action="store_true", help="fetch and compare with the snapshot; write nothing"
-    )
-    args = parser.parse_args(argv)
-    out: Path = args.out
-    fetched = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")  # the UTC time the run started
-
-    _log(f"ApiDocs: {APIDOCS_URL}")
-    shell, bundle, apim_base, products = discover()
-    bundle_name = bundle.url.rsplit("/", 1)[-1]
-    _log(f"  bundle {bundle_name}, apim base {apim_base}")
-    for product in products:
-        tiers = ", ".join(product.tiers)
-        _log(f"  product {product.key} ({product.label}): {product.file} [{tiers}]")
-    entries = [
-        Entry(None, shell, "the ApiDocs page, a client-rendered shell that names the bundle"),
-        Entry(None, bundle, "the ApiDocs bundle: the product table and apim base are read here"),
-    ]
-    specs = [fetch_spec(apim_base, product) for product in products]
-    entries += [entry for entry, _ in specs]
-    versions = [version for _, version in specs]
-    _log(f"  OpenAPI versions: {', '.join(sorted(set(versions)))}")
-    _log("Help Center articles")
-    articles = [fetch_article(slug) for slug in HELP_SLUGS]
-    if all(article.path is None for article in articles):
-        raise SystemExit(f"{HELP_API} knows none of HELP_SLUGS: look at it by hand. Not writing")
-    entries += articles
-    _log("Reference files")
-    entries += [fetch_reference(name) for name in REFERENCE_FILES]
-    _log("Attribution")
-    pages = dict.fromkeys(s.url for s in ATTRIBUTION if s.url not in CHECKED)
-    entries += [fetch_attribution(url) for url in pages]
-
-    observed = (out / OBSERVED).is_file()
-
-    def render(at: str) -> str:
-        return render_fetched(bundle_name, apim_base, products, versions, entries, at, observed)
-
-    if args.check:
-        differ = compare(out, entries, render)
-        for name in differ:
-            _log(f"  differs: {name}")
-        _log(
-            f"{len(differ)} of the snapshot's files differ from upstream; run without --check"
-            if differ
-            else "The snapshot is current: upstream serves what it records."
-        )
-        _log(f"{len(REQUESTS)} requests, none with a key")
-        return 1 if differ else 0
-    write_snapshot(out, entries, render(fetched))
-    written = len(_files(entries))
-    _log(f"Wrote {written} files and FETCHED.md under {out} (Fetched {fetched})")
-    _log(f"{len(REQUESTS)} requests, none with a key")
-    return 0
+        Page(HELP_HOME, note="read for the Attribution above, kept without a file"),
+    ),
+    attribution=ATTRIBUTION,
+    capture=CAPTURE,
+    out=ROOT / "docs/upstream",
+    reduce=reduce,
+    linked=linked,
+    note=note,
+    sections=sections,
+)
+"""UN Comtrade's snapshot, which core's frame runs through its own client, without a key."""
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run(SNAPSHOT))
