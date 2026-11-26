@@ -20,6 +20,7 @@ import httpx
 import pytest
 import respx
 from mcp.client import Client
+from pydantic import ValidationError as PydanticValidationError
 from xippios.core import (
     Answer,
     AsyncClient,
@@ -66,6 +67,7 @@ from xippios.comtrade._client import (
     config,
     policy,
 )
+from xippios.comtrade.api.get import UPSTREAM_NAMES
 from xippios.comtrade.errors import NARROW, RECORD_LIMIT
 from xippios.comtrade.mcp import build, server
 from xippios.comtrade.models import (
@@ -164,7 +166,7 @@ def test_the_key_is_the_one_variable_and_the_tool_set_takes_what_tasks_declares(
 
 
 FOURTEEN = [
-    "get_bilateral_data", "get_comtrade_releases", "get_counts", "get_data",
+    "count_data", "get_bilateral_data", "get_comtrade_releases", "get_data",
     "get_data_availability", "get_live_update", "get_metadata", "get_trade_balance",
     "get_world_share", "list_classifications", "list_codes", "list_commodities",
     "list_partners", "list_reporters",
@@ -220,10 +222,16 @@ CH_EXPORTS_2023: dict[str, Any] = {
 }
 
 
-def test_get_counts_sends_the_recorded_count_request(replay_fixture: ReplayFixture) -> None:
+def test_count_data_sends_the_recorded_count_request(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
-    result = tasks.get_counts(**CH_EXPORTS_2023)
+    result = tasks.count_data(**CH_EXPORTS_2023)
     assert result.data == 32
+    assert result.meta.names == {
+        "freq_code": {"A": "annual"},
+        "reporter_code": {"757": "Switzerland"},
+        "partner_code": {"0": "World"},
+        "flow_code": {"X": "Export"},
+    }, "a count names the codes it was called with"
     assert result.meta.source == "comtrade"
     assert result.meta.endpoint == "data/v1/get"
     assert result.meta.request == CH_EXPORTS_2023
@@ -281,12 +289,189 @@ def test_get_data_counts_first_then_fetches(
 def test_get_data_returns_empty_after_one_call_when_nothing_matches(
     replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
+    """A count of 0: the empty list, one note that says so, and no data request.
+
+    https://github.com/xippios/sdk-usda-esr/issues/88: a list task answers no data with the
+    empty list and a note; a code UN Comtrade does not have counts 0 too
+    (https://github.com/xippios/sdk-comtrade/issues/32), so the note says what the answer
+    rests on, and the answer names the codes the call asked for.
+    """
     counted = replay_fixture("get", "count_zero_ch_1900", match_params=COUNT_ONLY)
     result = tasks.get_data(**{**CH_EXPORTS_2023, "period": "1900"})
     assert result.data == []
     assert result.meta.request["period"] == "1900"
     assert len(respx_mock.calls) == counted.call_count == 1
     assert sent_query(counted)["countOnly"] == "true"
+    assert result.meta.notes == [
+        "UN Comtrade counted no record for the query, so no data request was sent."
+    ]
+    assert result.meta.notes == [tasks.COUNTED_NONE]
+    assert result.meta.names == {
+        "freq_code": {"A": "annual"},
+        "reporter_code": {"757": "Switzerland"},
+        "partner_code": {"0": "World"},
+        "flow_code": {"X": "Export"},
+    }
+
+
+def test_several_codes_are_one_list_joined_as_upstream_takes_them(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """Several values of one filter are a list, sent as UN Comtrade's comma-separated text.
+
+    sdk-core ADR-0061, decision 1. ``count_zero_ch_1900.json`` answers the count of this
+    test's query at its own path, a recording replayed for other parameters (conventions
+    §10, kind 3), so the call ends at its count, and the answer without rows names the codes
+    it asked for, each as the caller gave it, and keeps the list in ``meta.request``.
+    """
+    counted = replay_fixture("get", "count_zero_ch_1900", match_params=COUNT_ONLY)
+    result = tasks.get_data("C", "A", "HS", reporter_code=[757, 842], period="2023")
+    query = sent_query(counted)
+    assert (query["reporterCode"], query["period"]) == ("757,842", "2023")
+    assert len(respx_mock.calls) == 1
+    assert result.data == []
+    assert result.meta.request["reporter_code"] == [757, 842]
+    assert result.meta.names == {
+        "freq_code": {"A": "annual"},
+        "reporter_code": {"757": "Switzerland", "842": "USA"},
+    }
+    assert result.meta.notes == [tasks.COUNTED_NONE]
+
+
+COMMA_TEXTS: dict[str, str] = {
+    "reporter_code": "757,842",
+    "period": "2022,2023",
+    "partner_code": "0,842",
+    "partner2_code": "0,842",
+    "cmd_code": "01,02",
+    "flow_code": "M,X",
+    "customs_code": "C00,C01",
+    "mot_code": "0,1000",
+    "aggregate_by": "cmdCode,period",
+}
+"""A comma-separated text of each argument that takes several values of one filter."""
+
+
+@pytest.mark.parametrize("argument", COMMA_TEXTS)
+def test_a_comma_separated_text_is_refused_before_any_request(
+    respx_mock: respx.MockRouter, argument: str
+) -> None:
+    """A comma-separated text is no argument form (sdk-core ADR-0061, decision 1)."""
+    text = COMMA_TEXTS[argument]
+    assert _refused(respx_mock, **{argument: text}) == (
+        f"{argument} takes several codes as a list, {json.dumps(text.split(','))}, not a text "
+        f"with commas, {text!r}. Nothing was sent."
+    )
+
+
+@pytest.mark.anyio
+async def test_the_tools_take_a_list_for_each_filter_of_several_values(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Over MCP each such argument takes an array, and ``flow_code`` of the mirror one text."""
+    async with Client(server) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+    for name in ("count_data", "get_data", "get_trade_balance", "get_bilateral_data"):
+        properties = tools[f"comtrade_{name}"].input_schema["properties"]
+        for argument in set(COMMA_TEXTS) & set(properties):
+            types = json.dumps(properties[argument])
+            if (name, argument) == ("get_bilateral_data", "flow_code"):
+                assert '"array"' not in types, "one flow per call"
+            else:
+                assert '"array"' in types, (name, argument)
+    refused = await mcp_call_text(
+        server, "comtrade_get_world_share", {"type_code": "C", "freq_code": "A",
+                                              "reporter_code": "757,842"}
+    )  # fmt: skip
+    assert refused.startswith("error: InvalidRequestError: reporter_code takes several codes")
+    assert not respx_mock.calls
+
+
+def test_a_call_with_two_problems_is_refused_for_the_first_alone(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """One refusal names the first problem, in core's words (sdk-core ADR-0061, decision 7).
+
+    The validators gather no list of problems and match no code of their own: core's check
+    judges every packaged list (https://github.com/xippios/sdk-comtrade/issues/34).
+    """
+    from xippios.comtrade import params
+
+    assert _refused(respx_mock, reporter_code="756", flow_code="XX") == REFUSED_756
+    flow = _refused(respx_mock, flow_code="XX", customs_code="C16")
+    assert flow.startswith("'XX' is not a flow_code")
+    assert "C16" not in flow
+    source = inspect.getsource(params)
+    assert "difflib" not in source
+    assert not re.search(r"\bproblems\b", source)
+    assert not hasattr(params, "_closest")
+    assert not hasattr(params, "_closest_texts")
+
+
+def test_get_counts_is_count_data_with_no_alias() -> None:
+    """``count_`` is the family's verb for upstream's own count (sdk-core ADR-0061, decision 3).
+
+    By the maintainer's decision of 2026-11-26 the task takes the verb with no alias, and
+    ``list_codes(param)`` keeps its name.
+    """
+    import xippios.comtrade
+
+    assert xippios.comtrade.count_data is tasks.count_data
+    for module in (xippios.comtrade, tasks):
+        assert not hasattr(module, "get_counts")
+        assert not hasattr(module, "get_counts_async")
+    assert "list_codes" in tasks.__all__
+
+
+KEYWORD_ONLY = {
+    "list_reporters": "search",
+    "list_partners": "search",
+    "list_commodities": "search",
+    "list_classifications": "category",
+}
+"""The list tasks' arguments of the package's own, keyword-only (sdk-core ADR-0061, decision 5)."""
+
+SPEC_ORDER = [
+    "reporter_code", "period", "partner_code", "partner2_code", "cmd_code", "flow_code",
+    "customs_code", "mot_code",
+]  # fmt: skip
+"""The one order of the filters in every task, the spec's (``docs/upstream/apidocs/``)."""
+
+
+def test_search_and_category_are_keyword_only() -> None:
+    for name, argument in KEYWORD_ONLY.items():
+        parameter = inspect.signature(getattr(tasks, name)).parameters[argument]
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, name
+    with pytest.raises(TypeError):
+        tasks.list_reporters("switz")  # type: ignore[call-arg]
+
+
+def test_the_keyword_arguments_stand_in_the_specs_one_order() -> None:
+    """One concept at one position in every task: the filters in the spec's order, then the rest.
+
+    The order is that of ``data/v1/get``'s parameters in ``docs/upstream/apidocs/comtrade.json``.
+    """
+    spec = json.loads((UPSTREAM / "apidocs" / "comtrade.json").read_text(encoding="utf-8"))
+    operation = spec["paths"]["/get/{typeCode}/{freqCode}/{clCode}"]["get"]
+    upstream = [UPSTREAM_NAMES[name] for name in SPEC_ORDER]
+    assert upstream == [p["name"] for p in operation["parameters"] if p["name"] in upstream]
+    for task in TASKS:
+        keywords = [
+            name
+            for name, parameter in inspect.signature(task).parameters.items()
+            if parameter.kind is inspect.Parameter.KEYWORD_ONLY
+        ]
+        shared = [name for name in keywords if name in SPEC_ORDER]
+        assert shared == [name for name in SPEC_ORDER if name in shared], task
+        assert keywords[: len(shared)] == shared, task
+
+
+def test_get_data_states_its_two_requests_retries_counted() -> None:
+    """A task of several requests states their bound (sdk-core ADR-0061, decision 8)."""
+    description = " ".join((inspect.getdoc(tasks.get_data) or "").split("\n\nArgs:")[0].split())
+    assert "One call sends two requests" in description
+    assert "each tried at most 4 times, so at most 8" in description
+    assert config.retry.max_attempts == 4
 
 
 def test_get_data_refuses_over_the_limit_before_fetching(
@@ -309,7 +494,7 @@ def test_get_data_refuses_over_the_limit_before_fetching(
     )
     assert "Nothing was sent." not in message
     assert message.endswith(
-        "and check each part with get_counts (over MCP, the tool comtrade_get_counts)."
+        "and check each part with count_data (over MCP, the tool comtrade_count_data)."
     )
     assert not fetched.called
     assert len(respx_mock.calls) == counted.call_count == 1
@@ -322,12 +507,12 @@ def test_get_data_counts_first_sets_the_total_and_dates_by_the_older_read(
     """Core's ``fetch_counted`` counts first, and the count is ``meta.total`` (ADR-0053).
 
     ``get_data`` dates its answer by the older of its two reads (conventions §4): after
-    ``get_counts`` the cache answers the count, so the answer is as old as that count, and
+    ``count_data`` the cache answers the count, so the answer is as old as that count, and
     the call sends the data request alone (https://github.com/xippios/sdk-comtrade/issues/38).
     """
     counted = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
     fetched = replay_fixture("get", "ch_exports_2023")
-    count = tasks.get_counts(**CH_EXPORTS_2023)
+    count = tasks.count_data(**CH_EXPORTS_2023)
     result = tasks.get_data(**CH_EXPORTS_2023)
     assert result.meta.total == count.data == len(result.data) == 32
     assert result.meta.retrieved_at == count.meta.retrieved_at
@@ -360,18 +545,19 @@ def test_every_answer_names_the_codes_of_its_rows(replay_fixture: ReplayFixture)
     assert names["reporter_code"] == {"757": "Switzerland"}
     assert names["partner_code"] == names["partner2_code"] == {"0": "World"}
     assert names["freq_code"] == {"A": "annual"}
+    assert names["flow_code"] == {"X": "Export"}
     assert names["customs_code"]["C00"] == "TOTAL customs procedure codes"
     assert names["mot_code"]["9100"] == "Pipelines and cables"
     assert names["mos_code"] == {"0": "All Modes of Supply"}
     assert names["qty_unit_code"] == {"-1": "Not available or not specified or no quantity."}
     assert answer.meta.notes == []
-    assert not {"flow_code", "cmd_code", "type_code", "classification_code"} & set(names)
+    assert not {"cmd_code", "type_code", "classification_code"} & set(names)
     replay_fixture("get_live_update", "latest")
     live = tasks.get_live_update()
     assert live.meta.names["reporter_code"]["234"] == "Faroe Isds", "a text code, named"
     replay_fixture("get", "count_aggregate_by_partner_code_cmd_code", match_params=COUNT_ONLY)
     replay_fixture("get", "ch_exports_2023_ag2_aggregate_by_partner_code_cmd_code")
-    aggregated = tasks.get_data(**AG2, aggregate_by="partnerCode,cmdCode")
+    aggregated = tasks.get_data(**AG2, aggregate_by=["partnerCode", "cmdCode"])
     assert "-2" not in aggregated.meta.names.get("partner_code", {})
     assert any("partner_code -2" in note for note in aggregated.meta.notes)
 
@@ -410,7 +596,7 @@ with its tool (conventions §8), and the last sentence names no command an agent
 """
 
 
-def _unknown(respx_mock: respx.MockRouter, **overrides: str) -> UnknownCode:
+def _unknown(respx_mock: respx.MockRouter, **overrides: object) -> UnknownCode:
     with pytest.raises(UnknownCode) as info:
         tasks.get_data(**{**CH_EXPORTS_2023, **overrides})
     assert not respx_mock.calls, "refused before any call"
@@ -422,7 +608,7 @@ def test_a_code_that_is_not_a_reporter_is_refused_naming_the_reporter(
     respx_mock: respx.MockRouter,
 ) -> None:
     """The task refuses 756 before the call: Reporters.json has Switzerland as 757."""
-    refused = _unknown(respx_mock, reporter_code="757,756")
+    refused = _unknown(respx_mock, reporter_code=["757", "756"])
     assert str(refused) == REFUSED_756
     assert (refused.param, refused.value, refused.list_name) == (
         "reporter_code",
@@ -435,7 +621,7 @@ def test_a_code_that_is_not_a_reporter_is_refused_naming_the_reporter(
 
 
 def test_unknown_partner_codes_are_refused(respx_mock: respx.MockRouter) -> None:
-    unknown = _unknown(respx_mock, partner_code="0,9999")
+    unknown = _unknown(respx_mock, partner_code=[0, 9999])
     assert (unknown.param, unknown.value, unknown.list_name) == (
         "partner_code",
         9999,
@@ -468,7 +654,7 @@ def test_an_area_code_is_checked_as_upstream_writes_it(respx_mock: respx.MockRou
     takes such a member as its text, which the table lacks, and names the code to write.
     """
     for given in ["0757", "\uff17\uff15\uff17", "\u0667\u0665\u0667"]:
-        refused = _unknown(respx_mock, reporter_code=f"842,{given}")
+        refused = _unknown(respx_mock, reporter_code=["842", given])
         assert refused.value == given
         assert str(refused).startswith(
             f"{given!r} is not a reporter_code in the packaged Reporters list"
@@ -507,18 +693,26 @@ async def test_a_refusal_that_names_another_task_names_a_served_tool(
     assert not respx_mock.calls
 
 
-def test_every_member_of_an_area_list_is_checked() -> None:
-    """Each member of a list is checked; the first one the table lacks is refused."""
+def test_every_code_of_an_area_list_is_checked() -> None:
+    """Each code of a list is checked; the first one the table lacks is refused alone.
+
+    A code is UN Comtrade's integer or its digits, and the list stands in the answer as the
+    caller gave it; a text that is no number is refused by core's check in its own words.
+    """
     checked = validate_get(
-        "C", "A", "HS", reporter_code="757,842,276,156", partner_code="0,276,756",
+        "C", "A", "HS", reporter_code=["757", 842, "276", 156], partner_code=[0, "276", 756],
         partner2_code="0",
     )  # fmt: skip
-    assert checked["reporter_code"] == "757,842,276,156"
-    assert checked["partner_code"] == "0,276,756"
+    assert checked["reporter_code"] == ["757", 842, "276", 156]
+    assert checked["partner_code"] == [0, "276", 756]
     with pytest.raises(UnknownCode) as info:
-        validate_get("C", "A", "HS", reporter_code="757,999,842,1000")
+        validate_get("C", "A", "HS", reporter_code=[757, 999, 842, 1000])
     assert info.value.value == 999
     assert "1000" not in str(info.value)
+    with pytest.raises(InvalidRequestError) as refused:
+        validate_get("C", "A", "HS", reporter_code="757 ")
+    assert not isinstance(refused.value, UnknownCode)
+    assert str(refused.value).startswith("'757 ' is not an integer code: reporter_code takes")
 
 
 @pytest.mark.anyio
@@ -536,7 +730,7 @@ async def test_unknown_reporter_is_an_empty_answer_upstream(replay_fixture: Repl
 def test_invalid_key_is_an_auth_error(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get", "invalid_key", match_params=COUNT_ONLY)
     with pytest.raises(AuthError) as info:
-        tasks.get_counts(**CH_EXPORTS_2023)
+        tasks.count_data(**CH_EXPORTS_2023)
     assert info.value.status == 401
     assert "invalid subscription key" in str(info.value)
 
@@ -566,7 +760,7 @@ async def test_wildcard_product_codes_are_counted_upstream(replay_fixture: Repla
 
 def test_wildcards_pass_validation(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get", "count_cmd_code_wildcard", match_params=COUNT_ONLY)
-    assert tasks.get_counts(**{**CH_EXPORTS_2023, "cmd_code": "27??"}).data == 113
+    assert tasks.count_data(**{**CH_EXPORTS_2023, "cmd_code": "27??"}).data == 113
 
 
 @pytest.mark.anyio
@@ -620,7 +814,7 @@ TOTAL_ROW = ("C00", 0, 0)
 
 def test_flow_code_xif_is_accepted_upstream(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("get", "count_flow_code_xif", match_params=COUNT_ONLY)
-    assert tasks.get_counts(**{**CH_EXPORTS_2023, "flow_code": "XIF"}).data == 0
+    assert tasks.count_data(**{**CH_EXPORTS_2023, "flow_code": "XIF"}).data == 0
     assert sent_query(route) == recorded_query(load_fixture(GET / "count_flow_code_xif.json"))
 
 
@@ -673,7 +867,7 @@ def test_partner2_code_0_counts_what_omitting_it_counts(
     replay_fixture: ReplayFixture, fixtures_dir: Path
 ) -> None:
     replay_fixture("get", "count_partner2_code_0", match_params=COUNT_ONLY)
-    assert tasks.get_counts(**CH_EXPORTS_2023, partner2_code="0").data == 32
+    assert tasks.count_data(**CH_EXPORTS_2023, partner2_code="0").data == 32
     assert {row["partner2Code"] for row in _rows(fixtures_dir, "ch_exports_2023")} == {0}
 
 
@@ -682,23 +876,24 @@ AG2 = {**CH_EXPORTS_2023, "cmd_code": "AG2"}
 
 def test_ag2_counts_every_chapter_and_breakdown(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get", "count_ch_exports_2023_ag2", match_params=COUNT_ONLY)
-    assert tasks.get_counts(**AG2).data == 1338
+    assert tasks.count_data(**AG2).data == 1338
 
 
 @pytest.mark.parametrize(
     ("aggregate_by", "case", "partner_code"),
     [
         ("cmdCode", "aggregate_by_cmd_code", 0),
-        ("partnerCode,cmdCode", "aggregate_by_partner_code_cmd_code", -2),
+        (["partnerCode", "cmdCode"], "aggregate_by_partner_code_cmd_code", -2),
     ],
+    ids=["cmdCode", "partnerCode-cmdCode"],
 )
 def test_aggregate_by_collapses_the_named_parameters_into_minus_2(
-    replay_fixture: ReplayFixture, aggregate_by: str, case: str, partner_code: int
+    replay_fixture: ReplayFixture, aggregate_by: str | list[str], case: str, partner_code: int
 ) -> None:
     """Over the 1,338 AG2 records: one row per remaining breakdown; the count matches."""
     replay_fixture("get", f"count_{case}", match_params=COUNT_ONLY)
     fetched = replay_fixture("get", f"ch_exports_2023_ag2_{case}")
-    assert tasks.get_counts(**AG2, aggregate_by=aggregate_by).data == 32
+    assert tasks.count_data(**AG2, aggregate_by=aggregate_by).data == 32
     result = tasks.get_data(**AG2, aggregate_by=aggregate_by)
     assert sent_query(fetched) == recorded_query(
         load_fixture(GET / f"ch_exports_2023_ag2_{case}.json")
@@ -750,7 +945,7 @@ def test_product_codes_upstream_does_not_have_count_zero(
 ) -> None:
     """999999 is HS's "Commodities not specified according to kind"; 999998 is not in HS.json."""
     replay_fixture("get", case, match_params=COUNT_ONLY)
-    assert tasks.get_counts(**{**CH_EXPORTS_2023, "cmd_code": cmd_code}).data == count
+    assert tasks.count_data(**{**CH_EXPORTS_2023, "cmd_code": cmd_code}).data == count
 
 
 @pytest.mark.anyio
@@ -797,7 +992,7 @@ def test_services_take_their_files_total_code_not_total(
     """EB10 counts its one row under 200 and none under TOTAL; combined EB counts none."""
     route = replay_fixture("get", case, match_params=COUNT_ONLY)
     query = {**SERVICES_2023, "cl_code": cl_code, "cmd_code": cmd_code}
-    assert tasks.get_counts(**query).data == count
+    assert tasks.count_data(**query).data == count
     assert route.calls.last.request.url.path == f"/data/v1/get/S/A/{cl_code}"
 
 
@@ -832,7 +1027,7 @@ def test_mos_code_is_accepted_upstream_but_not_a_parameter_here(fixtures_dir: Pa
     )
 
 
-def _refused(respx_mock: respx.MockRouter, **overrides: str) -> str:
+def _refused(respx_mock: respx.MockRouter, **overrides: object) -> str:
     with pytest.raises(InvalidRequestError) as info:
         tasks.get_data(**{**CH_EXPORTS_2023, **overrides})
     assert not respx_mock.calls, "validation happens before any call"
@@ -840,39 +1035,58 @@ def _refused(respx_mock: respx.MockRouter, **overrides: str) -> str:
 
 
 def test_thirteen_periods_are_refused_before_any_call(respx_mock: respx.MockRouter) -> None:
-    message = _refused(respx_mock, period=",".join(str(year) for year in range(2010, 2023)))
-    assert "period has 13 values" in message
-    assert "at most 12" in message
+    message = _refused(respx_mock, period=[str(year) for year in range(2010, 2023)])
+    assert message == (
+        "period lists 13 periods; UN Comtrade takes at most 12 per call, so split the query "
+        "by period. Nothing was sent."
+    )
 
 
 def test_unknown_flow_code_names_the_closest_value(respx_mock: respx.MockRouter) -> None:
-    message = _refused(respx_mock, flow_code="X,XX")
-    assert "flow_code 'XX' is not a UN Comtrade flowCode value; closest: 'X'" in message
-    assert "valid values: M, X, DX, FM, MIP, MOP, RM, RX, XIP, XOP, MIF, XIF" in message
+    """Core's check of the packaged ``flowCode`` list, its reason upstream's HTTP 400."""
+    unknown = _unknown(respx_mock, flow_code=["X", "XX"])
+    assert (unknown.param, unknown.value, unknown.list_name) == ("flow_code", "XX", "flowCode")
+    assert str(unknown).startswith(
+        f"'XX' is not a flow_code in the packaged flowCode list (fetched {_day('flowCode')}). "
+        "Nothing was sent. Did you mean X (Export)? UN Comtrade refuses a flowCode it does not "
+        "have with HTTP 400, so the package refuses it before the call. list_codes('flowCode') "
+        "lists every code (over MCP, the tool comtrade_list_codes)."
+    )
 
 
 def test_flow_codes_the_spec_adds_pass_validation(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get", "count_flow_code_mif", match_params=COUNT_ONLY)
-    assert tasks.get_counts(**{**CH_EXPORTS_2023, "flow_code": "MIF"}).data == 0
-    assert validate_get("C", "A", "HS", flow_code="XIF,mif")["flow_code"] == "XIF,mif"
+    assert tasks.count_data(**{**CH_EXPORTS_2023, "flow_code": "MIF"}).data == 0
+    assert validate_get("C", "A", "HS", flow_code=["XIF", "mif"])["flow_code"] == ["XIF", "mif"]
 
 
 def test_unknown_cl_code_names_the_closest_value(respx_mock: respx.MockRouter) -> None:
-    message = _refused(respx_mock, cl_code="BE5")
-    assert "cl_code 'BE5' is not a UN Comtrade clCode value; closest: 'BE'" in message
+    unknown = _unknown(respx_mock, cl_code="BE5")
+    assert (unknown.param, unknown.value, unknown.list_name) == ("cl_code", "BE5", "clCode")
+    assert "Nothing was sent. Did you mean BE, B5" in str(unknown)
 
 
 def test_malformed_product_codes_are_refused(respx_mock: respx.MockRouter) -> None:
-    message = _refused(respx_mock, cmd_code="0901,coffee")
-    assert "cmd_code 'coffee' is not a HS product code" in message
-    assert "cmd_code '0901'" not in message
+    message = _refused(respx_mock, cmd_code=["0901", "coffee", "tea"])
+    assert message == (
+        "cmd_code 'coffee' is not a HS product code: use 'TOTAL', 'AG2', 'AG4', 'AG6' or codes "
+        "made of digits, e.g. '0901' or '27??'. Nothing was sent."
+    )
 
 
 def test_area_codes_and_periods_are_checked_by_shape(respx_mock: respx.MockRouter) -> None:
-    message = _refused(respx_mock, reporter_code="CH", partner_code="0, 276", period="2023-01")
-    assert "reporter_code 'CH' is not a numeric UN Comtrade area code" in message
-    assert "partner_code '0, 276' must be values separated by commas, without spaces" in message
-    assert "period '2023-01' is neither a year (YYYY" in message
+    """An area code in core's words, a period in the package's, each the first problem."""
+    area = _refused(respx_mock, reporter_code="CH", period="2023-01")
+    assert area.startswith(
+        "'CH' is not an integer code: reporter_code takes the integer codes of the packaged "
+        "Reporters list"
+    )
+    assert "period" not in area, "the first problem alone"
+    period = _refused(respx_mock, period="2023-01")
+    assert period == (
+        "period '2023-01' is neither a year (YYYY, e.g. '2023') nor a month (YYYYMM, e.g. "
+        "'202305'). Nothing was sent."
+    )
 
 
 @pytest.mark.parametrize(
@@ -881,16 +1095,18 @@ def test_area_codes_and_periods_are_checked_by_shape(respx_mock: respx.MockRoute
         ("HS", "TOTAL"),
         ("H6", "AG6"),
         ("HS", "ag2"),
-        ("HS", "01,0901,090111"),
+        ("HS", ["01", "0901", "090111"]),
         ("HS", "27*"),
-        ("SS", "001X,0011X"),
+        ("SS", ["001X", "0011X"]),
         ("B5", "111"),
         ("EB02", "205X"),
         ("EB10", "10.1.1"),
         ("EB10S", "SC11z"),
     ],
 )
-def test_product_code_shapes_from_the_classification_files(cl_code: str, cmd_code: str) -> None:
+def test_product_code_shapes_from_the_classification_files(
+    cl_code: str, cmd_code: str | list[str]
+) -> None:
     type_code = "S" if cl_code.startswith("EB") else "C"
     checked = validate_get(type_code, "A", cl_code, cmd_code=cmd_code)
     assert checked == {"type_code": type_code, "freq_code": "A", "cl_code": cl_code,
@@ -898,23 +1114,49 @@ def test_product_code_shapes_from_the_classification_files(cl_code: str, cmd_cod
 
 
 def test_case_insensitive_codes_pass_unchanged() -> None:
-    checked = validate_get("C", "M", "HS", flow_code="x,M", customs_code="c00", period="202305")
-    assert checked["flow_code"] == "x,M"
+    checked = validate_get(
+        "C", "M", "HS", flow_code=["x", "M"], customs_code="c00", period="202305"
+    )
+    assert checked["flow_code"] == ["x", "M"]
     assert checked["customs_code"] == "c00"
 
 
-def test_every_list_parameter_is_checked() -> None:
-    with pytest.raises(InvalidRequestError) as info:
-        validate_get("G", "Y", "HS", aggregate_by="cmdcode", breakdown_mode="full")
-    assert not isinstance(info.value, UnknownCode)
+SPEC_REASON = (
+    "UN Comtrade's spec lists every value of {param}, so the package refuses another before "
+    "the call. list_codes({param!r}) lists them (over MCP, the tool comtrade_list_codes)."
+)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "param", "value", "list_name"),
+    [
+        ({"type_code": "G", "freq_code": "Y"}, "type_code", "G", "typeCode"),
+        ({"freq_code": "Y", "breakdown_mode": "full"}, "freq_code", "Y", "freqCode"),
+        ({"aggregate_by": ["cmdcode"], "breakdown_mode": "full"}, "aggregate_by", "cmdcode",
+         "aggregateBy"),
+        ({"breakdown_mode": "full"}, "breakdown_mode", "full", "breakdownMode"),
+    ],
+)  # fmt: skip
+def test_every_list_parameter_is_checked_by_core_and_refused_first(
+    arguments: dict[str, Any], param: str, value: str, list_name: str
+) -> None:
+    """Core's check judges every packaged list, and the first problem is the refusal alone.
+
+    sdk-core ADR-0061, decision 7, and https://github.com/xippios/sdk-comtrade/issues/34:
+    the lists read from the spec are refused as ``UnknownCode`` with the spec as reason.
+    """
+    with pytest.raises(UnknownCode) as info:
+        validate_get(**{"type_code": "C", "freq_code": "A", "cl_code": "HS", **arguments})
+    assert (info.value.param, info.value.value, info.value.list_name) == (param, value, list_name)
     message = str(info.value)
-    for fragment in [
-        "type_code 'G' is not a UN Comtrade typeCode value",
-        "freq_code 'Y' is not a UN Comtrade freqCode value",
-        "aggregate_by 'cmdcode' is not a UN Comtrade aggregateBy value; closest: 'cmdCode'",
-        "breakdown_mode 'full' is not a UN Comtrade breakdownMode value",
-    ]:
-        assert fragment in message
+    assert message.count("Nothing was sent.") == 1
+    assert _reason_text(list_name) in message
+    for other in set(arguments) - {param}:
+        assert other not in message, "the first problem alone"
+
+
+def _reason_text(list_name: str) -> str:
+    return SPEC_REASON.format(param=list_name)
 
 
 REFUSED_C16 = (
@@ -935,9 +1177,9 @@ def test_an_unknown_customs_or_transport_code_is_an_unknown_code(
     """Dimension codes of the rows, like the areas: ``UnknownCode`` before any call.
 
     The closest codes come with upstream's text: core's ``closest`` by code, then by text,
-    and where it finds none the most similar code, as for an area.
+    and where it finds none, none (https://github.com/xippios/sdk-comtrade/issues/34).
     """
-    customs = _unknown(respx_mock, customs_code="C00,C16")
+    customs = _unknown(respx_mock, customs_code=["C00", "C16"])
     assert str(customs) == REFUSED_C16
     assert (customs.param, customs.value, customs.list_name) == (
         "customs_code",
@@ -950,12 +1192,12 @@ def test_an_unknown_customs_or_transport_code_is_an_unknown_code(
         ("C14", "Stores"),
         ("C13", "Postal traffic"),
     )
-    transport = _unknown(respx_mock, mot_code="0,9")
+    transport = _unknown(respx_mock, mot_code=["0", "9"])
     assert (transport.param, transport.value, transport.list_name) == ("mot_code", "9", "motCode")
-    assert transport.closest == (("9900", "Other"),)
+    assert transport.closest == ()
     assert str(transport).startswith(
         f"'9' is not a mot_code in the packaged motCode list (fetched {_day('motCode')}). "
-        "Nothing was sent. Did you mean 9900 (Other)?"
+        "Nothing was sent. UN Comtrade's answer to a customs or transport code"
     )
     assert _unknown(respx_mock, mot_code="air").closest == (("1000", "Air"),), "by text"
     assert _unknown(respx_mock, customs_code="travellers").closest == (("C12", "Travellers"),)
@@ -964,7 +1206,7 @@ def test_an_unknown_customs_or_transport_code_is_an_unknown_code(
 @pytest.mark.anyio
 async def test_an_unknown_customs_code_over_mcp() -> None:
     refused = await mcp_call_text(
-        server, "comtrade_get_counts", {**CH_EXPORTS_2023, "customs_code": "C16"}
+        server, "comtrade_count_data", {**CH_EXPORTS_2023, "customs_code": "C16"}
     )
     assert refused == f"error: UnknownCode: {REFUSED_C16}"
 
@@ -1132,7 +1374,7 @@ def test_replay_never_sends_the_key_from_the_shell(
 ) -> None:
     monkeypatch.setenv(API_KEY_ENV, "dummy-value-from-the-shell")
     route = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
-    tasks.get_counts(**CH_EXPORTS_2023)
+    tasks.count_data(**CH_EXPORTS_2023)
     sent = route.calls.last.request.headers["Ocp-Apim-Subscription-Key"]
     assert sent == "placeholder-for-fixture-replay"
 
@@ -1283,13 +1525,13 @@ def test_a_spent_daily_quota_refuses_the_next_call_before_sending(
         return_value=httpx.Response(403, json=QUOTA_SPENT)
     )
     with pytest.raises(RateLimitError) as answered:
-        tasks.get_counts(**CH_EXPORTS_2023)
+        tasks.count_data(**CH_EXPORTS_2023)
     assert answered.value.retry_after == 5 * 3600 + 12 * 60 + 34
     snapshot = policy.snapshot()
     assert snapshot is not None
     assert snapshot.remaining == 0
     with pytest.raises(RateLimitError) as refused:
-        tasks.get_counts(**CH_EXPORTS_2023)
+        tasks.count_data(**CH_EXPORTS_2023)
     assert "nothing was sent for GET /data/v1/get/C/A/HS" in str(refused.value)
     assert refused.value.retry_after is not None
     assert 5 * 3600 < refused.value.retry_after <= 5 * 3600 + 12 * 60 + 34
@@ -1313,14 +1555,14 @@ def test_a_spent_key_quota_holds_no_keyless_call_back(
         return_value=httpx.Response(403, json=QUOTA_SPENT)
     )
     with pytest.raises(RateLimitError):
-        tasks.get_counts(**CH_EXPORTS_2023)
+        tasks.count_data(**CH_EXPORTS_2023)
     releases = replay_fixture("get_comtrade_releases", "calendar")
     files = replay_fixture("reference", "b4")
     assert len(tasks.get_comtrade_releases().data) == 38
     assert len(tasks.list_commodities("B4").data) == 30
     assert releases.call_count == files.call_count == 1
     with pytest.raises(RateLimitError, match="nothing was sent for GET /data/v1/get/C/A/HS"):
-        tasks.get_counts(**CH_EXPORTS_2023)
+        tasks.count_data(**CH_EXPORTS_2023)
 
 
 @pytest.mark.rate_limited
@@ -1408,10 +1650,14 @@ async def test_mcp_tool_call_end_to_end(replay_fixture: ReplayFixture) -> None:
     assert payload["meta"]["endpoint"] == "data/v1/get"
     assert payload["meta"]["request"] == CH_EXPORTS_2023
     assert payload["meta"]["published_at"] is None
-    counted = await mcp_call(server, "comtrade_get_counts", CH_EXPORTS_2023)
+    counted = await mcp_call(server, "comtrade_count_data", CH_EXPORTS_2023)
     assert counted["data"] == 32
-    with pytest.raises(AssertionError, match=r"InvalidRequestError.*closest: 'X'"):
-        await mcp_call(server, "comtrade_get_counts", {**CH_EXPORTS_2023, "flow_code": "XX"})
+    with pytest.raises(AssertionError, match=r"UnknownCode.*Did you mean X \(Export\)\?"):
+        await mcp_call(server, "comtrade_count_data", {**CH_EXPORTS_2023, "flow_code": "XX"})
+    listed = await mcp_call(
+        server, "comtrade_count_data", {**CH_EXPORTS_2023, "reporter_code": [757]}
+    )
+    assert (listed["data"], listed["meta"]["request"]["reporter_code"]) == (32, [757])
 
 
 def test_http_route_end_to_end(replay_fixture: ReplayFixture) -> None:
@@ -1425,15 +1671,17 @@ def test_http_route_end_to_end(replay_fixture: ReplayFixture) -> None:
     app = FastAPI()
     app.include_router(router)
     with TestClient(app) as http:
-        answer = http.get("/comtrade/get_counts", params=CH_EXPORTS_2023)
+        answer = http.post("/comtrade/count_data", json=CH_EXPORTS_2023)
         assert answer.status_code == 200
         assert answer.json()["data"] == 32
-        rows = http.get("/comtrade/get_data", params=CH_EXPORTS_2023).json()["data"]
+        listed = {**CH_EXPORTS_2023, "reporter_code": [757]}
+        rows = http.post("/comtrade/get_data", json=listed).json()["data"]
         assert len(rows) == 32
         assert rows[0]["primary_value"] == 5205025990.437
         assert rows[0]["customs_code"] == "C03"
-        refused = http.get("/comtrade/get_counts", params={**CH_EXPORTS_2023, "flow_code": "XX"})
+        refused = http.post("/comtrade/count_data", json={**CH_EXPORTS_2023, "flow_code": "XX"})
         assert refused.status_code == 422
+        assert http.get("/comtrade/get_data", params=CH_EXPORTS_2023).status_code == 405
 
 
 # Reference lists: reporters and partners are packaged, commodities fetched keyless.
@@ -1613,8 +1861,8 @@ def test_the_cache_keeps_the_reference_files_and_the_keyed_reads_for_five_minute
     assert isinstance(config.cache, MemoryCache)
     assert dict(config.cache.lifetimes) == CACHE_LIFETIMES
     route = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
-    first = tasks.get_counts(**CH_EXPORTS_2023)
-    again = tasks.get_counts(**CH_EXPORTS_2023)
+    first = tasks.count_data(**CH_EXPORTS_2023)
+    again = tasks.count_data(**CH_EXPORTS_2023)
     assert route.call_count == 1, "the repeated count is answered from the cache"
     assert again.data == first.data == 32
     assert again.meta.retrieved_at == first.meta.retrieved_at
@@ -1652,9 +1900,12 @@ def test_a_classification_without_a_file_is_refused(respx_mock: respx.MockRouter
         tasks.list_commodities("BE")
     assert not respx_mock.calls
     message = str(info.value)
-    assert "cl_code 'BE' has no classification file at UN Comtrade" in message
-    assert ". Nothing was sent. Valid values: B4, B5, EB02, EB10, EB10S, EB, H0," in message
-    with pytest.raises(InvalidRequestError, match="closest: 'HS'"):
+    assert not isinstance(info.value, UnknownCode)
+    assert message.startswith(
+        "cl_code 'BE' has no classification file at UN Comtrade. Nothing was sent. The "
+        "classifications with a file: B4, B5, EB02, EB10, EB10S, EB, H0,"
+    )
+    with pytest.raises(UnknownCode, match="Did you mean HS"):
         tasks.list_commodities("hs")
 
 
@@ -1824,9 +2075,11 @@ def test_list_codes_refuses_a_list_the_package_lacks(respx_mock: respx.MockRoute
         tasks.list_codes("flow_code")
     assert not isinstance(info.value, UnknownCode)
     message = str(info.value)
-    assert message.startswith("param 'flow_code' is not a list the package carries; closest: ")
-    assert "closest: 'flowCode'" in message
-    assert f". Nothing was sent. Valid values: {', '.join(PACKAGED_LISTS)}." in message
+    assert message.startswith(
+        "param 'flow_code' is not a list the package carries. Nothing was sent. Did you mean "
+        "flowCode"
+    )
+    assert message.endswith(f"? It carries: {', '.join(PACKAGED_LISTS)}.")
     assert not respx_mock.calls
 
 
@@ -1842,25 +2095,25 @@ def test_list_classifications_returns_the_packaged_index(respx_mock: respx.MockR
     assert {"flow", "reporter", "partner", "qtyunit", "mos", "customs", "mot"} <= set(categories)
     classifications = [c.removeprefix("cmd:") for c in categories if c.startswith("cmd:")]
     assert classifications == list(classification_files())
-    [hs] = tasks.list_classifications("cmd:HS").data
+    [hs] = tasks.list_classifications(category="cmd:HS").data
     assert (hs.variable, hs.fileuri) == (
         "Product [HS]",
         "https://comtradeapi.un.org/files/v1/app/reference/HS.json",
     )
-    flow = tasks.list_classifications("flow")
+    flow = tasks.list_classifications(category="flow")
     assert [row.fileuri.rsplit("/", 1)[-1] for row in flow.data] == ["tradeRegimes.json"]
     assert flow.meta.request == {"category": "flow"}
 
 
 def test_list_classifications_refuses_an_unknown_category(respx_mock: respx.MockRouter) -> None:
-    with pytest.raises(InvalidRequestError) as info:
-        tasks.list_classifications("cmd:hs")
+    with pytest.raises(UnknownCode) as info:
+        tasks.list_classifications(category="cmd:hs")
     message = str(info.value)
     assert message.startswith(
-        "category 'cmd:hs' is not a category of UN Comtrade's ListofReferences.json; "
-        "closest: 'cmd:HS'. Nothing was sent. Valid values: dataitem, freq, flow,"
+        "'cmd:hs' is not a category in the packaged ListofReferences list (fetched "
+        f"{_day('ListofReferences')}). Nothing was sent. Did you mean cmd:HS"
     )
-    assert "cmd:SS." in message
+    assert "list_classifications lists every category (over MCP, the tool" in message
     assert not respx_mock.calls
 
 
@@ -1962,7 +2215,8 @@ def test_get_data_availability_for_every_reporter(replay_fixture: ReplayFixture)
 
 def test_a_period_nobody_reported_has_no_datasets(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get_da", "nobody_1900")
-    assert tasks.get_data_availability("C", "A", "HS", period="1900").data == []
+    nobody = tasks.get_data_availability("C", "A", "HS", period="1900")
+    assert (nobody.data, nobody.meta.names) == ([], {"freq_code": {"A": "annual"}})
 
 
 def test_get_data_availability_by_publication_date(
@@ -1986,29 +2240,34 @@ def test_get_data_availability_takes_more_than_12_periods(
     replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
     replay_fixture("get_da", "ch_13_periods")
-    periods = ",".join(str(year) for year in range(2010, 2023))
+    periods = list(range(2010, 2023))
     result = tasks.get_data_availability("C", "A", "HS", reporter_code="757", period=periods)
     assert sorted(row.period for row in result.data) == list(range(2010, 2023))
     assert len(respx_mock.calls) == 1
 
 
 def test_dataset_arguments_are_checked_before_the_call(respx_mock: respx.MockRouter) -> None:
-    with pytest.raises(InvalidRequestError) as info:
-        tasks.get_data_availability(
-            "C", "A", "EBSDMX", reporter_code="757", period="2023-01",
-            published_date_from="2024/01/01", published_date_to="2024-02-30",
-        )  # fmt: skip
-    assert not isinstance(info.value, UnknownCode)
-    message = str(info.value)
-    for fragment in [
-        "cl_code 'EBSDMX' is not a UN Comtrade clCode value",
+    """Each check in the order of the arguments, and the first problem is the refusal."""
+    wrong = {
+        "cl_code": "EBSDMX", "period": "2023-01", "published_date_from": "2024/01/01",
+        "published_date_to": "2024-02-30",
+    }  # fmt: skip
+    first = [
+        "'EBSDMX' is not a cl_code in the packaged clCode list",
         "period '2023-01' is neither a year",
         "published_date_from '2024/01/01' is not a day as YYYY-MM-DD",
         "published_date_to '2024-02-30' is not a day as YYYY-MM-DD",
-    ]:
-        assert fragment in message
-    assert message.endswith(". Nothing was sent."), "one first sentence, then what was sent"
-    assert message.count("Nothing was sent.") == 1
+    ]
+    arguments: dict[str, Any] = {"cl_code": "HS", "reporter_code": "757"}
+    for position in range(len(wrong)):
+        given = {**arguments, **dict(list(wrong.items())[position:])}
+        with pytest.raises(InvalidRequestError) as info:
+            tasks.get_data_availability("C", "A", **given)
+        message = str(info.value)
+        assert message.startswith(first[position]), message
+        assert message.count("Nothing was sent.") == 1
+        for later in first[position + 1 :]:
+            assert later not in message
     with pytest.raises(UnknownCode) as unknown:
         tasks.get_data_availability("C", "A", "HS", reporter_code="756", period="2023")
     assert str(unknown.value) == REFUSED_756
@@ -2113,25 +2372,76 @@ def _live_update_row(fixtures_dir: Path) -> dict[str, Any]:
     return row
 
 
-def test_a_live_update_time_that_does_not_parse_is_none(fixtures_dir: Path) -> None:
-    """Only Released/Success rows were recorded; other shapes must not fail the whole call.
+@pytest.mark.parametrize(
+    ("field", "printed"),
+    [
+        ("startedAt", ""),
+        ("completedAt", "soon"),
+        ("lastUpdated", "Donnerstag, 22. Oktober 2026"),
+        ("lastUpdated", "Friday, October 22, 2026"),
+        ("queuedAt", "22.10.2026 23:18:33"),
+        ("queuedAt", "13/22/2026 01:00:00 PM"),
+    ],
+)
+def test_a_live_update_time_that_no_reading_keeps_fails_the_read(
+    fixtures_dir: Path, field: str, printed: str
+) -> None:
+    """Each of the four times is read strictly: none turns into ``None`` where it does not parse.
 
-    The recorded row with its times changed is an input of the test, not an answer from UN
+    https://github.com/xippios/sdk-usda-esr/issues/60, part 3: a printed time is read into
+    the type that keeps all it sends, and conventions §14, sentence 1, returns each value as
+    upstream states it. The recorded row with one time changed is an input of the test, not
+    an answer from UN Comtrade: no route serves it, and the model reads it.
+    """
+    row = _live_update_row(fixtures_dir)
+    with pytest.raises(PydanticValidationError) as info:
+        LiveUpdateRecord.model_validate({**row, field: printed})
+    assert info.value.errors()[0]["loc"] == (field,)
+
+
+def test_a_live_update_time_upstream_sent_null_stays_none(fixtures_dir: Path) -> None:
+    """A time that upstream sends as null is no time, and reads as ``None``.
+
+    The recorded row with its times set to null is an input of the test, not an answer from
+    UN Comtrade: no route serves it, and the model reads it.
+    """
+    row = _live_update_row(fixtures_dir)
+    nulls = dict.fromkeys(("startedAt", "completedAt", "lastUpdated", "queuedAt"))
+    record = LiveUpdateRecord.model_validate({**row, **nulls})
+    times = (record.started_at, record.completed_at, record.last_updated, record.queued_at)
+    assert times == (None, None, None, None)
+    assert (record.reporter_code, record.period, record.size) == ("234", 202604, 21_285_480)
+
+
+@pytest.mark.anyio
+async def test_a_live_update_answer_with_an_unread_time_names_the_operation(
+    fixtures_dir: Path, respx_mock: respx.MockRouter
+) -> None:
+    """Core's parse error names ``data/v1/getLiveUpdate`` and carries the body.
+
+    NOT RECORDED: the recorded ``get_live_update/latest.json`` with the first row's
+    ``queuedAt`` in a German form, changed in memory, a form upstream was not seen to send
+    (conventions §10, kind 4).
+    """
+    recorded = response_from_fixture(load_fixture(fixtures_dir / "get_live_update" / "latest.json"))
+    body = json.loads(recorded.content)
+    body["data"][0]["queuedAt"] = "22.10.2026 23:18:33"
+    respx_mock.get(f"{BASE_URL}/data/v1/getLiveUpdate").mock(
+        return_value=httpx.Response(200, json=body)
+    )
+    with pytest.raises(ValidationError) as info:
+        await tasks.get_live_update_async()
+    assert "data/v1/getLiveUpdate" in str(info.value)
+    assert info.value.raw is not None
+
+
+def test_the_live_update_times_read_their_recorded_forms(fixtures_dir: Path) -> None:
+    """The twelve-hour clock of ``queuedAt`` around midnight and noon.
+
+    The recorded row with ``queuedAt`` changed is an input of the test, not an answer from UN
     Comtrade: no route serves it, and the model reads it.
     """
     row = _live_update_row(fixtures_dir)
-    odd = {
-        **row, "startedAt": "", "completedAt": "soon",
-        "lastUpdated": "Donnerstag, 22. Oktober 2026", "queuedAt": "22.10.2026 23:18:33",
-    }  # fmt: skip
-    record = LiveUpdateRecord.model_validate(odd)
-    assert (record.started_at, record.completed_at) == (None, None)
-    assert (record.last_updated, record.queued_at) == (None, None)
-    assert (record.reporter_code, record.period, record.size) == ("234", 202604, 21_285_480)
-    wrong_weekday = LiveUpdateRecord.model_validate(
-        {**row, "lastUpdated": "Friday, October 22, 2026", "queuedAt": "13/22/2026 01:00:00 PM"}
-    )
-    assert (wrong_weekday.last_updated, wrong_weekday.queued_at) == (None, None)
     midnight = LiveUpdateRecord.model_validate({**row, "queuedAt": "10/22/2026 12:05:00 AM"})
     noon = LiveUpdateRecord.model_validate({**row, "queuedAt": "10/22/2026 12:05:00 PM"})
     assert midnight.queued_at == datetime(2026, 10, 22, 0, 5)
@@ -2204,11 +2514,11 @@ def test_dataset_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
     with TestClient(app) as http:
         query = {"type_code": "C", "freq_code": "A", "cl_code": "HS", "reporter_code": "757",
                  "period": "2023"}  # fmt: skip
-        answer = http.get("/comtrade/get_data_availability", params=query)
+        answer = http.post("/comtrade/get_data_availability", json=query)
         assert answer.status_code == 200
         assert answer.json()["data"][0]["total_records"] == 2530737
         assert len(http.get("/comtrade/get_live_update").json()["data"]) == 50
-        refused = http.get("/comtrade/get_metadata", params={**query, "period": "2023-01"})
+        refused = http.post("/comtrade/get_metadata", json={**query, "period": "2023-01"})
         assert refused.status_code == 422
 
 
@@ -2393,6 +2703,8 @@ def test_trade_balance_nothing_matches_is_an_empty_list(replay_fixture: ReplayFi
     route = replay_fixture("get_trade_balance", "ch_world_1900_empty", match_params=BY_QUERY)
     result = tasks.get_trade_balance(**{**CH_WORLD_2023, "period": "1900"})
     assert (result.data, result.meta.total) == ([], 0)
+    assert result.meta.names["reporter_code"] == {"757": "Switzerland"}
+    assert result.meta.names["partner_code"] == {"0": "World"}
     assert sent_query(route) == _recorded("get_trade_balance", "ch_world_1900_empty")
 
 
@@ -2403,14 +2715,14 @@ def _tools_refused(respx_mock: respx.MockRouter, call: Callable[[], object]) -> 
     return str(info.value)
 
 
-THIRTEEN = ",".join(str(year) for year in range(2010, 2023))
+THIRTEEN = [str(year) for year in range(2010, 2023)]
 
 
 def test_trade_balance_takes_12_periods(respx_mock: respx.MockRouter) -> None:
     message = _tools_refused(
         respx_mock, lambda: tasks.get_trade_balance(**{**CH_WORLD_2023, "period": THIRTEEN})
     )
-    assert "period has 13 values; UN Comtrade takes at most 12 per call" in message
+    assert message.startswith("period lists 13 periods; UN Comtrade takes at most 12 per call")
 
 
 @pytest.mark.anyio
@@ -2419,7 +2731,7 @@ async def test_upstream_refuses_13_periods_on_trade_balance(replay_fixture: Repl
     replay_fixture("get_trade_balance", "ch_world_13_periods", match_params=["period"])
     with pytest.raises(InvalidRequestError, match="Maximum number of periods is 12"):
         await api.get_trade_balance(
-            "C", "A", "HS", reporter_code="757", period=THIRTEEN, partner_code="0",
+            "C", "A", "HS", reporter_code="757", period=",".join(THIRTEEN), partner_code="0",
             cmd_code="TOTAL", breakdown_mode="classic",
         )  # fmt: skip
 
@@ -2456,18 +2768,18 @@ def test_tools_queries_name_an_area_and_a_product(respx_mock: respx.MockRouter) 
 @pytest.mark.parametrize(
     ("argument", "value", "list_name"),
     [
-        ("customs_code", "C00,C16", "customsCode"),
-        ("mot_code", "0,9", "motCode"),
-        ("partner2_code", "0,9999", "partnerAreas"),
+        ("customs_code", ["C00", "C16"], "customsCode"),
+        ("mot_code", ["0", "9"], "motCode"),
+        ("partner2_code", ["0", "9999"], "partnerAreas"),
     ],
 )
 def test_trade_balance_refuses_an_unknown_dimension_code(
-    argument: str, value: str, list_name: str
+    argument: str, value: list[str], list_name: str
 ) -> None:
     """``validate_get``'s ``UnknownCode`` for the breakdowns getTradeBalance takes too."""
     with pytest.raises(UnknownCode) as info:
         validate_trade_balance(**{**CH_WORLD_2023, argument: value})
-    last = value.split(",")[-1]
+    last = value[-1]
     unknown = int(last) if list_name == "partnerAreas" else last
     assert (info.value.param, info.value.value, info.value.list_name) == (
         argument,
@@ -2482,7 +2794,7 @@ def test_tools_refuse_an_unknown_area_before_the_call(respx_mock: respx.MockRout
         tasks.get_trade_balance(**{**CH_WORLD_2023, "reporter_code": "756"})
     assert str(balance.value) == REFUSED_756
     with pytest.raises(UnknownCode) as bilateral:
-        tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "partner_code": "842,9999"})
+        tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "partner_code": [842, 9999]})
     assert (bilateral.value.param, bilateral.value.value, bilateral.value.list_name) == (
         "partner_code",
         9999,
@@ -2495,7 +2807,7 @@ def test_tools_refuse_an_unknown_area_before_the_call(respx_mock: respx.MockRout
 def test_tools_check_the_classification_against_the_packaged_list(cl_code: str) -> None:
     """In the Tools spec's enum, not in the package's list: refused before the call."""
     for validate in (validate_trade_balance, validate_bilateral_data):
-        with pytest.raises(InvalidRequestError, match=f"cl_code '{cl_code}' is not a UN Comtrade"):
+        with pytest.raises(UnknownCode, match=f"'{cl_code}' is not a cl_code in the packaged"):
             validate(**{**CH_WORLD_2023, "cl_code": cl_code})
 
 
@@ -2575,7 +2887,7 @@ def test_a_partner_with_a_data_gap_has_a_mirror_of_zero(replay_fixture: ReplayFi
     counts 1, the USA alone none.
     """
     replay_fixture("get_bilateral_data", "ch_us_kp_af_exports_2023", match_params=BY_QUERY)
-    result = tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "partner_code": "842,408,4"})
+    result = tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "partner_code": [842, 408, 4]})
     assert result.data.note is not None
     assert "we've identified a data gap for 2 partner(s)" in result.data.note
     assert "Afghanistan" not in result.data.note, "no partner named"
@@ -2601,6 +2913,8 @@ def test_a_pair_without_data_has_no_row(replay_fixture: ReplayFixture, fixtures_
         **{**CH_US_EXPORTS_2023, "partner_code": "408"}, include_desc=True
     )
     assert (result.data.data, result.meta.total) == ([], 0)
+    assert result.meta.names["partner_code"] == {"408": "Dem. People's Rep. of Korea"}
+    assert result.meta.names["flow_code"] == {"X": "Export"}
     assert result.data.note is not None
     assert "we've identified a data gap for 1 partner(s)" in result.data.note
     assert sent_query(route) == _recorded("get_bilateral_data", "ch_kp_exports_2023_include_desc")
@@ -2613,7 +2927,7 @@ def test_bilateral_data_takes_more_than_12_periods(replay_fixture: ReplayFixture
     )
     result = tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "period": THIRTEEN})
     assert route.call_count == 1
-    assert [row.period for row in result.data.data] == THIRTEEN.split(",")
+    assert [row.period for row in result.data.data] == THIRTEEN
     assert result.meta.total == 13
     assert {row.classification_code for row in result.data.data} == {"H3", "H4", "H5", "H6"}
     assert result.data.note is not None
@@ -2651,12 +2965,19 @@ def test_bilateral_data_takes_one_flow(respx_mock: respx.MockRouter) -> None:
         lambda: tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "flow_code": "M,X"}),
     )
     assert "flow_code 'M,X' must be one flow, 'M' or 'X'" in both
+    listed = _tools_refused(
+        respx_mock,
+        lambda: tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "flow_code": ["M", "X"]}),
+    )
+    assert listed.startswith("flow_code ['M', 'X'] must be one flow, 'M' or 'X'")
     re_exports = _tools_refused(
         respx_mock,
         lambda: tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "flow_code": "RX"}),
     )
-    assert "flow_code 'RX' is not a flowCode getBilateralData takes" in re_exports
-    assert "valid values: M, X" in re_exports
+    assert re_exports == (
+        "flow_code 'RX' is not a flowCode getBilateralData takes: it takes 'M' or 'X'. "
+        "Nothing was sent."
+    )
 
 
 @pytest.mark.anyio
@@ -2763,9 +3084,9 @@ def test_tools_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
     app = FastAPI()
     app.include_router(router)
     with TestClient(app) as http:
-        balance = http.get(
+        balance = http.post(
             "/comtrade/get_trade_balance",
-            params={**CH_WORLD_2023, "breakdown_mode": "classic", "include_desc": "true"},
+            json={**CH_WORLD_2023, "breakdown_mode": "classic", "include_desc": True},
         )
         assert balance.status_code == 200
         [total] = balance.json()["data"]
@@ -2773,15 +3094,15 @@ def test_tools_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
             365372487609.004,
             "Switzerland",
         )
-        bilateral = http.get("/comtrade/get_bilateral_data", params=CH_US_EXPORTS_2023)
+        bilateral = http.post("/comtrade/get_bilateral_data", json=CH_US_EXPORTS_2023)
         assert bilateral.status_code == 200
         body = bilateral.json()
         assert body["data"]["data"][0]["primary_value_disc"] == -0.15969277126959047
         assert body["data"]["note"].startswith("EXPERIMENTAL: We have good news!")
         assert body["data"]["timestamp_requested"] == "2026-10-28T16:15:58.965000Z"
         assert body["meta"]["total"] == 1
-        refused = http.get(
-            "/comtrade/get_bilateral_data", params={**CH_US_EXPORTS_2023, "flow_code": "M,X"}
+        refused = http.post(
+            "/comtrade/get_bilateral_data", json={**CH_US_EXPORTS_2023, "flow_code": "M,X"}
         )
         assert refused.status_code == 422
     assert balance_route.call_count == bilateral_route.call_count == 1
@@ -2941,9 +3262,10 @@ def test_monthly_world_share(replay_fixture: ReplayFixture, fixtures_dir: Path) 
 
 def test_a_period_nobody_reported_has_no_world_share(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get_world_share", "ch_1900_empty", match_params=BY_WORLD_SHARE)
-    result = tasks.get_world_share("C", "A", period="1900", reporter_code="757")
+    result = tasks.get_world_share("C", "A", reporter_code="757", period="1900")
     assert result.data == []
     assert result.meta.total == 0
+    assert result.meta.names["reporter_code"] == {"757": "Switzerland"}
 
 
 @pytest.mark.anyio
@@ -2993,22 +3315,23 @@ def test_classify_reads_both_spellings_of_the_refusals_detail(fixtures_dir: Path
             "e.g. '202305'), nor 'recent' alone",
         ),
         ({"period": "Recent"}, "period 'Recent' is neither a year"),
-        ({"period": "recent,2023"}, "period 'recent' is neither a year"),
+        ({"period": ["recent", "2023"]}, "period 'recent' is neither a year"),
         ({"period": "202313"}, "period '202313' is neither a year"),
-        ({"period": "2022, 2023"}, "must be values separated by commas, without spaces"),
-        ({"type_code": "X"}, "type_code 'X' is not a UN Comtrade typeCode value"),
-        ({"freq_code": "Q"}, "freq_code 'Q' is not a UN Comtrade freqCode value"),
-        ({"reporter_code": "CHE"}, "reporter_code 'CHE' is not a numeric UN Comtrade area code"),
+        ({"period": "2022, 2023"}, 'period takes several codes as a list, ["2022", "2023"], not'),
+        ({"period": []}, "period lists no code: give one code or a list of codes"),
+        ({"type_code": "X"}, "'X' is not a type_code in the packaged typeCode list"),
+        ({"freq_code": "Q"}, "'Q' is not a freq_code in the packaged freqCode list"),
+        ({"reporter_code": "CHE"}, "'CHE' is not an integer code: reporter_code takes"),
     ],
 )
 def test_world_share_arguments_are_checked_before_the_call(
-    respx_mock: respx.MockRouter, arguments: dict[str, str], fragment: str
+    respx_mock: respx.MockRouter, arguments: dict[str, Any], fragment: str
 ) -> None:
     query = {"type_code": "C", "freq_code": "A", **arguments}
     with pytest.raises(InvalidRequestError) as info:
         tasks.get_world_share(**query)
-    assert not isinstance(info.value, UnknownCode)
-    assert fragment in str(info.value)
+    assert str(info.value).startswith(fragment)
+    assert str(info.value).count("Nothing was sent.") == 1
     assert not respx_mock.calls
 
 
@@ -3016,16 +3339,16 @@ def test_an_unknown_reporter_is_refused_before_the_world_share_call(
     respx_mock: respx.MockRouter,
 ) -> None:
     with pytest.raises(UnknownCode) as info:
-        tasks.get_world_share("C", "A", period="2023", reporter_code="757,756")
+        tasks.get_world_share("C", "A", reporter_code=[757, 756], period="2023")
     assert str(info.value) == REFUSED_756
     assert not respx_mock.calls
 
 
 def test_world_share_takes_any_number_of_periods_and_recent_alone() -> None:
-    years = ",".join(str(year) for year in range(2000, 2024))
+    years = list(range(2000, 2024))
     assert validate_world_share("C", "A", period=years)["period"] == years
-    assert validate_world_share("C", "A", period=RECENT, reporter_code="757,842") == {
-        "type_code": "C", "freq_code": "A", "period": "recent", "reporter_code": "757,842",
+    assert validate_world_share("C", "A", reporter_code=["757", "842"], period=RECENT) == {
+        "type_code": "C", "freq_code": "A", "reporter_code": ["757", "842"], "period": "recent",
     }  # fmt: skip
     assert validate_world_share("S", "M") == {"type_code": "S", "freq_code": "M"}
 
@@ -3091,11 +3414,11 @@ def test_public_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
         releases = http.get("/comtrade/get_comtrade_releases")
         assert releases.status_code == 200
         assert releases.json()["meta"]["total"] == 38
-        share = http.get("/comtrade/get_world_share", params=CH_WORLD_SHARE_2023)
+        share = http.post("/comtrade/get_world_share", json=CH_WORLD_SHARE_2023)
         assert share.status_code == 200
         assert share.json()["data"][0]["world_share"] == 0.01651852126450239
         assert share.json()["data"][0]["updated"] == "2026-07-28T18:04:08.320000"
-        refused = http.get(
-            "/comtrade/get_world_share", params={**CH_WORLD_SHARE_2023, "period": "2023-01"}
+        refused = http.post(
+            "/comtrade/get_world_share", json={**CH_WORLD_SHARE_2023, "period": "2023-01"}
         )
         assert refused.status_code == 422
