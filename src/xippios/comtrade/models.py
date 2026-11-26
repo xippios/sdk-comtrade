@@ -1019,7 +1019,7 @@ class LiveUpdateRecord(UpstreamModel):
     Every field of the schema under its upstream name in snake_case, typed from the
     recorded answer (``tests/fixtures/get_live_update/latest.json``); there is no
     ``publishedDate``. That answer holds only ``"Released"``/``"Success"`` rows, so the
-    shapes of the other release states are unseen. The four times come in four formats,
+    shapes of the other release states are unseen. The four times come in three formats,
     read without the process locale and strictly: a time that none of them reads fails the
     call with core's ``ValidationError``, which names the operation, so no time that
     upstream sent turns into ``None``:

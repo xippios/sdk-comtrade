@@ -85,6 +85,8 @@ result = get_data("C", "A", "HS", **query)
 total = next(r for r in result.data if (r.customs_code, r.mot_code) == ("C00", 0))
 total.primary_value  # Decimal('419922543423.509'); JSON: a number
 result.meta.endpoint, result.meta.request  # 'data/v1/get', the arguments above
+# Several codes are a list, sent as reporterCode=757,842: one count for both reporters.
+count_data("C", "A", "HS", **{**query, "reporter_code": [757, 842]})
 ```
 
 Parameters are upstream's (`typeCode`, `reporterCode`, ...) in snake_case and take
