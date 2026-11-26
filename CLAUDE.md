@@ -2,9 +2,11 @@
 
 `xippios-comtrade` wraps UN Comtrade as a typed Python client, an MCP server
 and FastAPI routes, built on `xippios-core`. This file holds what an agent needs to work on
-the package: what it wraps, its layout, its commands and its code rules. The documents it
+the package: what it wraps, its layout, its commands and what only it knows. The documents it
 follows, sdk-core's conventions among them, are listed under
-[`## Documents` in the README](README.md#documents); read them before you change a file.
+[`## Documents` in the README](README.md#documents); read them before you change a file. The
+rules that no change breaks stand in `.claude/rules/never.md`, which Claude Code loads with
+this file.
 
 ## What this package wraps
 
@@ -49,37 +51,37 @@ and how `_client.py` treats them:
   day-long `window`. The 403 has not been observed; never provoke it.
 - **100,000 records per call.** Above it upstream answers HTTP 200 with the first
   100,000 rows, `count` 100000 and an empty `error`: it truncates silently (observed
-  2026-10-23 for a query counted at 5,006,385). `get_data` counts first and raises
-  `QueryTooLarge` before any data call.
+  2026-10-23 for a query counted at 5,006,385). `get_data` counts first by core's
+  `fetch_counted`, raises core's `QueryTooLarge` before any data call and sets the count as
+  `meta.total`.
 - **12 periods per call.** A 13th gets HTTP 400 "Maximum number of periods is 12";
   `params.validate_get` refuses it before the call. `tools/v1/getTradeBalance` answers the
   same; `data/v1/getDa` and `tools/v1/getBilateralData` take more.
 - **Slow counts.** A broad count can take over a minute, so the read timeout is 180 s
-  (`TIMEOUTS`), and a timed-out attempt that core retries counts against the quota each
+  (`READ_TIMEOUT`), and a timed-out attempt that core retries counts against the quota each
   time; so does each retry of a 5xx.
 - **Keys may be periodically regenerated** on Basic accounts. A sudden 401 ("Access
   denied due to invalid subscription key", `AuthError`) means re-copying the key from
   https://comtradeplus.un.org/MyComtrade/APIPortal into the environment.
 
-The reference files under `files/v1/app/reference/` are public: the one client fetches
-them with `auth=None`, without the key, and its cache, narrowed to those paths by
-`cache_filter`, keeps each for the life of the process (core's plugin clears every
-`MemoryCache` around each offline test); `list_commodities`' `meta.retrieved_at` is the
-time its file was stored. So `scripts/refresh_reference.py` and `list_commodities` need
-no key and cost no quota; a reference fetch takes the 1.5 s pace alone, since `policy`
-neither holds back nor reads a request sent with `auth=None`.
+The reference files under `files/v1/app/reference/` are public: the one client fetches them
+with `auth=None`, without the key, and its cache keeps each for the life of the process, by
+the prefixes of `CACHE_LIFETIMES`, which keep the keyed reads under `data/v1` and `tools/v1`
+for 300 s (core's plugin clears every `MemoryCache` around each offline test); a task's
+`meta.retrieved_at` is the time its answer was stored. So `scripts/refresh_reference.py` and
+`list_commodities` need no key and cost no quota; a reference fetch takes the 1.5 s pace
+alone, since `policy` neither holds back nor reads a request sent with `auth=None`.
 
 The public operations under `public/v1`, `getComtradeReleases` and `getWorldShare`
-(`docs/upstream/apidocs/public.json`, whose `security` is `[{}, apiKeyHeader,
-apiKeyQuery]`, a key optional, and whose `info` says "No subscription key required"), go
-through the same client with `auth=None` too: `get_comtrade_releases` and
-`get_world_share` send no key and spend no daily quota, and they take `RATE_LIMIT`'s pace
-(the Public tier allows 1 call per second) alone: a spent key quota does not hold them
-back, nor the reference files. `cache_filter` keeps their answers out of the
-cache, so a release calendar always comes from upstream. Their operationIds are opaque hex
-ids, so the wrappers are named after the paths (conventions §2). What the keyless
-recordings of 2026-10-28 established (`tests/fixtures/get_comtrade_releases/`,
-`get_world_share/`):
+(`docs/upstream/apidocs/public.json`, whose `security` is `[{}, apiKeyHeader, apiKeyQuery]`,
+a key optional, and whose `info` says "No subscription key required"), go through the same
+client with `auth=None` too: `get_comtrade_releases` and `get_world_share` send no key and
+spend no daily quota, and they take `RATE_LIMIT`'s pace (the Public tier allows 1 call per
+second) alone: a spent key quota does not hold them back, nor the reference files. No prefix
+of `CACHE_LIFETIMES` matches `public/v1`, so their answers stay out of the cache and a
+release calendar always comes from upstream. Their operationIds are opaque hex ids, so the
+wrappers are named after the paths (conventions §2). What the keyless recordings of
+2026-10-28 established (`tests/fixtures/get_comtrade_releases/`, `get_world_share/`):
 
 - `getComtradeReleases`: 38 rows, `count` 38, 4.5 KB, released from 2026-10-22 to
   2026-10-28, newest first when recorded (the spec states no order), every `dateRelease`
@@ -111,9 +113,10 @@ refuse it before the call with core's `UnknownCode` (conventions §5), naming th
 `Reporters` list, its fetch date and the closest area, 757, because they check
 `reporter_code` against `reference/Reporters.json` and partner codes against
 `reference/partnerAreas.json`, the package's copies of upstream's `Reporters.json` and
-`partnerAreas.json`; an ISO alpha-3 code the slices cannot resolve is refused the same
-way, and so is a `customs_code` or `mot_code` the packaged `customsCode` or `motCode`
-list lacks, where upstream's answer is not recorded. The other lists (`clCode` and
+`partnerAreas.json`; so is a `customs_code` or `mot_code` the packaged `customsCode` or
+`motCode` list lacks, where upstream's answer is not recorded. Each is checked by core's
+`check` of its list's declaration in `codes.py`, once for the codes given, and each
+refusal says that nothing was sent. The other lists (`clCode` and
 `flowCode`, which upstream refuses with HTTP 400, and the spec's `typeCode`, `freqCode`,
 `breakdownMode`, `aggregateBy`) keep one `InvalidRequestError` naming every problem
 found; the first unknown code ends the checks, so other problems show once it is fixed.
@@ -139,7 +142,9 @@ unknown `customs_code` or `mot_code` names the closest codes with their text (co
 `closest` by code and by text, else the most similar code).
 
 `MCP_CAPS` in `tasks.py` gives four tasks result caps of their own (sdk-core ADR-0038),
-each 400 rows or 100 KB: three list tasks and `get_world_share`. `list_reporters` (256
+each 400 rows or 100 KB: three list tasks and `get_world_share`; `get_data`,
+`get_data_availability` and `get_bilateral_data` take a paged cap, since the cache keeps
+their answers for 300 s and a continuation with `offset` sends nothing. `list_reporters` (256
 rows, 69 KB) and `list_partners` (310, 83 KB) reach an agent whole, past Switzerland and the
 USA, where the default cap of 200 rows cut them in upstream's alphabetical order. A
 classification does not fit (8,262 HS codes); the cap's note tells the agent to search.
@@ -155,8 +160,8 @@ answered HTTP 500 to all five tries on 2026-10-23, two reporters, two product co
 count over all reporters outlasted the former 60 s read timeout (the repeat answered in
 27 s). Record with a one-attempt copy of the client, spaced at least 1.5 s apart, and
 never keep a body of many megabytes: narrow the query or use `maxRecords`. Replay tests
-always send a placeholder key, whatever the shell holds: core's plugin pins it, for the
-variable `xippios_placeholder_key_envs` names in `pyproject.toml`.
+always send a placeholder key, whatever the shell holds: core's plugin pins it, for each
+secret variable of `_client.ENV_VARS`.
 
 What the recorded answers established (2026-10-23). The fixtures are named in
 `reference/clCode.json` and `flowCode.json`, in the docstrings of the `getDa`,
@@ -182,237 +187,82 @@ What the recorded answers established (2026-10-23). The fixtures are named in
 
 The two Tools operations (`docs/upstream/apidocs/comtradeTools.json`, both marked
 "EXPERIMENTAL - USE SPARINGLY") are `get_trade_balance` and `get_bilateral_data`, recorded
-on 2026-10-28 under `tests/fixtures/get_trade_balance/` and `get_bilateral_data/`, Switzerland
-and `TOTAL`. Both answered the package's key; the spec's 403 for a free-tier key not on
-getTradeBalance's allow-list ("User not allowed", `AuthError` by core's mapping) did not
-occur, and no other 403 was seen. `countOnly`, not in the spec, counts nothing:
+on 2026-10-28 under `tests/fixtures/get_trade_balance/` and `get_bilateral_data/`,
+Switzerland and `TOTAL`. Both answered the package's key; the spec's 403 for a free-tier key
+not on getTradeBalance's allow-list ("User not allowed", `AuthError` by core's mapping) did
+not occur, and no other 403 was seen. `countOnly`, not in the spec, counts nothing:
 getTradeBalance answers `count` 0 and a placeholder for a query of 48 rows, getBilateralData
 ignores it; so the tasks count nothing first and require `reporter_code` or `partner_code`,
 and `cmd_code`. getTradeBalance without `breakdownMode` answers every breakdown (48 rows
 with the World in 2023), `classic` the total row; it refuses a 13th period. getBilateralData
 takes 13 periods and one `flowCode` (only `X` was recorded, `M` is the spec's other value;
 `M,X`: HTTP 400, its detail's message spelt `ErrorMessage`, which `classify` reads), fills
-no description with `includeDesc`, and answers in classic mode (`customsCode` C00,
-`motCode` 0). Its mirror columns are, per the Help Center, the partners' reported imports
-for a reporter's exports, and "depend on the availability of other reporters rather than
-no-trade": for Switzerland's 2023 exports Afghanistan's mirror is 0, and it is inferred,
-not stated, to be one of the two partners the note counts with a data gap (DPRK alone: 1,
-the USA alone: none). `primaryValueDisc` equals (mirror − value) / value in every recorded
-row and `mirror2*` is empty or 0; upstream states neither meaning. Its envelope's
+no description with `includeDesc`, and answers in classic mode (`customsCode` C00, `motCode`
+0). Its mirror columns are, per the Help Center, the partners' reported imports for a
+reporter's exports, and "depend on the availability of other reporters rather than
+no-trade": for Switzerland's 2023 exports Afghanistan's mirror is 0, and it is inferred, not
+stated, to be one of the two partners the note counts with a data gap (DPRK alone: 1, the
+USA alone: none). `primaryValueDisc` equals (mirror − value) / value in every recorded row
+and `mirror2*` is empty or 0; upstream states neither meaning. Its envelope's
 `timestampRequested` is UTC per the spec and its `note` counts the partners with a data gap
 and their share of world trade, naming none, in wording that varies; the task returns both
-with the rows as one `BilateralData` (`note`, `timestamp_requested`, `data`), not a list,
-so the note that qualifies the mirror values reaches the agent, as
-https://github.com/xippios/sdk-comtrade/pull/11 decided; `get_mirror_flows`' `MirrorFlows`
-has the same shape. Over MCP, core's result cap cuts the rows of either model: an answer
-above 64 KB (about 40 rows of `BilateralData`, 60 of `MirrorFlows`) keeps its `note` and
-`timestamp_requested` whole beside the rows that fit, with the cap's note.
-
-The task-shaped slices (`get_bilateral_flows`, `get_commodity_series`,
-`get_world_trade`, `get_top_partners`) call `data/v1/get` through `api.get` with
-`params.SLICE_PINS`: `typeCode` C, `breakdownMode` classic, `partner2Code` 0, `motCode` 0,
-`customsCode` C00, `includeDesc` true, so one row is reporter × partner × product code ×
-period, projected into `TradeFlowRecord` with `UpstreamModel.project`. Each is bounded by
-its arguments (product codes × periods; periods; 256 reporters; 310 partners), so none
-counts first; `QueryTooLarge(bound, bound=True)` refuses a bound over 100,000 before the
-call, which is why the slices take single product codes, not `AG2` or `27??`. A
-commodity series is capped by calls instead: at most 120 periods
-(`params.MAX_SERIES_PERIODS`, ten calls of 12 against 500 a day).
-`params.validate_slice` resolves an area given as code or ISO alpha-3 (an expired code
-gives way to the one in use; among partners the code that is also a reporter code wins,
-842 not 840, as `partners_ch_total_2023.json` shows) and derives `freqCode` from the
-period format (`YYYY` A, `YYYYMM` M, a mix refused). `get_commodity_series` sends the
-periods 12 per call, in the order given, and sorts the joined rows by period.
-`get_top_partners` drops partner 0, World, because it is the total over all partners, not a
-partner, and ranks the rest by `primary_value` here; `get_world_trade` sorts the same way,
-so a capped MCP result (104 of 167 rows for HS 27 imports 2023) keeps the largest.
-
-The mirror slice, `get_mirror_flows`, calls `tools/v1/getBilateralData` through
-`api.get_bilateral_data` instead, with `params.validate_mirror_flows`: `validate_slice`'s
-resolution and checks, one flow of `TOOLS_FLOW_CODES`, at most 12 periods (the slices'
-bound, though upstream answered 13), `typeCode` C and no `includeDesc`, which filled no
-description. It is bounded by product codes × periods like `get_bilateral_flows`, keeps
-its rows in upstream's order (period order in both recordings: one call, nothing to
-join, unlike the series), projects them into `MirrorFlowRecord` (the identity fields,
-the reported figures and their mirrors, `primary_value_disc` and `mirror2_primary_value`
-as sent; the empty `mirror2*` quantities left out) and returns them with upstream's note
-as one `MirrorFlows`. Recorded on 2026-10-28 for Switzerland's
-chapter 27 exports to the USA (`ch_us_27_2022_2023_x.json`, `ch_us_27_202301_x.json`
-under `tests/fixtures/get_bilateral_data/`): chapter rows and monthly periods are
-answered, the note found no gap, and the reported values equal `data/v1/get`'s
-(`get/bilateral_ch_us_2022_2023.json`) while the USA's mirror is far smaller
-(`6444455.0` against `126191129.831` in 2023).
+with the rows as one `BilateralData` (`note`, `timestamp_requested`, `data`), not a list, so
+the note that qualifies the mirror values reaches the agent, as
+https://github.com/xippios/sdk-comtrade/pull/11 decided. Over MCP, core's paged result cap
+cuts its rows: an answer above 64 KB (about 40 rows) keeps its `note` and
+`timestamp_requested` whole beside the rows that fit, and the cap's note names the `offset`
+to continue with.
 
 ## Layout
 
-```
-src/xippios/comtrade/
-  __init__.py      public surface: __version__ and re-exported task functions
-  py.typed         PEP 561 marker; consumers' mypy --strict needs it
-  _version.py      __version__ from distribution metadata
-  _client.py       the one configured AsyncClient (base URL, key, rate limit, classify),
-                   ENV_VARS, its daily quota policy and the cache of the public reference
-                   files
-  errors.py        RECORD_LIMIT, MAX_PERIODS, QueryTooLarge and over_mcp, which names a
-                   task's MCP tool in a refusal
-  models.py        pydantic models mirroring upstream payloads (UpstreamModel); by the
-                   family's precedent also an enumeration written by hand, for a value set
-                   upstream documents and no packaged list renders
-  api/             endpoint wrappers, one module per upstream operation (conventions §2)
-  tasks.py         task functions; __all__ is what the adapters register, but BULK_TASKS,
-                   the Python-only ones; MCP_CAPS the result caps of three list tasks
-                   and get_world_share
-  mcp.py           xippios-comtrade-mcp entry point: build() the tool set, server
-  http.py          FastAPI router
-  params.py        packaged lists and tables: PACKAGED_LISTS, PACKAGED_TABLES,
-                   CL_CODES_FROM_SPEC, classification_files(); checks run before a
-                   call: validate_get(), validate_datasets(),
-                   validate_classification_file(), for the Tools validate_trade_balance()
-                   and validate_bilateral_data() (TOOLS_FLOW_CODES); for the slices
-                   validate_slice()
-                   (areas by code or ISO alpha-3, periods of one format), SLICE_PINS
-                   and MAX_SERIES_PERIODS; for the mirror slice validate_mirror_flows()
-  enums.py         StrEnums generated from the packaged lists; never edited by hand
-  reference/       packaged lists and tables, reference/<name>.json, read with
-                   PackagedList.load, plus README with provenance
-scripts/
-  refresh_reference.py   fetches the packaged lists through api/ and regenerates enums.py
-  refresh_upstream.py    regenerates docs/upstream/ and its FETCHED.md from upstream
-  adr_index.py           writes docs/adr.md and docs/adr.json from the records in docs/adr/;
-                         --check fails while either is stale
-tests/
-  conftest.py      enables xippios.core.testing.plugin, which keeps the run offline
-  fixtures/        recorded responses, <wrapper>/<case>.json, never hand-written
-  test_family.py   core's family check, one line: namespace levels, py.typed, __version__,
-                   the adapters serving exactly the tasks, task shapes and docstrings, the
-                   README status table, the template tag, the core bound
-  test_tasks.py    checks of this package's own plus per-task replay tests
-  test_scripts.py  the maintenance scripts under scripts/, checked without running them
-  test_live.py     @pytest.mark.live smoke tests, one per task
-docs/
-  upstream/        documentation snapshot and FETCHED.md
-  adr/             this package's design decisions, one NNNN-<slug>.md record each, laid
-                   out in its README.md
-  adr.md           the index of the decisions, written by scripts/adr_index.py, never by hand
-  adr.json         the same index, for machines
-  reports/         dated reports, the evidence a decision cites, laid out in its README.md
-changelog/         the next release's changelog entries, one fragment per change, laid out
-                   in its README.md
-CHANGELOG.md       the releases, each section assembled from the fragments
-.github/workflows/ ci.yml (the required ci check, with the changelog and fixture-size steps),
-                   publish.yml (the release train: tag, build, PyPI), live.yml (nightly live
-                   tests), organization.yml (the organization's checks from xippios/.github:
-                   conventions, a review of a pull request against the documents the README
-                   lists, and adr-index, which runs scripts/adr_index.py --check)
-.claude/commands/  add-endpoint, record-fixture, refresh-upstream, refresh-reference-data, release-prep
-```
+What this package adds to the family's tree, and its import path, stand in `docs/layout.md`,
+imported here:
 
-The import path is `xippios.comtrade` (sdk-core ADR-0006); `src/xippios/` is a
-namespace package.
-Where the API's operation ids repeat across its services, `api/` keeps one module per service
-instead, named after the service, and this Layout says so (conventions §2).
+@docs/layout.md
 
 ## Commands
 
 ```bash
-uv sync --all-extras
-uv run pytest                      # offline, replays the fixtures
-uv run ruff check . && uv run ruff format --check .
-uv run mypy
-uv run pre-commit run --all-files
-python3 scripts/adr_index.py --check   # the index matches the records in docs/adr/
-uv run pytest -m live --tb=short --assert=plain   # needs XIPPIOS_LIVE_TESTS=1, COMTRADE_API_KEY
+uv sync --all-extras uv run pytest                      # offline, replays the fixtures uv
+run ruff check . && uv run ruff format --check . uv run mypy uv run pre-commit run
+--all-files python3 -I scripts/adr_index.py --check   # the index matches the records in
+docs/adr/ uv run pytest -m live --tb=short --assert=plain   # needs XIPPIOS_LIVE_TESTS=1,
+COMTRADE_API_KEY
 
 uv run xippios-comtrade-mcp   # stdio; add --http for streamable HTTP
 ```
 
-`uv run pytest` is offline: core's plugin refuses the network and skips the rate limiter's
-waits in every test not marked `live` (conventions §10, sdk-core ADR-0035). A test that
-asserts a limiter wait or a quota pause is marked `rate_limited`, one that must reach the
-network `network`.
-It sends the key's placeholder, with `COMTRADE_API_KEY` set to it because
-`pyproject.toml` names that variable under `xippios_placeholder_key_envs`; the package
-keeps no placeholder fixture of its own.
-
 `.github/workflows/live.yml` runs the live tests nightly at 05:31 UTC, a time derived from
-the slug so that sources sharing a key never start together, and on demand; a pull request never runs them.
-Only its `uv run pytest -m live --tb=short --assert=plain` step sees the key, from the org secret `COMTRADE_API_KEY`.
-Every live run takes `--tb=short --assert=plain`, since the log of `live.yml` is public:
-the first keeps a failing test's frame arguments out of it, a raw upstream payload among
-them, and the second the values a failed `assert` compares. A live test asserts on shapes
-and counts, never on a raw payload.
-
-## Code rules
-
-- Three layers (sdk-core ADR-0001, conventions §2): endpoint wrappers in `api/`, task
-  functions in `tasks.py`, adapters in `mcp.py` and `http.py`. The adapters register
-  `tasks.__all__` and call only tasks, the tasks call only wrappers and reference data, and
-  a wrapper returns models.
-- Upstream's documented error shapes go into `classify` in `_client.py`, once, and an error
-  class of the package's own into `errors.py`; a wrapper never inspects a status code
-  (conventions §5, §6).
-- One limiter paces each host the package sends to (conventions §2, §6). A second base URL
-  on the host of the API base URL goes through the one `client` of `_client.py` by its
-  absolute URL, and `classify`'s path checks name both bases. An origin or mirror that the
-  publisher runs itself, where its canonical host refuses automated requests, takes that
-  host's pace through the same client, and `docs/upstream/` names both hosts; a mirror that
-  anyone else runs is never sent to. A host that a dependency sends to is reached through
-  the dependency's tasks alone. Any other host gets a client of its own in `_client.py`,
-  its base URL and its `RateLimit` beside the first's, and a row of its own in the table
-  under What this package wraps, with its pace and where the pace comes from.
-- A change brings its tests, written before the code, and passes the offline checks above;
-  its changelog entry is a fragment under `changelog/`, one file holding its bullet, as
-  `changelog/README.md` lays it out (conventions §12). Commit subjects follow Conventional
-  Commits (conventions §13): the rule binds a pull request's own commits, not the commit
-  that lands the pull request on `main`, whose subject GitHub writes.
-- `ruff` leaves `docs/` and `.claude/` alone (`pyproject.toml`), so the upstream snapshot
-  keeps its bytes: never reformat it.
-- A convention that seems wrong is followed anyway and said in the pull request; changing
-  it is a change of sdk-core's `docs/conventions.md` with an ADR.
-
-## Never
-
-- Never hand-write a fixture, and never commit one without grepping it for key patterns
-  (conventions §10).
-- Never read or print `.envrc`, `.env`, the credential variable of this package,
-  `COMTRADE_API_KEY`, or any variable ending in `_API_KEY`, `_TOKEN` or
-  `_SECRET`.
-- Never write a key, a token or another credential into a file or a commit.
-- Never put logic in `mcp.py` or `http.py`, and never add a route or a tool by hand: the
-  adapters register `tasks.__all__` (sdk-core ADR-0001).
-- Never rename or re-map an upstream concept to another source's (sdk-core ADR-0028).
-- Never return a documented personal identifier in a task's projection, echo one in
-  `meta.request`, or commit one in a fixture (sdk-core ADR-0017).
-- Never edit `docs/upstream/` by hand but `docs/upstream/OBSERVED.md`, the notes on what
-  upstream does but never documents: `/refresh-upstream` fetches the rest, and the pull
-  request shows its diff (conventions §3).
-- Never add `src/xippios/__init__.py`, nor an `__init__.py` at a level between it and the
-  package (sdk-core ADR-0006).
-- Never push a tag by hand: a release's tag comes from `publish.yml` alone (conventions §12).
+the slug so that sources sharing a key never start together, and on demand; a pull request
+never runs them. Only its `uv run pytest -m live --tb=short --assert=plain` step sees the
+key, from the org secret `COMTRADE_API_KEY`. Every live run takes `--tb=short
+--assert=plain`, since the log of `live.yml` is public: the first keeps a failing test's
+frame arguments out of it, a raw upstream payload among them, and the second the values a
+failed `assert` compares. A live test asserts on shapes and counts, never on a raw payload.
 
 ## Template updates
 
 This repository is generated from sdk-template, at the tag `.copier-answers.yml` records. A
 template release reaches it in a pull request of its own, with
-`uvx --from 'copier>=9.19' copier update --defaults --vcs-ref=<tag>` (conventions §15): the
-update renders the template's files again and never overwrites the files this package
-fills, `__init__.py`, `_client.py`, `errors.py`, `models.py`, `api/`, `parse/`, `tasks.py`,
-`tasks_write.py`, `params.py`, `enums.py`, `reference/`, `scripts/refresh_reference.py`,
-`scripts/refresh_upstream.py`, `tests/test_tasks.py`, `tests/test_live.py`,
-`tests/fixtures/`, `docs/upstream/`, `docs/adr.md`, `docs/adr.json`, `README.md`,
-`CHANGELOG.md` and `CLAUDE.md`. sdk-template's
+`uvx --from 'copier>=9.19' copier update --defaults --vcs-ref=<tag>` (conventions §15). The
+update never overwrites a file this package fills, those that `_skip_if_exists` lists in
+sdk-template's [`copier.yml`](https://github.com/xippios/sdk-template/blob/main/copier.yml),
+and sdk-template's
 [CHANGELOG](https://github.com/xippios/sdk-template/blob/main/CHANGELOG.md) says, per
 release, what to port into those by hand in the same pull request.
 
-## When something is unclear
-
-Prefer the smallest change that satisfies the documents the README lists, state the
-assumption in the pull request's description, and stop rather than guess at upstream
-semantics or the shape of the public API.
+The update writes every other file it renders again, since they are the template's,
+`.claude/rules/never.md` among them. This package keeps no text of its own in them, the
+docstring of `mcp.py` included: its own words go into a file it fills. A line it has to
+add to one, such as a dependency in `pyproject.toml`, the update carries into the new
+render, silently where the release leaves the lines around it alone and as a conflict
+where it changes them.
 
 ## UN Comtrade specifics
 
-The live run costs thirteen keyed calls and eight keyless requests (`tests/test_live.py`,
-whose docstring counts them): the reachability probe sends no key, the list tasks fetch
-the public reference files without it, and the two public operations send none. A Basic
-Individual key allows 500 calls a day.
+Core's testing plugin counts the live run's requests and prints them in the log of
+`live.yml` as `requests sent by the live run: <n>`, the count a release cites, and
+`tests/test_live.py` states none. Its keyed tasks spend calls of the key's daily quota; the
+public operations, `list_commodities` and core's nightly comparison of the nine packaged
+lists and tables of `LIVE_LISTS` send no key, and the other list tasks answer from the
+packaged lists without a request. A Basic Individual key allows 500 calls a day.

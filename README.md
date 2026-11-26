@@ -3,8 +3,8 @@
 Typed Python client, MCP server and FastAPI routes for
 [UN Comtrade](https://comtradeplus.un.org), part of the
 [xippios SDK family](https://github.com/xippios). Names and semantics follow the
-upstream documentation; every response carries release metadata (source, endpoint,
-retrieved_at, published_at, vintage).
+upstream documentation; every response carries its metadata (source, endpoint,
+retrieved_at, request).
 
 ## Install
 
@@ -51,7 +51,9 @@ with upstream's words for it),
 raises `UnknownCode`, an `InvalidRequestError` naming the packaged list, its fetch date
 and the closest code (`756` names `757`, Switzerland; `C16` names `C15`, Relief
 consignments); any other mistake raises `InvalidRequestError` naming the closest valid
-value.
+value. Each refusal before a request says that nothing was sent. Every answer names the
+reporter, partner, customs, transport, supply, unit and frequency codes of its rows in
+`meta.names`, by the packaged lists.
 
 ```python
 from xippios.comtrade import (
@@ -116,9 +118,11 @@ depends on whether the partner reported. So `get_bilateral_data` returns upstrea
 `timestamp_requested`, with the rows: its `data` is one `BilateralData`, not a list.
 
 `get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
-result without a second call, and a count above 100,000 raises `QueryTooLarge` with the
-count before anything is fetched, because upstream would cut the answer at 100,000 rows
-without saying so. A free key allows 1 call per second and 500 calls per day, and
+result without a second call, and a count above 100,000 raises core's `QueryTooLarge`
+(`xippios.core.QueryTooLarge`) with the count before any data is fetched, because upstream
+would cut the answer at 100,000 rows without saying so; `meta.total` is the count. The
+client keeps the reference files for the life of the process and the keyed answers for
+five minutes, so a repeated call spends no call of the daily quota. A free key allows 1 call per second and 500 calls per day, and
 `countOnly` calls count; the client spaces calls 1.5 s apart (upstream's gateway refuses
 some calls spaced exactly 1 s apart) and counts no calls, so the daily quota is yours to
 track: once upstream answers that it is spent, the client sends no keyed call until the
@@ -140,7 +144,9 @@ reference files, which spend none of it, go on.
 ```
 
 Tools are read-only and named `comtrade_<verb>_<noun>`. Results are capped at
-200 rows or 64 KB with a note on how to narrow the query; `comtrade_list_reporters` and
+200 rows or 64 KB with a note on how to narrow the query; `comtrade_get_data`,
+`comtrade_get_data_availability` and `comtrade_get_bilateral_data` take `offset`, and the
+note of a cut answer names the `offset` that continues it from the client's cache; `comtrade_list_reporters` and
 `comtrade_list_partners` have a cap of their own, 400 rows or 100 KB, so their whole
 tables reach the agent. `comtrade_list_commodities` has the same cap, but a
 classification is larger (8,262 HS codes), so its note says to search. All three take
@@ -168,8 +174,8 @@ HTTP instead of stdio.
 | `files/v1/app/reference/` code lists and the spec's enums, packaged | `list_codes(param)` | `comtrade_list_codes` | alpha |
 | `files/v1/app/reference/ListofReferences.json`, packaged | `list_classifications(category=None)` | `comtrade_list_classifications` | alpha |
 
-The package covers these fourteen tasks and requires xippios-core 0.4.x (`~=0.4.0`); 0.2.0
-does not work with core 0.4.0. The slices `get_bilateral_flows`, `get_world_trade` and
+The package covers these fourteen tasks and requires xippios-core 0.5.x (`~=0.5.0`); 0.3.0
+does not work with core 0.5.0. The slices `get_bilateral_flows`, `get_world_trade` and
 `get_mirror_flows`, the ranking `get_top_partners` and `get_commodity_series`, which 0.3.0
 served, left after it: a task of a source fixes no filter, sort, rank or cut for the
 caller, and `get_data` and `get_bilateral_data` answer the same rows with the arguments
@@ -183,6 +189,44 @@ for it in its [Policy on Comtrade Data Use](https://uncomtrade.org/docs/policy-o
 under which use of the data is subject to the license agreement at
 https://comtrade.un.org/licenseagreement.html; this package adds no rights to it.
 Documentation snapshot and its attribution: `docs/upstream/FETCHED.md`.
+
+## Workflows
+
+`ci.yml` runs ruff, its format check, mypy, pytest and pre-commit on Python 3.12, 3.13 and
+3.14, requires a changelog entry of every pull request but Dependabot's and refuses a
+fixture file over 256 KiB that a pull request adds or changes. It runs on every pull request and,
+called by `publish.yml`, once for a release, and its job `ci` is the check the
+organization's ruleset requires. It is handed no secret, and no variable switches it off.
+
+`publish.yml` is the release train (conventions §12): on a push to `main` whose
+`pyproject.toml` names a version that has no tag yet and has its section in `CHANGELOG.md`,
+it runs `ci.yml`, refuses a core pinned to git, tags the merge commit, builds the package
+and, once a reviewer of the environment `pypi` approves the run, publishes it to PyPI by
+trusted publishing. Every push to `main` and a dispatch start it, and a push that brings no
+release ends quietly. It is handed no secret: the step that tells a release is handed the
+job's token as `GH_TOKEN`, the tag goes with the job's token and PyPI trusts the workflow
+itself. Its job `tag` holds the one checkout of the repository that keeps its credentials,
+since it pushes the tag with the job's token; every other checkout sets
+`persist-credentials: false` (conventions §13). No variable switches it off.
+
+`live.yml` runs every `live` test against the upstream with `--tb=short --assert=plain`, so
+its public log holds neither a failing test's arguments nor the values an assertion compared.
+It runs every night at 05:31 UTC and on demand, never on a pull request.
+Its pytest step alone is handed `XIPPIOS_LIVE_TESTS` and, each from the secret of the same
+name, `COMTRADE_API_KEY`, so the checkout, setup-uv and `uv sync` see none.
+A variable `WORKFLOW_LIVE` of `off`, the repository's over the organization's, switches it off.
+
+`conventions.yml` calls the organization's review of a pull request against the documents
+listed under Documents below, the check `conventions / conventions`, when a pull request
+opens, is pushed to, reopens or is edited, and on a push to `main` or a dispatch the review
+of the range of commits, `range / range`. It hands the review the organization's
+secret of the model's key, by name. A variable `WORKFLOW_CONVENTIONS` of `off`, the
+repository's over the organization's, switches both off.
+
+`adr-index.yml` calls the organization's check of the ADR index, `adr-index / adr-index`,
+which runs `scripts/adr_index.py --check`, when a pull request opens, is pushed to or
+reopens. It hands over nothing, and the called workflow reads its switch itself: a variable
+`WORKFLOW_ADR_INDEX` of `off`, the repository's over the organization's, skips the check.
 
 ## Documents
 
