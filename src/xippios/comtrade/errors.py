@@ -43,10 +43,9 @@ class QueryTooLarge(InvalidRequestError):
     """The query would return more than UN Comtrade's per-call record limit (HTTP 422).
 
     Raised by ``get_data`` from the ``countOnly`` count, before any data is fetched,
-    because upstream would otherwise cut the answer at the limit without saying so. The
-    task-shaped slices skip the count, since their arguments bound the rows (one per
-    product code and period, reporter or partner); they raise it with that bound
-    (``bound=True``) before the call when it exceeds the limit.
+    because upstream would otherwise cut the answer at the limit without saying so.
+    ``bound=True`` words the refusal for an upper bound taken from a query's arguments
+    rather than upstream's count; no task of this version raises it so.
 
     Attributes:
         count: Records the query would return, or with ``bound`` at most return.

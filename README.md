@@ -43,8 +43,8 @@ upstream's codes, several of them comma-separated as upstream takes them (`"757,
 Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757.
 Every argument is checked before the call: coded ones (`type_code`, `cl_code`,
 `flow_code`, `customs_code`, `mot_code`, `aggregate_by`, `breakdown_mode`) against
-the lists packaged from upstream's reference files and spec (`xippios.comtrade.enums`;
-`list_codes` gives each value with upstream's words for it),
+the lists packaged from upstream's reference files and spec (`list_codes` gives each value
+with upstream's words for it),
 `reporter_code` against the packaged copy of upstream's `Reporters.json`
 (`reference/Reporters.json`) and `partner_code` and `partner2_code` against that of
 `partnerAreas.json`, the others by shape. An unknown area, customs or transport code
@@ -68,27 +68,6 @@ list_partners().data  # 310 partner areas, 0 World among them
 list_commodities("HS", search="coffee").data  # from 8,262 HS codes, fetched keyless once
 list_codes("motCode").data[3]  # MotCodeValue(mot_code='2100', text='Sea'): packaged
 list_classifications("cmd:H6").data[0].variable  # 'Product [HS 2022]': upstream's index
-```
-
-Four task-shaped slices on `data/v1/get` answer the common questions in one call each
-(the series in one call per 12 periods), at the total of every breakdown, one row per
-reporter × partner × product code × period. Areas are UN Comtrade's codes or ISO alpha-3
-codes; `YYYY` periods ask for annual data, `YYYYMM` for monthly:
-
-```python
-from xippios.comtrade import (
-    get_bilateral_flows,
-    get_commodity_series,
-    get_top_partners,
-    get_world_trade,
-)
-
-get_bilateral_flows("CHE", "USA", "TOTAL,27", "2022,2023", "X").data  # 4 rows
-years = ",".join(str(year) for year in range(2010, 2024))
-get_commodity_series("757", "27", "X", years).data  # 14 years, two calls, by period
-get_world_trade("27", "2023", "M").data[0].reporter_desc  # 'China': largest first
-[r.partner_desc for r in get_top_partners("CHE", "TOTAL", "2023", "X", 3).data]
-# ['USA', 'Germany', 'China']: World, the total, is dropped
 ```
 
 Release dates are per dataset, so they sit on the rows, not in `meta.published_at`.
@@ -136,20 +115,6 @@ depends on whether the partner reported. So `get_bilateral_data` returns upstrea
 `note`, which counts the partners with a data gap without naming them, and its
 `timestamp_requested`, with the rows: its `data` is one `BilateralData`, not a list.
 
-A fifth slice, `get_mirror_flows`, asks getBilateralData the slices' way: one reporter and
-one partner as codes or ISO alpha-3, single product codes, up to 12 periods of one
-format, one flow. Each row holds the reporter's figures beside the partner's mirror of
-them, and the result keeps the note:
-
-```python
-from xippios.comtrade import get_mirror_flows
-
-mirror = get_mirror_flows("CHE", "USA", "27", "2022,2023", "X").data
-mirror.note  # 'EXPERIMENTAL: We have good news! There is no data gap ...'
-[(r.period, r.primary_value, r.mirror_primary_value) for r in mirror.data]
-# Switzerland's chapter 27 exports to the USA beside the USA's reported imports of them
-```
-
 `get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
 result without a second call, and a count above 100,000 raises `QueryTooLarge` with the
 count before anything is fetched, because upstream would cut the answer at 100,000 rows
@@ -195,24 +160,21 @@ HTTP instead of stdio.
 | `data/v1/getLiveUpdate` | `get_live_update()` | `comtrade_get_live_update` | alpha |
 | `public/v1/getComtradeReleases`, keyless | `get_comtrade_releases()` | `comtrade_get_comtrade_releases` | alpha |
 | `public/v1/getWorldShare/{typeCode}/{freqCode}`, keyless | `get_world_share(type_code, freq_code, *, period=None, reporter_code=None)` | `comtrade_get_world_share` | alpha |
-| `data/v1/get/C/{A,M}/{clCode}`, total row, one reporter and partner | `get_bilateral_flows(reporter, partner, commodities, periods, flow, *, cl_code="HS")` | `comtrade_get_bilateral_flows` | alpha |
-| `data/v1/get/C/{A,M}/{clCode}`, total row, partner World, 12 periods per call, at most 120 | `get_commodity_series(reporter, commodity, flow, periods, *, cl_code="HS")` | `comtrade_get_commodity_series` | alpha |
-| `data/v1/get/C/{A,M}/{clCode}`, total row, every reporter, partner World | `get_world_trade(commodity, period, flow, *, cl_code="HS")` | `comtrade_get_world_trade` | alpha |
-| `data/v1/get/C/{A,M}/{clCode}`, total row, every partner, ranked | `get_top_partners(reporter, commodity, period, flow, n, *, cl_code="HS")` | `comtrade_get_top_partners` | alpha |
 | `tools/v1/getTradeBalance/{typeCode}/{freqCode}/{clCode}` | `get_trade_balance(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, cmd_code=, ...)` | `comtrade_get_trade_balance` | alpha; experimental upstream |
 | `tools/v1/getBilateralData/{typeCode}/{freqCode}/{clCode}` | `get_bilateral_data(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, cmd_code=, flow_code=, ...)`, returns `BilateralData` (`note`, `timestamp_requested`, the rows as `data`) | `comtrade_get_bilateral_data` | alpha; experimental upstream |
-| `tools/v1/getBilateralData/C/{A,M}/{clCode}`, one reporter and partner, at most 12 periods | `get_mirror_flows(reporter, partner, commodities, periods, flow, *, cl_code="HS")`, returns `MirrorFlows` (`note`, `timestamp_requested`, the rows as `data`) | `comtrade_get_mirror_flows` | alpha; experimental upstream |
 | `files/v1/app/reference/Reporters.json`, packaged | `list_reporters(search=None)` | `comtrade_list_reporters` | alpha |
 | `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(search=None)` | `comtrade_list_partners` | alpha |
 | `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
 | `files/v1/app/reference/` code lists and the spec's enums, packaged | `list_codes(param)` | `comtrade_list_codes` | alpha |
 | `files/v1/app/reference/ListofReferences.json`, packaged | `list_classifications(category=None)` | `comtrade_list_classifications` | alpha |
 
-0.3.0 covers the same nineteen tasks as 0.2.0, which added `get_trade_balance`,
-`get_bilateral_data`, `get_mirror_flows`, `get_comtrade_releases`, `get_world_share`,
-`list_codes` and `list_classifications`, and requires xippios-core 0.4.x (`~=0.4.0`); 0.2.0
-does not work with core 0.4.0. Alpha: the public surface may change in a minor version
-before 1.0; `CHANGELOG.md` lists every change.
+The package covers these fourteen tasks and requires xippios-core 0.4.x (`~=0.4.0`); 0.2.0
+does not work with core 0.4.0. The slices `get_bilateral_flows`, `get_world_trade` and
+`get_mirror_flows`, the ranking `get_top_partners` and `get_commodity_series`, which 0.3.0
+served, left after it: a task of a source fixes no filter, sort, rank or cut for the
+caller, and `get_data` and `get_bilateral_data` answer the same rows with the arguments
+that those five fixed. Alpha: the public surface may change in a minor version before
+1.0; `CHANGELOG.md` lists every change.
 
 ## Upstream terms and attribution
 

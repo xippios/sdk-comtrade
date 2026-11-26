@@ -11,11 +11,7 @@ time its entry was stored, when it was fetched (conventions §4). A list's recor
 the value under the upstream parameter's name and, beside it, the fields upstream gives
 the value a text in (``text``; ``qtyAbbr`` and ``qtyDescription``; ``variable`` and
 ``description``), under upstream's names; a value without one is a record of one field.
-Every record is checked against its list's model, ``params.PACKAGED_LISTS``. Then
-``enums.py`` is regenerated from the packaged files by one
-``xippios.core.reference.render_enums`` call, one ``StrEnum`` per list, its members the
-values, each class naming the day its list was fetched, and formatted with ``ruff format``
-and ``ruff check --fix``, as it is committed (sdk-core ADR-0031).
+Every record is checked against its list's model, ``params.PACKAGED_LISTS``.
 
 - ``LISTS`` come from UN Comtrade's public reference files, fetched through the layer-1
   wrapper ``api.reference_rows`` (no key needed or sent): the ``id`` and ``text`` of
@@ -51,24 +47,17 @@ and ``ruff check --fix``, as it is committed (sdk-core ADR-0031).
 Run from the repository root; no API key is needed::
 
     uv run python scripts/refresh_reference.py
-
-``--render-only`` regenerates ``enums.py`` from the packaged ``reference/*.json`` alone,
-without a request: after a core release changes the renderer (conventions §15, item 6),
-it changes ``enums.py`` and nothing else.
 """
 
 import argparse
 import json
 import re
-import subprocess
-import sys
 from collections.abc import Callable, Coroutine, Sequence
 from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Any
 
 from xippios.core import PackagedList, UpstreamModel, parse, sync
-from xippios.core.reference import render_enums
 
 from xippios.comtrade import api
 from xippios.comtrade._client import SOURCE
@@ -78,8 +67,6 @@ from xippios.comtrade.params import PACKAGED_LISTS, PACKAGED_TABLES
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_DIR = ROOT / "src/xippios/comtrade"
 REFERENCE = PACKAGE_DIR / "reference"
-ENUMS = PACKAGE_DIR / "enums.py"
-GENERATOR = "scripts/refresh_reference.py"
 SPEC = ROOT / "docs/upstream/apidocs/comtrade.json"
 SPEC_NAME = "apidocs/comtrade.json"
 SPEC_ENDPOINT = "files/v1/app/apim/comtrade.json"
@@ -466,38 +453,8 @@ def _table(name: str) -> PackagedList:
     )
 
 
-def read(name: str) -> PackagedList:
-    """The packaged ``reference/<name>.json``, read from the file as it is now."""
-    path = REFERENCE / f"{name}.json"
-    if not path.is_file():
-        raise SystemExit(f"{path.name} is not packaged yet: run the script without --render-only")
-    return PackagedList.model_validate_json(path.read_text(encoding="utf-8"))
-
-
-def render() -> None:
-    """Regenerate ``enums.py`` from the packaged value lists and format it as committed."""
-    lists: dict[str, Sequence[str]] = {}
-    fetched: dict[str, str] = {}
-    # Classes in the order of their names, as enums.py has always listed them. Core's
-    # default class name is each of these, the first letter upper-cased and every camelCase
-    # hump kept (sdk-core ADR-0031), so render_enums is given none.
-    class_names = {name: name[0].upper() + name[1:] for name in PACKAGED_LISTS}
-    for name in sorted(PACKAGED_LISTS, key=class_names.__getitem__):
-        packaged = read(name)
-        lists[name] = [str(record[name]) for record in packaged.records]
-        fetched[name] = f"{packaged.fetched:%Y-%m-%d}"
-    module = render_enums(lists, fetched=fetched, generator=GENERATOR)
-    ENUMS.write_text(module, encoding="utf-8")
-    sys.stdout.flush()
-    for command in (["format"], ["check", "--fix"]):
-        run = subprocess.run([sys.executable, "-m", "ruff", *command, str(ENUMS)], cwd=ROOT)
-        if run.returncode:
-            raise SystemExit(f"ruff {' '.join(command)} left {ENUMS.name} failing")
-    print(f"{ENUMS.name}: {len(lists)} enums")  # noqa: T201
-
-
 def refresh() -> None:
-    """Fetch every list and table, then write their files, then regenerate ``enums.py``."""
+    """Fetch every list and table, then write their files."""
     spec = json.loads(SPEC.read_text(encoding="utf-8"))
     snapshot = _snapshot_fetched()
     packaged = [
@@ -510,11 +467,10 @@ def refresh() -> None:
         path = REFERENCE / f"{fetched.param}.json"
         fetched.write(path)
         print(f"{path.name}: {len(fetched.records)} records from {fetched.endpoint}")  # noqa: T201
-    render()
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """The command line: ``--render-only``; ``--help`` exits before any fetch."""
+    """The command line, which takes no option; ``--help`` exits before any fetch."""
     summary, _, details = (__doc__ or "").partition("\n\n")
     parser = argparse.ArgumentParser(
         prog="refresh_reference.py",
@@ -522,26 +478,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         epilog=details,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "--render-only",
-        action="store_true",
-        help="regenerate enums.py from the packaged reference/*.json, without a request",
-    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """Refresh from upstream, or with ``--render-only`` regenerate ``enums.py`` alone."""
-    args = parse_args(argv)
+    """Refresh the packaged lists and tables from upstream."""
+    parse_args(argv)
     names = [*LISTS, *SPEC_LISTS]
     if sorted(names) != sorted(PACKAGED_LISTS):
         raise SystemExit(f"params.PACKAGED_LISTS {list(PACKAGED_LISTS)} does not match {names}")
     if sorted(TABLES) != sorted(PACKAGED_TABLES):
         raise SystemExit(f"params.PACKAGED_TABLES {list(PACKAGED_TABLES)} does not match {TABLES}")
-    if args.render_only:
-        render()
-    else:
-        refresh()
+    refresh()
 
 
 if __name__ == "__main__":

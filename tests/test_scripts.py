@@ -21,31 +21,21 @@ def _load(name: str) -> ModuleType:
 def test_refresh_reference_help_prints_usage_and_stops(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """``--help`` exits from the parser, before ``main`` fetches or writes anything."""
+    """``--help`` exits from the parser, before ``main`` fetches or writes anything.
+
+    The script writes the packaged lists alone: it renders no ``enums.py``, so it takes no
+    ``--render-only``.
+    """
     script = _load("refresh_reference")
     with pytest.raises(SystemExit) as info:
         script.parse_args(["--help"])
     assert info.value.code == 0
     out = capsys.readouterr().out
-    assert out.startswith("usage: refresh_reference.py [-h] [--render-only]")
+    assert out.startswith("usage: refresh_reference.py [-h]\n")
     assert "Refresh the packaged reference data from upstream" in out
-    with pytest.raises(SystemExit):
-        script.parse_args(["--unknown"])
-    assert script.parse_args([]).render_only is False
-    assert script.parse_args(["--render-only"]).render_only is True
-
-
-def test_refresh_reference_render_only_changes_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """``--render-only`` renders ``enums.py`` from the packaged files exactly as committed.
-
-    It reads ``reference/*.json`` alone, no request, and formats with ruff; here it writes
-    into a copy, so the committed module is never touched.
-    """
-    script = _load("refresh_reference")
-    rendered = tmp_path / "enums.py"
-    monkeypatch.setattr(script, "ENUMS", rendered)
-    script.main(["--render-only"])
-    committed = script.PACKAGE_DIR / "enums.py"
-    assert rendered.read_text(encoding="utf-8") == committed.read_text(encoding="utf-8")
+    assert "enums.py" not in out
+    for unknown in (["--unknown"], ["--render-only"]):
+        with pytest.raises(SystemExit):
+            script.parse_args(unknown)
+    assert vars(script.parse_args([])) == {}
+    assert not hasattr(script, "render")
