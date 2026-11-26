@@ -187,7 +187,8 @@ The two Tools operations (`docs/upstream/apidocs/comtradeTools.json`, both marke
 answered stands under "The Tools" of `docs/upstream/OBSERVED.md`. `countOnly` counts nothing
 there ("`countOnly` counts nothing on the Tools"), so the tasks count nothing first and refuse
 a query that names neither `reporter_code` nor `partner_code`, or no `cmd_code`, before it is
-sent, by the maintainer's decision of 2026-11-26; the README's Scope names that requirement.
+sent, by the maintainer's decision of 2026-11-26; the README's Scope names that requirement
+with https://github.com/xippios/sdk-comtrade/issues/72.
 `get_trade_balance` sends `breakdown_mode` only as given, since upstream's default answers
 every breakdown ("`getTradeBalance` answers every breakdown by default"), and refuses a 13th
 period. `get_bilateral_data` takes more periods and one `flow_code` of `TOOLS_FLOW_CODES`

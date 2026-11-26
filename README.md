@@ -46,7 +46,7 @@ public issue:
 - A query of `get_trade_balance` or `get_bilateral_data` that names neither `reporter_code`
   nor `partner_code`, or no `cmd_code`, which the Tools specs take: the tasks refuse it
   before it is sent, since UN Comtrade offers no count on the Tools to check a query's size
-  first.
+  first (https://github.com/xippios/sdk-comtrade/issues/72).
 
 What the package adds is the count before `get_data`, the check of each code against the
 packaged lists before a request and the names of the codes in `meta.names`. It fixes no
