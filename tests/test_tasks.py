@@ -2,10 +2,11 @@
 
 ``/add-endpoint`` and ``/record-fixture`` add them. The checks of this package's own sit
 among them: those on the task docstrings and the adapters' source first, those on the
-packaged lists and the enums after the checks of the arguments.
+packaged lists after the checks of the arguments.
 """
 
 import dataclasses
+import importlib
 import inspect
 import json
 import re
@@ -52,7 +53,7 @@ from xippios.core.testing import (
     sent_urls,
 )
 
-from xippios.comtrade import api, enums, tasks
+from xippios.comtrade import api, tasks
 from xippios.comtrade._client import (
     API_KEY_ENV,
     BASE_URL,
@@ -789,7 +790,6 @@ def test_mos_code_is_accepted_upstream_but_not_a_parameter_here(fixtures_dir: Pa
     assert mos_code.note.startswith(
         "The ids of ModeOfSupply.json with their text, not proven parameter values"
     )
-    assert enums.MosCode.__doc__ == f"Values of ``mosCode`` (fetched {_day('mosCode')})."
 
 
 def _refused(respx_mock: respx.MockRouter, **overrides: str) -> str:
@@ -1003,21 +1003,15 @@ def test_the_spec_lists_name_the_operation_they_were_read_from() -> None:
         ), name
 
 
-def test_enums_match_the_packaged_lists() -> None:
-    for name in PACKAGED_LISTS:
-        cls = getattr(enums, name[0].upper() + name[1:])
-        packaged = PackagedList.load(PACKAGE, name)
-        assert [member.value for member in cls] == [r[name] for r in packaged.records], name
-        assert cls.__doc__ == f"Values of ``{name}`` (fetched {packaged.fetched:%Y-%m-%d}).", name
-    assert enums.FlowCode.X.value == "X"
-    assert enums.MotCode._0.value == "0"
-    assert enums.ClCode.EB10S.value == "EB10S"
-    assert enums.FlowCode.XIF.value == "XIF"
-    assert [member.value for member in enums.MosCode] == ["0", "Mode 1", "Mode 2", "Mode 3",
-                                                          "Mode 4"]  # fmt: skip
-    assert enums.QtyUnitCode("-1").name == "_1"
-    assert enums.QtyUnitCode("8").name == "_8"
-    assert len(enums.QtyUnitCode) == 41
+def test_no_generated_module_repeats_the_packaged_lists() -> None:
+    """``list_codes`` returns each packaged list with upstream's words: the one copy of it.
+
+    ``enums.py``, ten ``StrEnum`` classes generated from the lists that no module of the
+    package imported, left after 0.3.0 with the reference script's render of it.
+    """
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("xippios.comtrade.enums")
+    assert not (Path(tasks.__file__).parent / "enums.py").exists()
 
 
 EXCEPTION = re.compile(r"(?:^|\. )([A-Z0-9]+) (added|left out|removed|kept): (.+?\))(?=\.(?: |$))")
@@ -1090,22 +1084,6 @@ async def test_a_server_error_is_retried_and_each_retry_is_a_call(
     assert info.value.status == 500
     assert "Something went wrong" in str(info.value)
     assert route.call_count == config.retry.max_attempts == 4
-
-
-def test_enum_members_are_accepted_as_arguments(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
-    result = tasks.get_counts(
-        enums.TypeCode.C,
-        enums.FreqCode.A,
-        enums.ClCode.HS,
-        reporter_code="757",
-        partner_code="0",
-        period="2023",
-        cmd_code="TOTAL",
-        flow_code=enums.FlowCode.X,
-    )
-    assert result.data == 32
-    assert sent_query(route)["flowCode"] == "X"
 
 
 def test_replay_never_sends_the_key_from_the_shell(
