@@ -21,14 +21,19 @@ src/xippios/comtrade/
   codes.py         the packaged lists that name a code, each declared once, PackagedList.codes:
                    REPORTERS, PARTNERS and the lists of the rows' customs, transport, supply,
                    quantity unit and frequency codes, which models.py marks with NamedBy and
-                   params.py checks with core's check
+                   params.py checks with core's check; FLOW_CODES, named by upstream's words
+                   and MIF and XIF by their own code; and for the check alone TYPE_CODES,
+                   CL_CODES, AGGREGATE_BY, BREAKDOWN_MODES and CATEGORIES, each code named by
+                   its own text
   api/             one module per operation, named after it, or after its path where the
                    operationId is opaque: get (get and get_count_only, data/v1/get),
                    get_da, get_metadata, get_live_update, get_trade_balance,
                    get_bilateral_data, get_comtrade_releases, get_world_share; reference, the
                    public reference files; _query, the query strings in upstream's spelling
   params.py        also PACKAGED_TABLES, CL_CODES_FROM_SPEC, TOOLS_FLOW_CODES, RECENT and
-                   classification_files(), and the checks run before a call:
+                   classification_files(); Codes and TextCodes, one code or a list of them,
+                   and joined(), which sends a list as UN Comtrade's comma-separated text;
+                   and the checks run before a call, each refusing the first problem:
                    validate_get(), validate_datasets(), validate_trade_balance(),
                    validate_bilateral_data(), validate_world_share(),
                    validate_classification_file(), validate_code_list() and
@@ -44,8 +49,12 @@ tests/
   test_refresh_upstream.py  the snapshot script's declaration and hooks, offline: its
                    pages, the statements of the attribution against the kept articles, the
                    bundle's products and an article's Markdown
+  test_observed.py docs/upstream/OBSERVED.md as committed: each note's probe, operation
+                   and sample, the dates of its samples, and that the package's own text
+                   dates no answer outside it
 docs/
   upstream/        also apidocs/, the five OpenAPI files of the API products; help/, the
                    Help Center articles in Markdown; reference/, ListofReferences.json and
-                   TradeDataItems.json
+                   TradeDataItems.json; OBSERVED.md, written by hand, what UN Comtrade was
+                   seen to answer beyond them, each note with its probe
 ```
