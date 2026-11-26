@@ -450,13 +450,34 @@ def test_unknown_partner_codes_are_refused(respx_mock: respx.MockRouter) -> None
     )
     reporter_only = _unknown(respx_mock, partner2_code="97")
     assert (reporter_only.param, reporter_only.closest) == ("partner2_code", ())
-    assert "'97' (European Union) is a reporter code only." in str(reporter_only)
+    assert "97 (European Union) is a reporter code only." in str(reporter_only)
 
 
 def test_world_is_a_partner_not_a_reporter(respx_mock: respx.MockRouter) -> None:
     refused = _unknown(respx_mock, reporter_code="0")
     assert str(refused).startswith("0 is not a reporter_code in the packaged Reporters list")
-    assert "'0' (World) is a partner code only." in str(refused)
+    assert "0 (World) is a partner code only." in str(refused), "the integer, as it is refused"
+    assert "'0'" not in str(refused)
+
+
+def test_an_area_code_is_checked_as_upstream_writes_it(respx_mock: respx.MockRouter) -> None:
+    """A member whose text is not its integer's own is no code of the tables.
+
+    ``int`` reads ``0757`` and ``757`` in digits outside ASCII as 757, while the task sends
+    the text as given, and upstream counts 0 for a code it does not have. So the check
+    takes such a member as its text, which the table lacks, and names the code to write.
+    """
+    for given in ["0757", "\uff17\uff15\uff17", "\u0667\u0665\u0667"]:
+        refused = _unknown(respx_mock, reporter_code=f"842,{given}")
+        assert refused.value == given
+        assert str(refused).startswith(
+            f"{given!r} is not a reporter_code in the packaged Reporters list"
+        )
+        assert "UN Comtrade writes this code 757, in the digits 0 to 9 without a leading zero." in (
+            str(refused)
+        )
+    world = _unknown(respx_mock, partner_code="00")
+    assert "UN Comtrade writes this code 0, in the digits 0 to 9" in str(world)
 
 
 @pytest.mark.anyio
@@ -1345,69 +1366,30 @@ def test_the_list_tasks_have_caps_of_their_own() -> None:
     assert not tasks.BULK_TASKS
 
 
-PAGED = {"get_data", "get_data_availability", "get_bilateral_data"}
-"""The tasks whose caps are paged: their keyed reads stand in the cache for 300 s."""
-
-
-async def _all_pages(
-    served: Any, tool: str, arguments: dict[str, Any]
-) -> tuple[list[dict[str, Any]], int]:
-    """The rows of every page of a paged tool, from offset 0 until a page names no offset."""
-    rows: list[dict[str, Any]] = []
-    pages = 0
-    offset: int | None = 0
-    while offset is not None:
-        page = await mcp_call(
-            served, tool, {**arguments, "offset": offset} if offset else arguments
-        )
-        pages += 1
-        found = page["data"]
-        rows += found["data"] if isinstance(found, dict) else found
-        continued = re.search(r"continue with offset=(\d+)", page.get("note") or "")
-        offset = int(continued.group(1)) if continued else None
-    return rows, pages
-
-
 @pytest.mark.anyio
-async def test_a_cut_answer_of_a_paged_tool_reaches_its_last_row_from_the_cache(
+async def test_no_tool_is_paged_while_its_answer_can_pass_the_cache_bound(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """Three tools take ``offset``, and a continuation sends nothing (sdk-comtrade#35).
+    """No tool takes ``offset``, so a cut answer is narrowed, never continued.
 
-    The cache keeps the keyed reads under ``data/v1`` and ``tools/v1`` for 300 s, so a
-    continuation of a cut answer of these tools reads the kept answer (sdk-core ADR-0061,
-    decision 9). The default cap cuts the datasets of every reporter for one period at 108
-    of 169 rows; a cap of 10 rows, and of 8 KB on the rows of a ``BilateralData``, shows the
-    cut on the other two recorded answers.
+    The client keeps a body up to core's ``cache_max_bytes`` of 8 MiB, and an answer of
+    ``get_data`` can hold 100,000 rows of about 900 bytes, so a continuation past the bound
+    would send its count and its data again: conventions §8 leave such a tool unpaged
+    (sdk-core ADR-0061, decision 9). The default cap cuts the datasets of every reporter for
+    one period at 108 of 169 rows, and its note says to narrow the query.
     """
-    assert {name for name, cap in tasks.MCP_CAPS.items() if cap.paged} == PAGED
+    assert config.cache_max_bytes == 8 * 1024 * 1024
+    assert not [name for name, cap in tasks.MCP_CAPS.items() if cap.paged]
     async with Client(server) as client:
-        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
-    for name in tasks.__all__:
-        takes = "offset" in tools[f"comtrade_{name}"].input_schema["properties"]
-        assert takes == (name in PAGED), name
-    caps = dict.fromkeys(PAGED, ResultCap(max_rows=10, max_bytes=8_000, paged=True))
-    small = dataclasses.replace(build(), caps={**tasks.MCP_CAPS, **caps})
-    served = build_server(small)
-    counted = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
-    fetched = replay_fixture("get", "ch_exports_2023")
-    rows, pages = await _all_pages(served, "comtrade_get_data", CH_EXPORTS_2023)
-    assert (len(rows), pages > 1) == (32, True)
-    assert rows == [row.model_dump(mode="json") for row in tasks.get_data(**CH_EXPORTS_2023).data]
-    assert (counted.call_count, fetched.call_count) == (1, 1)
+        tools = (await client.list_tools()).tools
+    assert not [tool.name for tool in tools if "offset" in tool.input_schema["properties"]]
     datasets = replay_fixture("get_da", "all_reporters_2023", match_params=["period"])
     every_reporter = {"type_code": "C", "freq_code": "A", "cl_code": "HS", "period": "2023"}
     first = await mcp_call(server, "comtrade_get_data_availability", every_reporter)
-    assert first["note"].startswith("showing 108 of 169 rows (cap: 200 rows or 65536 bytes)")
-    rows, pages = await _all_pages(server, "comtrade_get_data_availability", every_reporter)
-    assert (len(rows), pages, datasets.call_count) == (169, 2, 1), "the default cap cuts it"
-    mirrored = replay_fixture(
-        "get_bilateral_data", "ch_us_exports_13_periods", match_params=["period"]
+    assert first["note"] == (
+        "showing 108 of 169 rows (cap: 200 rows or 65536 bytes); narrow the query to see the rest"
     )
-    rows, pages = await _all_pages(
-        served, "comtrade_get_bilateral_data", {**CH_US_EXPORTS_2023, "period": THIRTEEN}
-    )
-    assert (len(rows), pages > 1, mirrored.call_count) == (13, True, 1)
+    assert datasets.call_count == 1
 
 
 @pytest.mark.anyio
