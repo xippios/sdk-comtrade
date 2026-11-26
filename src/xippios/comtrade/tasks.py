@@ -109,10 +109,10 @@ BULK_TASKS: frozenset[str] = frozenset()
 # period's world share for every reporter (214 rows, 88.5 KB for 2023) reaches an agent
 # whole too, where the default cap cut it at 157 rows, dropping the USA (842): upstream
 # sends the available rows first, by reporter code, then the unavailable ones in an order
-# the recording does not explain. The keyed reads of get_data, get_data_availability and
-# get_bilateral_data stand in the client's cache for 300 s, so their caps are paged: the
-# tool takes offset and a continuation reads the kept answer, sending nothing (sdk-core
-# ADR-0061, decision 9; https://github.com/xippios/sdk-comtrade/issues/35).
+# the recording does not explain. No cap is paged: an answer of get_data can pass the
+# cache's bound of 8 MiB, core's cache_max_bytes, which the client keeps, and a
+# continuation past it would send its count and its data again (conventions §8, sdk-core
+# ADR-0061, decision 9).
 MCP_CAPS: Mapping[str, ResultCap] = {
     "list_reporters": ResultCap(max_rows=400, max_bytes=100_000),
     "list_partners": ResultCap(max_rows=400, max_bytes=100_000),
@@ -126,9 +126,6 @@ MCP_CAPS: Mapping[str, ResultCap] = {
         max_bytes=100_000,
         note='narrow by reporter_code (e.g. "842") or period (e.g. "2023") to see the rest',
     ),
-    "get_data": ResultCap(paged=True),
-    "get_data_availability": ResultCap(paged=True),
-    "get_bilateral_data": ResultCap(paged=True),
 }
 
 REFERENCE = "files/v1/app/reference"

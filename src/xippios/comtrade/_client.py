@@ -197,10 +197,11 @@ CACHE_LIFETIMES: dict[str, float | None] = {
 The reference files change rarely (``ListofReferences.json`` was last modified 2025-11-12
 when the snapshot was taken) and the classification files are large (``HS.json`` is about
 2 MB, 8,262 codes), so a file is fetched once per process. A keyed answer under
-``data/v1`` or ``tools/v1`` is kept for core's 300 s, so a repeated call or a paged
-continuation of a cut answer spends no call of the daily 500 (sdk-core ADR-0061, decision
-11). The public operations under ``public/v1`` match no prefix and stay out, so a release
-calendar always comes from upstream. Only HTTP 200 answers are kept.
+``data/v1`` or ``tools/v1`` is kept for core's 300 s, so a repeated call spends no call of
+the daily 500 (sdk-core ADR-0061, decision 11). A body above core's ``cache_max_bytes`` of
+8 MiB passes unstored, and no MCP tool is paged for that reason (``tasks.MCP_CAPS``). The
+public operations under ``public/v1`` match no prefix and stay out, so a release calendar
+always comes from upstream. Only HTTP 200 answers are kept.
 """
 
 config = policy.install(

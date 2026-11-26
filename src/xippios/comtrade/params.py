@@ -328,7 +328,7 @@ def _other_table(kind: str) -> dict[str, str]:
     """
     other = "partner" if kind == "reporter" else "reporter"
     return {
-        code: f"{code!r} ({desc}) is a {other} code only."
+        code: f"{code} ({desc}) is a {other} code only."
         for code, (desc, _) in _areas(other).items()
         if code not in _areas(kind) and _same_area(code, kind) is None
     }
@@ -338,14 +338,26 @@ def _check_areas(argument: str, value: str | None, kind: str, problems: list[str
     """Gather a malformed area code; raise ``UnknownCode`` for the first one the table lacks.
 
     The table's codes are integers, so the numeric codes are checked as integers by one
-    call of core's ``check`` (sdk-core ADR-0045), and the value is sent as given.
+    call of core's ``check`` (sdk-core ADR-0045), and the value is sent as given. A member
+    whose digits are not its integer's own text, ``0757`` or digits outside ASCII, which
+    ``int`` reads as 757, is checked as its text, which the table lacks, with a hint that
+    names the code as UN Comtrade writes it.
     """
     if value is None:
         return
-    numeric: list[int] = []
+    numeric: list[int | str] = []
+    written: dict[str, str] = {}
     for member in _members(argument, value, problems):
         if _AREA.fullmatch(member):
-            numeric.append(int(member))
+            code = int(member)
+            if str(code) == member:
+                numeric.append(code)
+            else:
+                numeric.append(member)
+                written[member] = (
+                    f"UN Comtrade writes this code {code}, in the digits 0 to 9 without a "
+                    "leading zero."
+                )
         else:
             problems.append(
                 f"{argument} {member!r} is not a numeric UN Comtrade area code; use codes "
@@ -356,7 +368,7 @@ def _check_areas(argument: str, value: str | None, kind: str, problems: list[str
         listed.check(
             argument,
             numeric,
-            hints=_other_table(kind),
+            hints={**_other_table(kind), **written},
             closest=_closest_area(kind),
             reason=_reason(kind),
         )
