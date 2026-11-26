@@ -122,12 +122,13 @@ result without a second call, and a count above 100,000 raises core's `QueryTooL
 (`xippios.core.QueryTooLarge`) with the count before any data is fetched, because upstream
 would cut the answer at 100,000 rows without saying so; `meta.total` is the count. The
 client keeps the reference files for the life of the process and the keyed answers for
-five minutes, so a repeated call spends no call of the daily quota. A free key allows 1 call per second and 500 calls per day, and
-`countOnly` calls count; the client spaces calls 1.5 s apart (upstream's gateway refuses
-some calls spaced exactly 1 s apart) and counts no calls, so the daily quota is yours to
-track: once upstream answers that it is spent, the client sends no keyed call until the
-time upstream names and raises `RateLimitError` instead, while the keyless operations and
-reference files, which spend none of it, go on.
+five minutes, so a repeated call spends no call of the daily quota. A free key allows 1
+call per second and 500 calls per day, and `countOnly` calls count; the client spaces
+calls 1.5 s apart (upstream's gateway refuses some calls spaced exactly 1 s apart) and
+counts no calls, so the daily quota is yours to track: once upstream answers that it is
+spent, the client sends no keyed call until the time upstream names and raises
+`RateLimitError` instead, while the keyless operations and reference files, which spend
+none of it, go on.
 
 ## MCP
 
@@ -144,9 +145,7 @@ reference files, which spend none of it, go on.
 ```
 
 Tools are read-only and named `comtrade_<verb>_<noun>`. Results are capped at
-200 rows or 64 KB with a note on how to narrow the query; `comtrade_get_data`,
-`comtrade_get_data_availability` and `comtrade_get_bilateral_data` take `offset`, and the
-note of a cut answer names the `offset` that continues it from the client's cache; `comtrade_list_reporters` and
+200 rows or 64 KB with a note on how to narrow the query; `comtrade_list_reporters` and
 `comtrade_list_partners` have a cap of their own, 400 rows or 100 KB, so their whole
 tables reach the agent. `comtrade_list_commodities` has the same cap, but a
 classification is larger (8,262 HS codes), so its note says to search. All three take

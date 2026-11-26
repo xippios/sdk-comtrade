@@ -142,9 +142,7 @@ unknown `customs_code` or `mot_code` names the closest codes with their text (co
 `closest` by code and by text, else the most similar code).
 
 `MCP_CAPS` in `tasks.py` gives four tasks result caps of their own (sdk-core ADR-0038),
-each 400 rows or 100 KB: three list tasks and `get_world_share`; `get_data`,
-`get_data_availability` and `get_bilateral_data` take a paged cap, since the cache keeps
-their answers for 300 s and a continuation with `offset` sends nothing. `list_reporters` (256
+each 400 rows or 100 KB: three list tasks and `get_world_share`. `list_reporters` (256
 rows, 69 KB) and `list_partners` (310, 83 KB) reach an agent whole, past Switzerland and the
 USA, where the default cap of 200 rows cut them in upstream's alphabetical order. A
 classification does not fit (8,262 HS codes); the cap's note tells the agent to search.
@@ -208,10 +206,18 @@ and `mirror2*` is empty or 0; upstream states neither meaning. Its envelope's
 and their share of world trade, naming none, in wording that varies; the task returns both
 with the rows as one `BilateralData` (`note`, `timestamp_requested`, `data`), not a list, so
 the note that qualifies the mirror values reaches the agent, as
-https://github.com/xippios/sdk-comtrade/pull/11 decided. Over MCP, core's paged result cap
-cuts its rows: an answer above 64 KB (about 40 rows) keeps its `note` and
-`timestamp_requested` whole beside the rows that fit, and the cap's note names the `offset`
-to continue with.
+https://github.com/xippios/sdk-comtrade/pull/11 decided. Over MCP, core's result cap cuts
+its rows: an answer above 64 KB (about 40 rows) keeps its `note` and `timestamp_requested`
+whole beside the rows that fit, with the cap's note.
+
+No MCP tool is paged. The client keeps core's bound of 8 MiB a body, `cache_max_bytes`,
+and an answer of `get_data` can pass it, 100,000 rows of about 900 bytes, the size of a
+recorded row; about 15,600 rows of `getDa` and 6,000 of `getBilateralData` pass it too, by
+the sizes of their recorded rows, and the package bounds neither answer under that. A
+continuation past the bound would fetch the whole answer again, a keyed call of the daily
+500, and for `get_data` its count too, so `get_data`, `get_data_availability` and
+`get_bilateral_data` stay unpaged, as conventions §8 leave a tool whose answer can pass the
+bound (sdk-core ADR-0061, decision 9).
 
 ## Layout
 
@@ -223,11 +229,13 @@ imported here:
 ## Commands
 
 ```bash
-uv sync --all-extras uv run pytest                      # offline, replays the fixtures uv
-run ruff check . && uv run ruff format --check . uv run mypy uv run pre-commit run
---all-files python3 -I scripts/adr_index.py --check   # the index matches the records in
-docs/adr/ uv run pytest -m live --tb=short --assert=plain   # needs XIPPIOS_LIVE_TESTS=1,
-COMTRADE_API_KEY
+uv sync --all-extras
+uv run pytest                      # offline, replays the fixtures
+uv run ruff check . && uv run ruff format --check .
+uv run mypy
+uv run pre-commit run --all-files
+python3 -I scripts/adr_index.py --check   # the index matches the records in docs/adr/
+uv run pytest -m live --tb=short --assert=plain   # needs XIPPIOS_LIVE_TESTS=1, COMTRADE_API_KEY
 
 uv run xippios-comtrade-mcp   # stdio; add --http for streamable HTTP
 ```
