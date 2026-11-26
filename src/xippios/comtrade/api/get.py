@@ -16,9 +16,9 @@ once in ``xippios.comtrade._client.classify``. A query nothing matches answers H
 with ``count`` 0 (``unknown_reporter.json``, ``count_zero_ch_1900.json``).
 """
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.comtrade._client import SOURCE, client
+from xippios.comtrade._client import client
 from xippios.comtrade.api._query import upstream_query
 from xippios.comtrade.models import TradeDataCountResponse, TradeDataResponse
 
@@ -66,7 +66,7 @@ async def get(
     breakdown_mode: str | None = None,
     include_desc: bool | None = None,
     max_records: int | None = None,
-) -> TradeDataResponse:
+) -> Answer[TradeDataResponse]:
     """Call ``data/v1/get`` with the parameters as upstream names them.
 
     Args:
@@ -86,7 +86,7 @@ async def get(
         include_desc: ``includeDesc``, fill the ``*_desc`` fields.
         max_records: ``maxRecords``, at most this many rows.
     """
-    raw = await client.get_json(
+    return await client.get_answer(
         _path(type_code, freq_code, cl_code),
         params=upstream_query(
             UPSTREAM_NAMES,
@@ -103,8 +103,9 @@ async def get(
             include_desc=include_desc,
             max_records=max_records,
         ),
+        parse=TradeDataResponse,
+        endpoint=ENDPOINT,
     )
-    return parse(TradeDataResponse, raw, source=SOURCE, endpoint=ENDPOINT)
 
 
 async def get_count_only(
@@ -123,7 +124,7 @@ async def get_count_only(
     aggregate_by: str | None = None,
     breakdown_mode: str | None = None,
     include_desc: bool | None = None,
-) -> TradeDataCountResponse:
+) -> Answer[TradeDataCountResponse]:
     """Call ``data/v1/get`` with ``countOnly=true``: how many records the query returns.
 
     Same parameters as ``get`` without ``maxRecords``. Each call counts against the
@@ -145,7 +146,9 @@ async def get_count_only(
         breakdown_mode=breakdown_mode,
         include_desc=include_desc,
     )
-    raw = await client.get_json(
-        _path(type_code, freq_code, cl_code), params={**params, "countOnly": "true"}
+    return await client.get_answer(
+        _path(type_code, freq_code, cl_code),
+        params={**params, "countOnly": "true"},
+        parse=TradeDataCountResponse,
+        endpoint=ENDPOINT,
     )
-    return parse(TradeDataCountResponse, raw, source=SOURCE, endpoint=ENDPOINT)

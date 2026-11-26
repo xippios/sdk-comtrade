@@ -29,9 +29,9 @@ asymmetries (``bilateral-asymmetries.md``). Recorded answers (2026-10-28, under
 Error shapes are mapped once in ``xippios.comtrade._client.classify``.
 """
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.comtrade._client import SOURCE, client
+from xippios.comtrade._client import client
 from xippios.comtrade.api._query import upstream_query
 from xippios.comtrade.models import BilateralDataResponse
 
@@ -62,7 +62,7 @@ async def get_bilateral_data(
     cmd_code: str | None = None,
     flow_code: str | None = None,
     include_desc: bool | None = None,
-) -> BilateralDataResponse:
+) -> Answer[BilateralDataResponse]:
     """Call ``tools/v1/getBilateralData`` with the parameters as upstream names them.
 
     Args:
@@ -76,7 +76,7 @@ async def get_bilateral_data(
         flow_code: ``flowCode``, one flow, ``"X"`` or ``"M"``.
         include_desc: ``includeDesc``, as upstream takes it.
     """
-    raw = await client.get_json(
+    return await client.get_answer(
         f"/{ENDPOINT}/{type_code}/{freq_code}/{cl_code}",
         params=upstream_query(
             UPSTREAM_NAMES,
@@ -87,5 +87,6 @@ async def get_bilateral_data(
             flow_code=flow_code,
             include_desc=include_desc,
         ),
+        parse=BilateralDataResponse,
+        endpoint=ENDPOINT,
     )
-    return parse(BilateralDataResponse, raw, source=SOURCE, endpoint=ENDPOINT)

@@ -13,8 +13,8 @@ Public, keyless: ``public.json``'s ``security`` is ``[{}, apiKeyHeader, apiKeyQu
 key optional, and its ``info`` says "No subscription key required", so the call goes
 through the package's one client with ``auth=None`` and sends none. It spends no daily
 quota and takes the client's pace alone, so a spent key quota does not hold it back: the
-client's ``policy`` skips a request sent with ``auth=None``. The client's cache keeps the
-reference files only, never this answer.
+client's ``policy`` skips a request sent with ``auth=None``. The client's cache keeps no
+answer under ``public/v1``.
 
 Recorded answers (2026-10-28, under ``tests/fixtures/get_world_share/``):
 
@@ -36,9 +36,9 @@ Recorded answers (2026-10-28, under ``tests/fixtures/get_world_share/``):
   (``period_malformed.json``).
 """
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.comtrade._client import SOURCE, client
+from xippios.comtrade._client import client
 from xippios.comtrade.api._query import upstream_query
 from xippios.comtrade.models import WorldShareResponse
 
@@ -60,7 +60,7 @@ async def get_world_share(
     *,
     period: str | None = None,
     reporter_code: str | None = None,
-) -> WorldShareResponse:
+) -> Answer[WorldShareResponse]:
     """Call ``public/v1/getWorldShare`` with the parameters as upstream names them.
 
     Args:
@@ -69,9 +69,10 @@ async def get_world_share(
         period: ``period``, comma-separated ``YYYY`` or ``YYYYMM`` values, or ``"recent"``.
         reporter_code: ``reporterCode``, comma-separated reporter codes, e.g. ``"757"``.
     """
-    raw = await client.get_json(
+    return await client.get_answer(
         f"/{ENDPOINT}/{type_code}/{freq_code}",
         params=upstream_query(UPSTREAM_NAMES, period=period, reporter_code=reporter_code),
         auth=None,
+        parse=WorldShareResponse,
+        endpoint=ENDPOINT,
     )
-    return parse(WorldShareResponse, raw, source=SOURCE, endpoint=ENDPOINT)

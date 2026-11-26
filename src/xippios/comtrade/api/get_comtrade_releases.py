@@ -11,17 +11,17 @@ Public, keyless: ``public.json``'s ``security`` is ``[{}, apiKeyHeader, apiKeyQu
 key optional, and its ``info`` says "No subscription key required", so the call goes
 through the package's one client with ``auth=None`` and sends none. It spends no daily
 quota and takes the client's pace alone, so a spent key quota does not hold it back: the
-client's ``policy`` skips a request sent with ``auth=None``. The client's cache keeps the
-reference files only, never this answer.
+client's ``policy`` skips a request sent with ``auth=None``. The client's cache keeps no
+answer under ``public/v1``, so a release calendar always comes from upstream.
 
 Recorded 2026-10-28 (``tests/fixtures/get_comtrade_releases/calendar.json``): 38 rows,
 ``count`` 38, released from 2026-10-22 to 2026-10-28, newest first, every
 ``dateRelease`` a midnight without an offset; no date after the recording day.
 """
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.comtrade._client import SOURCE, client
+from xippios.comtrade._client import client
 from xippios.comtrade.models import ComtradeReleasesResponse
 
 __all__ = ["ENDPOINT", "get_comtrade_releases"]
@@ -30,7 +30,8 @@ ENDPOINT = "public/v1/getComtradeReleases"
 """The operation's path under the server, as ``help/data-availability.md`` names it."""
 
 
-async def get_comtrade_releases() -> ComtradeReleasesResponse:
+async def get_comtrade_releases() -> Answer[ComtradeReleasesResponse]:
     """Call ``public/v1/getComtradeReleases``, which takes no parameters."""
-    raw = await client.get_json(f"/{ENDPOINT}", auth=None)
-    return parse(ComtradeReleasesResponse, raw, source=SOURCE, endpoint=ENDPOINT)
+    return await client.get_answer(
+        f"/{ENDPOINT}", auth=None, parse=ComtradeReleasesResponse, endpoint=ENDPOINT
+    )

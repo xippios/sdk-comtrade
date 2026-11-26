@@ -18,9 +18,9 @@ period in the classification it reported. Recorded answers (2026-10-23, under
   "The field clCode is invalid" (``services_ebsdmx.json``).
 """
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.comtrade._client import SOURCE, client
+from xippios.comtrade._client import client
 from xippios.comtrade.api._query import upstream_query
 from xippios.comtrade.models import DataAvailabilityResponse
 
@@ -47,7 +47,7 @@ async def get_da(
     period: str | None = None,
     published_date_from: str | None = None,
     published_date_to: str | None = None,
-) -> DataAvailabilityResponse:
+) -> Answer[DataAvailabilityResponse]:
     """Call ``data/v1/getDa`` with the parameters as upstream names them.
 
     Args:
@@ -59,7 +59,7 @@ async def get_da(
         published_date_from: ``publishedDateFrom``, ``YYYY-MM-DD``.
         published_date_to: ``publishedDateTo``, ``YYYY-MM-DD``.
     """
-    raw = await client.get_json(
+    return await client.get_answer(
         f"/{ENDPOINT}/{type_code}/{freq_code}/{cl_code}",
         params=upstream_query(
             UPSTREAM_NAMES,
@@ -68,5 +68,6 @@ async def get_da(
             published_date_from=published_date_from,
             published_date_to=published_date_to,
         ),
+        parse=DataAvailabilityResponse,
+        endpoint=ENDPOINT,
     )
-    return parse(DataAvailabilityResponse, raw, source=SOURCE, endpoint=ENDPOINT)

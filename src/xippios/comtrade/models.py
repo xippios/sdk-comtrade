@@ -14,6 +14,14 @@ for the Tools operations, ``comtradeTools.json`` and, for the public operations,
 reference tables, from the public files under ``files/v1/app/reference/``. Trade values and
 quantities are ``Decimal`` (sdk-core ADR-0031) and travel as JSON numbers through the
 adapters.
+
+A record's reporter, partner, customs, transport, supply, quantity unit and frequency codes
+declare the packaged list that names them, ``NamedBy`` of a declaration in ``codes.py``
+(sdk-core ADR-0067, decision 6), so every answer that holds the record names each code of
+its rows in ``meta.names``, and a code the list lacks is said in ``meta.notes`` rather
+than refused. A list's own code, whose name stands on its record beside it, takes no mark.
+``flow_code`` and ``classification_code`` take none yet, since ``codes.py`` declares no
+list for them, and ``type_code`` and ``cmd_code`` have no list with words.
 """
 
 import re
@@ -30,7 +38,17 @@ from pydantic import (
     WrapValidator,
 )
 from pydantic import ValidationError as PydanticValidationError
-from xippios.core import UpstreamModel
+from xippios.core import NamedBy, UpstreamModel
+
+from xippios.comtrade.codes import (
+    CUSTOMS_CODES,
+    FREQ_CODES,
+    MOS_CODES,
+    MOT_CODES,
+    PARTNERS,
+    QTY_UNIT_CODES,
+    REPORTERS,
+)
 
 __all__ = [
     "AggregateByValue",
@@ -99,20 +117,20 @@ class TradeDataRecord(UpstreamModel):
     """
 
     type_code: str | None = Field(validation_alias="typeCode")
-    freq_code: str | None = Field(validation_alias="freqCode")
+    freq_code: Annotated[str, NamedBy(FREQ_CODES)] | None = Field(validation_alias="freqCode")
     ref_period_id: int = Field(validation_alias="refPeriodId")
     ref_year: int = Field(validation_alias="refYear")
     ref_month: int = Field(validation_alias="refMonth")
     period: str | None
-    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_code: Annotated[int, NamedBy(REPORTERS)] = Field(validation_alias="reporterCode")
     reporter_iso: str | None = Field(validation_alias="reporterISO")
     reporter_desc: str | None = Field(validation_alias="reporterDesc")
     flow_code: str | None = Field(validation_alias="flowCode")
     flow_desc: str | None = Field(validation_alias="flowDesc")
-    partner_code: int = Field(validation_alias="partnerCode")
+    partner_code: Annotated[int, NamedBy(PARTNERS)] = Field(validation_alias="partnerCode")
     partner_iso: str | None = Field(validation_alias="partnerISO")
     partner_desc: str | None = Field(validation_alias="partnerDesc")
-    partner2_code: int = Field(validation_alias="partner2Code")
+    partner2_code: Annotated[int, NamedBy(PARTNERS)] = Field(validation_alias="partner2Code")
     partner2_iso: str | None = Field(validation_alias="partner2ISO")
     partner2_desc: str | None = Field(validation_alias="partner2Desc")
     classification_code: str | None = Field(validation_alias="classificationCode")
@@ -122,16 +140,22 @@ class TradeDataRecord(UpstreamModel):
     cmd_desc: str | None = Field(validation_alias="cmdDesc")
     aggr_level: int | None = Field(validation_alias="aggrLevel")
     is_leaf: bool | None = Field(validation_alias="isLeaf")
-    customs_code: str | None = Field(validation_alias="customsCode")
+    customs_code: Annotated[str, NamedBy(CUSTOMS_CODES)] | None = Field(
+        validation_alias="customsCode"
+    )
     customs_desc: str | None = Field(validation_alias="customsDesc")
-    mos_code: str | None = Field(validation_alias="mosCode")
-    mot_code: int = Field(validation_alias="motCode")
+    mos_code: Annotated[str, NamedBy(MOS_CODES)] | None = Field(validation_alias="mosCode")
+    mot_code: Annotated[int, NamedBy(MOT_CODES)] = Field(validation_alias="motCode")
     mot_desc: str | None = Field(validation_alias="motDesc")
-    qty_unit_code: int | None = Field(validation_alias="qtyUnitCode")
+    qty_unit_code: Annotated[int, NamedBy(QTY_UNIT_CODES)] | None = Field(
+        validation_alias="qtyUnitCode"
+    )
     qty_unit_abbr: str | None = Field(validation_alias="qtyUnitAbbr")
     qty: Decimal | None
     is_qty_estimated: bool = Field(validation_alias="isQtyEstimated")
-    alt_qty_unit_code: int | None = Field(validation_alias="altQtyUnitCode")
+    alt_qty_unit_code: Annotated[int, NamedBy(QTY_UNIT_CODES)] | None = Field(
+        validation_alias="altQtyUnitCode"
+    )
     alt_qty_unit_abbr: str | None = Field(validation_alias="altQtyUnitAbbr")
     alt_qty: Decimal | None = Field(validation_alias="altQty")
     is_alt_qty_estimated: bool = Field(validation_alias="isAltQtyEstimated")
@@ -211,18 +235,18 @@ class TradeBalanceRecord(UpstreamModel):
     """
 
     type_code: str | None = Field(validation_alias="typeCode")
-    freq_code: str | None = Field(validation_alias="freqCode")
+    freq_code: Annotated[str, NamedBy(FREQ_CODES)] | None = Field(validation_alias="freqCode")
     ref_period_id: int = Field(validation_alias="refPeriodId")
     ref_year: int = Field(validation_alias="refYear")
     ref_month: int = Field(validation_alias="refMonth")
     period: str | None
-    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_code: Annotated[int, NamedBy(REPORTERS)] = Field(validation_alias="reporterCode")
     reporter_iso: str | None = Field(validation_alias="reporterISO")
     reporter_desc: str | None = Field(validation_alias="reporterDesc")
-    partner_code: int = Field(validation_alias="partnerCode")
+    partner_code: Annotated[int, NamedBy(PARTNERS)] = Field(validation_alias="partnerCode")
     partner_iso: str | None = Field(validation_alias="partnerISO")
     partner_desc: str | None = Field(validation_alias="partnerDesc")
-    partner2_code: int = Field(validation_alias="partner2Code")
+    partner2_code: Annotated[int, NamedBy(PARTNERS)] = Field(validation_alias="partner2Code")
     partner2_iso: str | None = Field(validation_alias="partner2ISO")
     partner2_desc: str | None = Field(validation_alias="partner2Desc")
     classification_code: str | None = Field(validation_alias="classificationCode")
@@ -232,17 +256,23 @@ class TradeBalanceRecord(UpstreamModel):
     cmd_desc: str | None = Field(validation_alias="cmdDesc")
     aggr_level: int | None = Field(validation_alias="aggrLevel")
     is_leaf: bool | None = Field(validation_alias="isLeaf")
-    customs_code: str | None = Field(validation_alias="customsCode")
+    customs_code: Annotated[str, NamedBy(CUSTOMS_CODES)] | None = Field(
+        validation_alias="customsCode"
+    )
     customs_desc: str | None = Field(validation_alias="customsDesc")
-    mos_code: str | None = Field(validation_alias="mosCode")
-    mot_code: int = Field(validation_alias="motCode")
+    mos_code: Annotated[str, NamedBy(MOS_CODES)] | None = Field(validation_alias="mosCode")
+    mot_code: Annotated[int, NamedBy(MOT_CODES)] = Field(validation_alias="motCode")
     mot_desc: str | None = Field(validation_alias="motDesc")
-    qty_unit_code: int | None = Field(validation_alias="qtyUnitCode")
+    qty_unit_code: Annotated[int, NamedBy(QTY_UNIT_CODES)] | None = Field(
+        validation_alias="qtyUnitCode"
+    )
     qty_unit_abbr: str | None = Field(validation_alias="qtyUnitAbbr")
     qty_x: Decimal | None = Field(validation_alias="qtyX")
     qty_m: Decimal | None = Field(validation_alias="qtyM")
     is_qty_estimated: bool = Field(validation_alias="isQtyEstimated")
-    alt_qty_unit_code: int | None = Field(validation_alias="altQtyUnitCode")
+    alt_qty_unit_code: Annotated[int, NamedBy(QTY_UNIT_CODES)] | None = Field(
+        validation_alias="altQtyUnitCode"
+    )
     alt_qty_unit_abbr: str | None = Field(validation_alias="altQtyUnitAbbr")
     alt_qty_x: Decimal | None = Field(validation_alias="altQtyX")
     alt_qty_m: Decimal | None = Field(validation_alias="altQtyM")
@@ -324,17 +354,17 @@ class BilateralDataRecord(UpstreamModel):
     """
 
     type_code: str | None = Field(validation_alias="typeCode")
-    freq_code: str | None = Field(validation_alias="freqCode")
+    freq_code: Annotated[str, NamedBy(FREQ_CODES)] | None = Field(validation_alias="freqCode")
     ref_period_id: int = Field(validation_alias="refPeriodId")
     ref_year: int = Field(validation_alias="refYear")
     ref_month: int = Field(validation_alias="refMonth")
     period: str | None
-    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_code: Annotated[int, NamedBy(REPORTERS)] = Field(validation_alias="reporterCode")
     reporter_iso: str | None = Field(validation_alias="reporterISO")
     reporter_desc: str | None = Field(validation_alias="reporterDesc")
     flow_code: str | None = Field(validation_alias="flowCode")
     flow_desc: str | None = Field(validation_alias="flowDesc")
-    partner_code: int = Field(validation_alias="partnerCode")
+    partner_code: Annotated[int, NamedBy(PARTNERS)] = Field(validation_alias="partnerCode")
     partner_iso: str | None = Field(validation_alias="partnerISO")
     partner_desc: str | None = Field(validation_alias="partnerDesc")
     classification_code: str | None = Field(validation_alias="classificationCode")
@@ -344,27 +374,41 @@ class BilateralDataRecord(UpstreamModel):
     cmd_desc: str | None = Field(validation_alias="cmdDesc")
     aggr_level: int | None = Field(validation_alias="aggrLevel")
     is_leaf: bool | None = Field(validation_alias="isLeaf")
-    customs_code: str | None = Field(validation_alias="customsCode")
+    customs_code: Annotated[str, NamedBy(CUSTOMS_CODES)] | None = Field(
+        validation_alias="customsCode"
+    )
     customs_desc: str | None = Field(validation_alias="customsDesc")
-    mos_code: str | None = Field(validation_alias="mosCode")
-    mot_code: int = Field(validation_alias="motCode")
+    mos_code: Annotated[str, NamedBy(MOS_CODES)] | None = Field(validation_alias="mosCode")
+    mot_code: Annotated[int, NamedBy(MOT_CODES)] = Field(validation_alias="motCode")
     mot_desc: str | None = Field(validation_alias="motDesc")
-    qty_unit_code: int | None = Field(validation_alias="qtyUnitCode")
+    qty_unit_code: Annotated[int, NamedBy(QTY_UNIT_CODES)] | None = Field(
+        validation_alias="qtyUnitCode"
+    )
     qty_unit_abbr: str | None = Field(validation_alias="qtyUnitAbbr")
-    mirror_qty_unit_code: int | None = Field(validation_alias="mirrorQtyUnitCode")
+    mirror_qty_unit_code: Annotated[int, NamedBy(QTY_UNIT_CODES)] | None = Field(
+        validation_alias="mirrorQtyUnitCode"
+    )
     mirror_qty_unit_abbr: str | None = Field(validation_alias="mirrorQtyUnitAbbr")
-    mirror2_qty_unit_code: int | None = Field(validation_alias="mirror2QtyUnitCode")
+    mirror2_qty_unit_code: Annotated[int, NamedBy(QTY_UNIT_CODES)] | None = Field(
+        validation_alias="mirror2QtyUnitCode"
+    )
     mirror2_qty_unit_abbr: str | None = Field(validation_alias="mirror2QtyUnitAbbr")
     qty: Decimal | None
     mirror_qty: Decimal | None = Field(validation_alias="mirrorQty")
     mirror2_qty: Decimal | None = Field(validation_alias="mirror2Qty")
     is_qty_estimated: bool = Field(validation_alias="isQtyEstimated")
-    alt_qty_unit_code: int | None = Field(validation_alias="altQtyUnitCode")
+    alt_qty_unit_code: Annotated[int, NamedBy(QTY_UNIT_CODES)] | None = Field(
+        validation_alias="altQtyUnitCode"
+    )
     alt_qty_unit_abbr: str | None = Field(validation_alias="altQtyUnitAbbr")
     alt_qty: Decimal | None = Field(validation_alias="altQty")
-    mirror_alt_qty_unit_code: int | None = Field(validation_alias="mirrorAltQtyUnitCode")
+    mirror_alt_qty_unit_code: Annotated[int, NamedBy(QTY_UNIT_CODES)] | None = Field(
+        validation_alias="mirrorAltQtyUnitCode"
+    )
     mirror_alt_qty_unit_abbr: str | None = Field(validation_alias="mirrorAltQtyUnitAbbr")
-    mirror2_alt_qty_unit_code: int | None = Field(validation_alias="mirror2AltQtyUnitCode")
+    mirror2_alt_qty_unit_code: Annotated[int, NamedBy(QTY_UNIT_CODES)] | None = Field(
+        validation_alias="mirror2AltQtyUnitCode"
+    )
     mirror2_alt_qty_unit_abbr: str | None = Field(validation_alias="mirror2AltQtyUnitAbbr")
     mirror_alt_qty: Decimal | None = Field(validation_alias="mirrorAltQty")
     mirror2_alt_qty: Decimal | None = Field(validation_alias="mirror2AltQty")
@@ -799,9 +843,9 @@ class DataAvailability(UpstreamModel):
 
     dataset_code: int = Field(validation_alias="datasetCode")
     type_code: str | None = Field(validation_alias="typeCode")
-    freq_code: str | None = Field(validation_alias="freqCode")
+    freq_code: Annotated[str, NamedBy(FREQ_CODES)] | None = Field(validation_alias="freqCode")
     period: int
-    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_code: Annotated[int, NamedBy(REPORTERS)] = Field(validation_alias="reporterCode")
     reporter_iso: str | None = Field(validation_alias="reporterISO")
     reporter_desc: str | None = Field(validation_alias="reporterDesc")
     classification_code: str | None = Field(validation_alias="classificationCode")
@@ -861,9 +905,9 @@ class MetadataNote(UpstreamModel):
 
     dataset_code: int = Field(validation_alias="datasetCode")
     type_code: str | None = Field(validation_alias="typeCode")
-    freq_code: str | None = Field(validation_alias="freqCode")
+    freq_code: Annotated[str, NamedBy(FREQ_CODES)] | None = Field(validation_alias="freqCode")
     period: int
-    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_code: Annotated[int, NamedBy(REPORTERS)] = Field(validation_alias="reporterCode")
     reporter_description: str | None = Field(validation_alias="reporterDescription")
     currency: str | None
     import_conv_factor: Decimal | None = Field(validation_alias="importConvFactor")
@@ -891,10 +935,10 @@ class MetadataDataset(UpstreamModel):
         notes: One note per publication, first publication first.
     """
 
-    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_code: Annotated[int, NamedBy(REPORTERS)] = Field(validation_alias="reporterCode")
     period: int
     type_code: str | None = Field(validation_alias="typeCode")
-    freq_code: str | None = Field(validation_alias="freqCode")
+    freq_code: Annotated[str, NamedBy(FREQ_CODES)] | None = Field(validation_alias="freqCode")
     dataset_code: int = Field(validation_alias="datasetCode")
     notes: list[MetadataNote]
 
@@ -1018,8 +1062,10 @@ class LiveUpdateRecord(UpstreamModel):
         validation_alias="queuedAt"
     )
     release_status: str | None = Field(validation_alias="releaseStatus")
-    reporter_code: str | None = Field(validation_alias="reporterCode")
-    freq_code: str | None = Field(validation_alias="freqCode")
+    reporter_code: Annotated[str, NamedBy(REPORTERS)] | None = Field(
+        validation_alias="reporterCode"
+    )
+    freq_code: Annotated[str, NamedBy(FREQ_CODES)] | None = Field(validation_alias="freqCode")
     type_code: str | None = Field(validation_alias="typeCode")
     classification_code: str | None = Field(validation_alias="classificationCode")
     period: int | None
@@ -1061,7 +1107,7 @@ class ComtradeRelease(UpstreamModel):
             no zone is attached; every recorded value is a midnight.
     """
 
-    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_code: Annotated[int, NamedBy(REPORTERS)] = Field(validation_alias="reporterCode")
     flag_code: str | None = Field(validation_alias="flagCode")
     dataset_desc: str | None = Field(validation_alias="datasetDesc")
     nr: str | None
@@ -1116,12 +1162,12 @@ class WorldShare(UpstreamModel):
     """
 
     type_code: str | None = Field(validation_alias="typeCode")
-    freq_code: str | None = Field(validation_alias="freqCode")
+    freq_code: Annotated[str, NamedBy(FREQ_CODES)] | None = Field(validation_alias="freqCode")
     period: int
     year: int
     month: int
     dataset_desc: str | None = Field(validation_alias="datasetDesc")
-    reporter_code: int = Field(validation_alias="reporterCode")
+    reporter_code: Annotated[int, NamedBy(REPORTERS)] = Field(validation_alias="reporterCode")
     reporter_iso: str | None = Field(validation_alias="reporterISO")
     reporter_desc: str | None = Field(validation_alias="reporterDesc")
     world_share: Decimal | None = Field(validation_alias="worldShare")

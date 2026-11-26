@@ -1,13 +1,16 @@
 """Task functions, the public API: the adapters serve ``__all__`` (conventions §2).
 
-``/add-endpoint`` adds them.
+``/add-endpoint`` adds them. Core builds the server from this module, which declares what
+the server holds beside its tools (conventions §8, sdk-core ADR-0063, decision 7):
+``MCP_INSTRUCTIONS``, ``MCP_CAPS`` and ``BULK_TASKS``.
 
 ``meta.endpoint`` is the operation as the Help Center names it (``data/v1/get``), or as
 the Tools spec's server path and summary do (``tools/v1/getTradeBalance``), its path under
 the spec's server where no article names it (``public/v1/getWorldShare``), or the
 reference file a list comes from (``files/v1/app/reference/Reporters.json``), and
 ``meta.request`` the task's own arguments that were set, so ``get_data(**meta.request)``
-repeats the call.
+repeats the call. ``meta.retrieved_at`` is the client's time of the answer, a wrapper's
+``Answer.retrieved_at``, and the older of its two reads for ``get_data`` (conventions §4).
 
 ``meta.published_at`` stays ``None`` on every task. Data rows carry no publication date,
 and where upstream does publish release dates it publishes one per reporter and period
@@ -21,9 +24,18 @@ release identifier (sdk-core ADR-0041, decision 1).
 """
 
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
-from xippios.core import PackagedList, Result, ResultCap, ResultMeta, matches, sync
+from xippios.core import (
+    PackagedList,
+    Result,
+    ResultCap,
+    ResultMeta,
+    fetch_counted,
+    matches,
+    sync,
+)
 
 from xippios.comtrade import api
 from xippios.comtrade._client import SOURCE
@@ -35,7 +47,7 @@ from xippios.comtrade.api.get_live_update import ENDPOINT as GET_LIVE_UPDATE
 from xippios.comtrade.api.get_metadata import ENDPOINT as GET_METADATA
 from xippios.comtrade.api.get_trade_balance import ENDPOINT as GET_TRADE_BALANCE
 from xippios.comtrade.api.get_world_share import ENDPOINT as GET_WORLD_SHARE
-from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
+from xippios.comtrade.errors import NARROW, RECORD_LIMIT
 from xippios.comtrade.models import (
     BilateralData,
     CodeValue,
@@ -81,6 +93,12 @@ __all__ = [
     "list_reporters",
 ]
 
+MCP_INSTRUCTIONS = (
+    "UN Comtrade via xippios. Tools are read-only. Where list tools (comtrade_list_*) "
+    "exist, call them first to find valid values, then query."
+)
+"""The server's instructions, which core hands every client (sdk-core ADR-0063, decision 7)."""
+
 # A task named here is Python-only: no tool, no route; the adapters skip it
 # (sdk-core ADR-0040 decision 4).
 BULK_TASKS: frozenset[str] = frozenset()
@@ -91,7 +109,10 @@ BULK_TASKS: frozenset[str] = frozenset()
 # period's world share for every reporter (214 rows, 88.5 KB for 2023) reaches an agent
 # whole too, where the default cap cut it at 157 rows, dropping the USA (842): upstream
 # sends the available rows first, by reporter code, then the unavailable ones in an order
-# the recording does not explain.
+# the recording does not explain. The keyed reads of get_data, get_data_availability and
+# get_bilateral_data stand in the client's cache for 300 s, so their caps are paged: the
+# tool takes offset and a continuation reads the kept answer, sending nothing (sdk-core
+# ADR-0061, decision 9; https://github.com/xippios/sdk-comtrade/issues/35).
 MCP_CAPS: Mapping[str, ResultCap] = {
     "list_reporters": ResultCap(max_rows=400, max_bytes=100_000),
     "list_partners": ResultCap(max_rows=400, max_bytes=100_000),
@@ -105,14 +126,21 @@ MCP_CAPS: Mapping[str, ResultCap] = {
         max_bytes=100_000,
         note='narrow by reporter_code (e.g. "842") or period (e.g. "2023") to see the rest',
     ),
+    "get_data": ResultCap(paged=True),
+    "get_data_availability": ResultCap(paged=True),
+    "get_bilateral_data": ResultCap(paged=True),
 }
 
 REFERENCE = "files/v1/app/reference"
 """Where upstream serves the reference files; ``meta.endpoint`` of the list tasks."""
 
 
-def _meta(request: dict[str, Any]) -> ResultMeta:
-    return ResultMeta(source=SOURCE, endpoint=ENDPOINT, request=request)
+def _meta(
+    request: dict[str, Any], retrieved_at: datetime, *, total: int | None = None
+) -> ResultMeta:
+    return ResultMeta(
+        source=SOURCE, endpoint=ENDPOINT, request=request, retrieved_at=retrieved_at, total=total
+    )
 
 
 async def get_counts_async(
@@ -212,8 +240,8 @@ async def get_counts_async(
         breakdown_mode=breakdown_mode,
         include_desc=include_desc,
     )
-    response = await api.get_count_only(**request)
-    return Result(data=response.count, meta=_meta(request))
+    answer = await api.get_count_only(**request)
+    return Result(data=answer.payload.count, meta=_meta(request, answer.retrieved_at))
 
 
 async def get_data_async(
@@ -235,20 +263,17 @@ async def get_data_async(
 ) -> Result[list[TradeDataRecord]]:
     """Fetch UN Comtrade final trade data for one query, up to 100,000 records.
 
-    Counts first (one extra call, as ``get_counts``): a count of 0 returns an empty list
-    without fetching, since no matching data is an answer, not an error; a count above
-    100,000 raises ``QueryTooLarge`` with the count before anything is fetched, because
-    upstream would cut the answer at 100,000 rows without saying so. Each row carries
-    every field of upstream's ``TradeDataRecord`` under its snake_case name;
-    ``primary_value`` is upstream's primary trade value (taken from the CIF or FOB value,
-    in ``cifvalue``/``fobvalue``). Leaving out ``partner2_code``,
-    ``customs_code`` and ``mot_code`` returns every breakdown upstream holds (32 rows for
-    Switzerland's 2023 exports to the World); the row with ``partner2_code`` 0,
-    ``customs_code`` ``"C00"`` and ``mot_code`` 0 is the total, and pinning those three
-    (or ``breakdown_mode="classic"``) returns that row alone. Arguments are checked
-    before any call; an unknown reporter, partner, customs or transport code raises
-    ``UnknownCode``, an ``InvalidRequestError`` naming the packaged list and the closest
-    code, another mistake ``InvalidRequestError`` naming the closest valid value.
+    Counts first, one call more, as ``get_counts``: a count of 0 returns an empty list
+    without fetching, and a count above 100,000 raises ``QueryTooLarge`` with the count
+    before any data is fetched, since upstream would cut the answer at 100,000 rows
+    without saying so. ``meta.total`` is the count. Each row carries every field of
+    upstream's ``TradeDataRecord`` under its snake_case name. Leaving out
+    ``partner2_code``, ``customs_code`` and ``mot_code`` returns every breakdown upstream
+    holds; the row with ``partner2_code`` 0, ``customs_code`` ``"C00"`` and ``mot_code`` 0
+    is the total. Arguments are checked before any call: an unknown reporter, partner,
+    customs or transport code raises ``UnknownCode``, an ``InvalidRequestError`` naming
+    the packaged list and the closest code, another mistake ``InvalidRequestError`` naming
+    the closest valid value.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
@@ -320,13 +345,22 @@ async def get_data_async(
         breakdown_mode=breakdown_mode,
         include_desc=include_desc,
     )
-    count = (await api.get_count_only(**request)).count
-    if count == 0:
-        return Result(data=[], meta=_meta(request))
-    if count > RECORD_LIMIT:
-        raise QueryTooLarge(count)
-    response = await api.get(**request)
-    return Result(data=response.data, meta=_meta(request))
+    reads: list[datetime] = []
+
+    async def count() -> int:
+        answer = await api.get_count_only(**request)
+        reads.append(answer.retrieved_at)
+        return answer.payload.count
+
+    async def fetch() -> list[TradeDataRecord]:
+        answer = await api.get(**request)
+        reads.append(answer.retrieved_at)
+        return answer.payload.data
+
+    rows, total = await fetch_counted(
+        count, fetch, limit=RECORD_LIMIT, empty=[], narrow=NARROW, source=SOURCE
+    )
+    return Result(data=rows, meta=_meta(request, min(reads), total=total))
 
 
 async def get_data_availability_async(
@@ -374,11 +408,11 @@ async def get_data_availability_async(
         published_date_from=published_date_from,
         published_date_to=published_date_to,
     )
-    response = await api.get_da(**request)
-    return Result(
-        data=response.data,
-        meta=ResultMeta(source=SOURCE, endpoint=GET_DA, request=request),
+    answer = await api.get_da(**request)
+    meta = ResultMeta(
+        source=SOURCE, endpoint=GET_DA, request=request, retrieved_at=answer.retrieved_at
     )
+    return Result(data=answer.payload.data, meta=meta)
 
 
 async def get_metadata_async(
@@ -415,9 +449,11 @@ async def get_metadata_async(
     request = validate_datasets(
         type_code, freq_code, cl_code, reporter_code=reporter_code, period=period
     )
-    response = await api.get_metadata(**request)
-    meta = ResultMeta(source=SOURCE, endpoint=GET_METADATA, request=request)
-    return Result(data=response.data, meta=meta)
+    answer = await api.get_metadata(**request)
+    meta = ResultMeta(
+        source=SOURCE, endpoint=GET_METADATA, request=request, retrieved_at=answer.retrieved_at
+    )
+    return Result(data=answer.payload.data, meta=meta)
 
 
 async def get_live_update_async() -> Result[list[LiveUpdateRecord]]:
@@ -432,9 +468,9 @@ async def get_live_update_async() -> Result[list[LiveUpdateRecord]]:
     arguments. Upstream's ``count`` (174 when recorded) is not the number of rows, so it
     is not returned.
     """
-    response = await api.get_live_update()
-    meta = ResultMeta(source=SOURCE, endpoint=GET_LIVE_UPDATE)
-    return Result(data=response.data, meta=meta)
+    answer = await api.get_live_update()
+    meta = ResultMeta(source=SOURCE, endpoint=GET_LIVE_UPDATE, retrieved_at=answer.retrieved_at)
+    return Result(data=answer.payload.data, meta=meta)
 
 
 async def get_trade_balance_async(
@@ -455,24 +491,16 @@ async def get_trade_balance_async(
 ) -> Result[list[TradeBalanceRecord]]:
     """Fetch UN Comtrade trade data with a reporter's exports and imports side by side.
 
-    Upstream's ``getTradeBalance``, which its spec marks "EXPERIMENTAL - USE SPARINGLY":
-    one keyed call, no count first. Each row, a ``TradeBalanceRecord``, holds a reporter's
-    exports (``*_x``: ``primary_value_x``, ``qty_x``, ``net_wgt_x``, ...) and imports
-    (``*_m``) with one partner, second partner, product code, customs procedure, mode of
-    transport and period, and ``primary_value_bal``, which the spec defines as "X - M":
-    upstream's value, passed through (``54550055814.504944`` for Switzerland and the World
-    in 2023). Without ``breakdown_mode`` upstream answers every breakdown (48 rows for
-    Switzerland and the World, 2023, all goods); ``breakdown_mode="classic"`` returns the
-    total row alone. A query nothing matches returns an empty list. ``meta.total`` is
-    upstream's ``count``. The query must name ``reporter_code`` or ``partner_code``, and
-    ``cmd_code``: upstream offers no count to check a query's size before the call
-    (``countOnly`` answered 0 for those 48 rows), so a broader query is refused before it
-    is sent. Arguments are checked before the call; an unknown reporter, partner, customs
-    or transport code raises ``UnknownCode``, an ``InvalidRequestError`` naming the
-    packaged list and the closest code, another mistake ``InvalidRequestError`` naming the
-    closest valid value. The spec says a free-tier key that is not on UN Comtrade's
-    allow-list is refused with HTTP 403 "User not allowed" (``AuthError``); the key the
-    package was recorded with was answered (2026-10-28).
+    Upstream's ``getTradeBalance``, which its spec marks "EXPERIMENTAL - USE SPARINGLY": one
+    keyed call, no count first. Each row, a ``TradeBalanceRecord``, holds a reporter's
+    exports (``*_x``) and imports (``*_m``) with one partner, second partner, product code,
+    customs procedure, mode of transport and period, and ``primary_value_bal``, which the
+    spec defines as "X - M". A query nothing matches returns an empty list. ``meta.total``
+    is upstream's ``count``. The query must name ``reporter_code`` or ``partner_code``, and
+    ``cmd_code``: upstream offers no count to check a query's size before the call, so a
+    broader query is refused before it is sent. Arguments are checked before the call: an
+    unknown reporter, partner, customs or transport code raises ``UnknownCode``, naming the
+    packaged list and the closest code, another mistake ``InvalidRequestError``.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
@@ -538,11 +566,15 @@ async def get_trade_balance_async(
         breakdown_mode=breakdown_mode,
         include_desc=include_desc,
     )
-    response = await api.get_trade_balance(**request)
+    answer = await api.get_trade_balance(**request)
     meta = ResultMeta(
-        source=SOURCE, endpoint=GET_TRADE_BALANCE, request=request, total=response.count
+        source=SOURCE,
+        endpoint=GET_TRADE_BALANCE,
+        request=request,
+        retrieved_at=answer.retrieved_at,
+        total=answer.payload.count,
     )
-    return Result(data=response.data, meta=meta)
+    return Result(data=answer.payload.data, meta=meta)
 
 
 async def get_bilateral_data_async(
@@ -560,37 +592,15 @@ async def get_bilateral_data_async(
     """Compare a reporter's trade figures with its partners' mirror figures, row by row.
 
     Upstream's ``getBilateralData``, which its spec marks "EXPERIMENTAL - USE SPARINGLY":
-    one keyed call, "basic trade data joined with mirror partner data", useful to analyse
-    bilateral trade asymmetries. Its result is not a list: ``data`` is a
-    ``BilateralData`` holding upstream's ``note``, its
-    ``timestamp_requested`` and the rows, ``data.data``, because the note qualifies the
-    mirror values. It counts the partners with a data gap and gives their share of world
-    trade without naming them ("a data gap for 2 partner(s) ... approximately 0.015% of the
-    accumulated world's share").
-    Each row, a ``BilateralDataRecord``, is one reporter, partner, product code, flow and
-    period at the total of every breakdown (``customs_code`` ``"C00"``, ``mot_code`` 0): the
-    reporter's figures (``primary_value``, ``qty``, ``net_wgt``, ...) beside the mirror
-    (``mirror_primary_value``, ``mirror_qty``, ...), for a reporter's exports "the import
-    data reported by" its partners, as UN Comtrade's Help Center puts it. It warns that "the
-    outcome of the mirror data depends on the availability of other reporters rather than
-    no-trade": a mirror of 0 is no evidence of no trade. For Switzerland's 2023 exports
-    Afghanistan's mirror of 0 showed which partner the gap was, inferred from the counts
-    (DPRK alone: 1, the USA alone: none, the three together: 2), not stated. That is no
-    general rule: the note speaks of a gap "during specific periods" and says "the
-    calculation of mirror data may be incomplete", and a mirror of 0 can also be a partner
-    that reported no such imports. ``primary_value_disc`` is upstream's, its meaning not
-    stated; in every recorded row it equals ``(mirror_primary_value - primary_value) /
-    primary_value``, a relative difference (``-0.16`` for Switzerland's 2023 exports to the
-    USA, ``-1.0`` where the mirror is 0). The ``mirror2_*`` fields are not described
-    upstream and were ``None`` or 0 in every recorded row. A pair upstream holds nothing for
-    has no row. ``meta.total`` is upstream's ``count``. Over MCP an answer above the result
-    cap (about 40 rows) keeps ``note`` and ``timestamp_requested`` and shows the rows that
-    fit, so name a few partners or periods per call. The query must name ``reporter_code``
-    or ``partner_code``, and ``cmd_code``: upstream offers no count to check a query's size
-    before the call (it ignores ``countOnly``), so a broader query is refused before it is
-    sent. Arguments are checked before the call; an unknown reporter or partner code raises
-    ``UnknownCode``, an ``InvalidRequestError`` naming the packaged list and the closest
-    area, another mistake ``InvalidRequestError`` naming the closest valid value.
+    one keyed call, "basic trade data joined with mirror partner data". ``data`` is a
+    ``BilateralData``, not a list: upstream's ``note``, its ``timestamp_requested`` and the
+    rows, ``data.data``, since the note qualifies the mirror values. Each row, a
+    ``BilateralDataRecord``, is one reporter, partner, product code, flow and period: the
+    reporter's figures beside the mirror, for a reporter's exports the imports its partners
+    reported. UN Comtrade's Help Center warns that the mirror depends on the availability of
+    other reporters, so a mirror of 0 is no evidence of no trade. ``meta.total`` is
+    upstream's ``count``. The query must name ``reporter_code`` or ``partner_code``, and
+    ``cmd_code``, since upstream offers no count to check a query's size first.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
@@ -635,37 +645,39 @@ async def get_bilateral_data_async(
         flow_code=flow_code,
         include_desc=include_desc,
     )
-    response = await api.get_bilateral_data(**request)
+    answer = await api.get_bilateral_data(**request)
     meta = ResultMeta(
-        source=SOURCE, endpoint=GET_BILATERAL_DATA, request=request, total=response.count
+        source=SOURCE,
+        endpoint=GET_BILATERAL_DATA,
+        request=request,
+        retrieved_at=answer.retrieved_at,
+        total=answer.payload.count,
     )
-    return Result(data=BilateralData.project(response), meta=meta)
+    return Result(data=BilateralData.project(answer.payload), meta=meta)
 
 
 async def get_comtrade_releases_async() -> Result[list[ComtradeRelease]]:
     """List UN Comtrade's recent data releases: which reporter's dataset came out when.
 
     Upstream's public ``getComtradeReleases``, "the list of the recent releases, the same
-    with the UI live update page" (https://comtradeplus.un.org/RecentReleases); the spec
-    calls each row "A recent or upcoming dataset release". Keyless: no key is sent and no
-    daily quota is spent, so the call goes out once the key's daily quota is spent too, at
-    the client's pace (the Public tier allows 1 call per second); the Public tier's preview
-    API's 500 records a call is far above the rows recorded. One row per release:
-    ``reporter_code`` (UN Comtrade's code, e.g. 757 Switzerland), ``dataset_desc`` (e.g.
-    ``"Switzerland CM 202601"``), ``flag_code`` and ``nr``, whose meanings upstream does
-    not state (recorded: two letters, ``"CH"`` for 757; ``"N"`` or ``"R"``), and
+    with the UI live update page" (https://comtradeplus.un.org/RecentReleases). Keyless:
+    no key is sent and no daily quota is spent, so the call goes out once the key's daily
+    quota is spent too, at the client's pace. One row per release: ``reporter_code`` (UN
+    Comtrade's code, e.g. 757 Switzerland), ``dataset_desc`` (e.g. ``"Switzerland CM
+    202601"``), ``flag_code`` and ``nr``, whose meanings upstream does not state, and
     ``date_release``, a naive datetime: upstream prints it without a UTC offset and states
-    no zone, so none is attached. When recorded on
-    2026-10-28 it listed 38 releases from 2026-10-22 to 2026-10-28, newest first, every one
-    at midnight, none in the future; the spec states no order. UN Comtrade keeps one version
-    of each dataset, so a revised release replaces the earlier data, which is not archived.
-    ``meta.total`` is upstream's count; ``meta.published_at`` stays ``None``, since each row
-    has its own date. No arguments, one call; ``get_data_availability`` gives a dataset's
-    first and latest release.
+    no zone. UN Comtrade keeps one version of each dataset, so a revised release replaces
+    the earlier data. ``meta.total`` is upstream's count. No arguments, one call;
+    ``get_data_availability`` gives a dataset's first and latest release.
     """
-    response = await api.get_comtrade_releases()
-    meta = ResultMeta(source=SOURCE, endpoint=GET_COMTRADE_RELEASES, total=response.count)
-    return Result(data=response.data, meta=meta)
+    answer = await api.get_comtrade_releases()
+    meta = ResultMeta(
+        source=SOURCE,
+        endpoint=GET_COMTRADE_RELEASES,
+        retrieved_at=answer.retrieved_at,
+        total=answer.payload.count,
+    )
+    return Result(data=answer.payload.data, meta=meta)
 
 
 async def get_world_share_async(
@@ -677,27 +689,17 @@ async def get_world_share_async(
 ) -> Result[list[WorldShare]]:
     """List each reporter's share of world trade per period, with its release dates.
 
-    Upstream's public ``getWorldShare``, "Get the World Share (including estimates)"; the
-    spec calls a row "A reporter's share of world trade for one period". The spec states
-    neither whether ``world_share`` (a ``Decimal``) is a fraction or a percentage nor of
-    which trade; when recorded, the 214 values for 2023 (annual goods, every reporter) sum
-    to 1.0 and Switzerland's is 0.0165. A row with ``is_available`` false (47 of those 214)
-    still carries a ``world_share``, but ``first_released`` and ``last_released`` read
-    ``0001-01-01T00:00:00``, upstream's placeholder on unavailable datasets, kept as sent,
-    not a release; upstream states no meaning for ``is_available`` or ``data_count``. The
-    four times (``first_released``, ``last_released``, ``created``, ``updated``) are naive
-    datetimes: upstream prints them without a UTC offset and states no zone, so none is
-    attached. Keyless: no key is sent and no daily quota is spent, so the call goes out once
-    the key's daily quota is spent too, at the client's pace (the Public tier allows 1 call
-    per second). Upstream's
-    subscription page limits the Public tier's preview API to 500 records a call; whether
-    that binds this operation is not stated, and the recorded answers (214 rows at most) did
-    not reach it. One call, rows in upstream's order; a period nobody reported returns an
-    empty list. The MCP tool returns up to 400 rows or 100 KB, so the whole 214-row answer
-    for one period reaches an agent; beyond that its note says to narrow by
-    ``reporter_code`` or ``period``. Arguments are checked before the call; an unknown
-    reporter code raises ``UnknownCode``, an ``InvalidRequestError`` naming the packaged
-    list and the closest area, another mistake ``InvalidRequestError``.
+    Upstream's public ``getWorldShare``, "Get the World Share (including estimates)". The
+    spec states neither whether ``world_share`` is a fraction or a percentage nor of which
+    trade. A row with ``is_available`` false still carries a ``world_share``, but
+    ``first_released`` and ``last_released`` read ``0001-01-01T00:00:00``, upstream's
+    placeholder on unavailable datasets, kept as sent; upstream states no meaning for
+    ``is_available`` or ``data_count``. The four times are naive, as upstream prints them.
+    Keyless: no key is sent and no daily quota is spent. One call, rows in upstream's order;
+    a period nobody reported returns an empty list. The MCP tool returns up to 400 rows or
+    100 KB, so one period for every reporter reaches an agent whole. Arguments are checked
+    before the call: an unknown reporter code raises ``UnknownCode``, another mistake
+    ``InvalidRequestError``.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
@@ -715,11 +717,15 @@ async def get_world_share_async(
             every reporter (214 rows for 2023, annual goods).
     """
     request = validate_world_share(type_code, freq_code, period=period, reporter_code=reporter_code)
-    response = await api.get_world_share(**request)
+    answer = await api.get_world_share(**request)
     meta = ResultMeta(
-        source=SOURCE, endpoint=GET_WORLD_SHARE, request=request, total=response.count
+        source=SOURCE,
+        endpoint=GET_WORLD_SHARE,
+        request=request,
+        retrieved_at=answer.retrieved_at,
+        total=answer.payload.count,
     )
-    return Result(data=response.data, meta=meta)
+    return Result(data=answer.payload.data, meta=meta)
 
 
 async def list_reporters_async(search: str | None = None) -> Result[list[Reporter]]:
@@ -839,22 +845,23 @@ async def list_codes_async(param: str) -> Result[list[CodeValue]]:
     without an upstream call; ``meta.endpoint`` is the reference file or the spec the list
     came from, ``meta.retrieved_at`` when the package fetched it, ``meta.vintage`` is
     ``None``. Each row holds the value under the parameter's name in snake_case
-    (``flow_code``, ``qty_unit_code``) and upstream's words for it, under upstream's
-    names: ``text`` from the reference files for ``flowCode`` (``tradeRegimes.json``),
-    ``customsCode``, ``motCode`` and ``mosCode``; ``qty_abbr`` and ``qty_description`` for
-    ``qtyUnitCode``; ``variable`` and ``description`` from ``ListofReferences.json`` for
-    ``clCode``; for ``typeCode`` and ``freqCode`` ``text`` is the spec's wording (``"C"``
-    commodities, ``"A"`` annual). A value the package takes from the spec carries none:
-    ``"MIF"`` and ``"XIF"`` (``flowCode``), ``"BE"`` and ``"TM"`` (``clCode``), and
-    ``breakdownMode`` and ``aggregateBy``, whose descriptions word no value. ``mosCode``
-    lists ``ModeOfSupply.json``'s ids, not proven parameter values (``data/v1/get``
-    refused ``"Mode 1"`` and accepted ``"0"`` and ``"1"``). At most 41 rows
-    (``qtyUnitCode``).
+    (``flow_code``, ``qty_unit_code``) and upstream's words for it under upstream's names,
+    as ``param`` says for each list; a value the package takes from the spec carries none.
+    At most 41 rows (``qtyUnitCode``).
 
     Args:
         param: The parameter, as upstream names it: ``"flowCode"``, ``"customsCode"``,
             ``"motCode"``, ``"clCode"``, ``"typeCode"``, ``"freqCode"``,
             ``"breakdownMode"``, ``"aggregateBy"``, ``"qtyUnitCode"`` or ``"mosCode"``.
+            The words are ``text`` from the reference files for ``flowCode``
+            (``tradeRegimes.json``), ``customsCode``, ``motCode`` and ``mosCode``;
+            ``qty_abbr`` and ``qty_description`` for ``qtyUnitCode``; ``variable`` and
+            ``description`` from ``ListofReferences.json`` for ``clCode``; for
+            ``typeCode`` and ``freqCode`` ``text`` is the spec's wording (``"C"``
+            commodities, ``"A"`` annual). ``"MIF"`` and ``"XIF"`` (``flowCode``), ``"BE"``
+            and ``"TM"`` (``clCode``), ``breakdownMode`` and ``aggregateBy`` carry no
+            words. ``mosCode`` lists ``ModeOfSupply.json``'s ids, not proven parameter
+            values (``data/v1/get`` refused ``"Mode 1"`` and accepted ``"0"`` and ``"1"``).
     """
     request = validate_code_list(param)
     packaged = PackagedList.load(PACKAGE, param)

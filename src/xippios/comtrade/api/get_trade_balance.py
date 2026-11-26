@@ -26,9 +26,9 @@ The key was answered, not refused: the spec's 403 "Free-tier user not on the all
 ``xippios.comtrade._client.classify``.
 """
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.comtrade._client import SOURCE, client
+from xippios.comtrade._client import client
 from xippios.comtrade.api._query import upstream_query
 from xippios.comtrade.models import TradeBalanceResponse
 
@@ -67,7 +67,7 @@ async def get_trade_balance(
     aggregate_by: str | None = None,
     breakdown_mode: str | None = None,
     include_desc: bool | None = None,
-) -> TradeBalanceResponse:
+) -> Answer[TradeBalanceResponse]:
     """Call ``tools/v1/getTradeBalance`` with the parameters as upstream names them.
 
     Args:
@@ -85,7 +85,7 @@ async def get_trade_balance(
         breakdown_mode: ``breakdownMode``, ``"classic"`` or ``"plus"``.
         include_desc: ``includeDesc``, fill the ``*_desc`` fields.
     """
-    raw = await client.get_json(
+    return await client.get_answer(
         f"/{ENDPOINT}/{type_code}/{freq_code}/{cl_code}",
         params=upstream_query(
             UPSTREAM_NAMES,
@@ -100,5 +100,6 @@ async def get_trade_balance(
             breakdown_mode=breakdown_mode,
             include_desc=include_desc,
         ),
+        parse=TradeBalanceResponse,
+        endpoint=ENDPOINT,
     )
-    return parse(TradeBalanceResponse, raw, source=SOURCE, endpoint=ENDPOINT)

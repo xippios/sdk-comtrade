@@ -2,10 +2,10 @@
 
 One ``AsyncClient`` serves every call. It carries the subscription key for the data API;
 the public reference files and the public operations under ``public/v1`` go through it
-with ``auth=None`` per request, so they never send the key, and its cache keeps the
-reference files, and nothing else, for the life of the process (``cache_filter``). Task
-functions share its rate limiter, and the same instance serves the sync facades and the
-MCP server.
+with ``auth=None`` per request, so they never send the key. Its cache keeps each reference
+file for the life of the process and each keyed answer under ``data/v1`` and ``tools/v1``
+for 300 s, and the public operations stay out of it. Task functions share its rate
+limiter, and the same instance serves the sync facades and the MCP server.
 
 Limits of a Basic Individual (free) key, ``docs/upstream/help/subscriptions.md``: 1 call
 per second, 500 calls per day, 100,000 records per call. Upstream's own headers agree
@@ -23,13 +23,12 @@ from xippios.core import (
     AsyncClient,
     ClientConfig,
     EnvVar,
-    HeaderKeyAuth,
     InvalidRequestError,
+    KeyAuth,
     MemoryCache,
     QuotaPolicy,
     RateLimit,
     RateLimitError,
-    Timeouts,
     XippiosError,
     parse_retry_after,
 )
@@ -54,12 +53,12 @@ again in 1 seconds." with ``Retry-After: 1`` (2026-10-23, ``count_rate_limited.j
 the gateway's one-second window is not exact. At 1.5 s 2 of 39 calls drew one, at 2.0 s
 none of 10. Core retries a 429 after ``Retry-After``; every retry is another call.
 """
-TIMEOUTS = Timeouts(read=180.0)
-"""Read timeout 180 s, the rest at the family defaults (conventions §6).
+READ_TIMEOUT = 180.0
+"""The client's one read timeout, 180 s where the family's is 60 s (conventions §6).
 
-A ``countOnly`` count over all reporters outlasted the default 60 s once and answered in
-27 s on the repeat (2026-10-23, ``count_over_limit.json``). Core's retry policy stays: a
-timed-out attempt it retries is another call against the daily quota.
+A ``countOnly`` count over all reporters outlasted 60 s once and answered in 27 s on the
+repeat (2026-10-23, ``count_over_limit.json``). Core's retry policy stays: a timed-out
+attempt it retries is another call against the daily quota.
 """
 
 _REPLENISHED = re.compile(r"replenished in (\d+):(\d{2}):(\d{2})", re.IGNORECASE)
@@ -181,34 +180,38 @@ headers describe the per-second pace, not the daily quota, so neither is read.
 ``_quota_spent`` reads the 403 "Out of call volume quota. Quota will be replenished in
 HH:MM:SS." for that long, which ``window`` caps at a day, and a 429 for its
 ``Retry-After``, upstream's ``1``, or, without one, for the "Try again in N seconds" of
-its body, else for 1 s, never for the day-long ``window``. A wait within ``pause_cap``
-(30 s) is waited out, a longer one is refused with ``RateLimitError`` before anything is
+its body, else for 1 s, never for the day-long ``window``. A wait within core's bound of
+30 s is waited out, a longer one is refused with ``RateLimitError`` before anything is
 sent. ``classify`` still maps the 403 itself. A request sent with ``auth=None``, a
 reference file or a public operation, is neither held back nor read: core's policy skips
 it, since it spends no quota.
 """
 
-_REFERENCE_FILES = "/files/v1/app/reference/"
+CACHE_LIFETIMES: dict[str, float | None] = {
+    "/files/v1/app/reference/": None,
+    "/data/v1/": 300.0,
+    "/tools/v1/": 300.0,
+}
+"""How long the cache keeps an answer, by the longest path prefix it starts with.
 
-
-def _reference_file(request: httpx.Request) -> bool:
-    """The cache's filter: a request for a public reference file, and no other."""
-    return request.url.path.startswith(_REFERENCE_FILES)
-
+The reference files change rarely (``ListofReferences.json`` was last modified 2025-11-12
+when the snapshot was taken) and the classification files are large (``HS.json`` is about
+2 MB, 8,262 codes), so a file is fetched once per process. A keyed answer under
+``data/v1`` or ``tools/v1`` is kept for core's 300 s, so a repeated call or a paged
+continuation of a cut answer spends no call of the daily 500 (sdk-core ADR-0061, decision
+11). The public operations under ``public/v1`` match no prefix and stay out, so a release
+calendar always comes from upstream. Only HTTP 200 answers are kept.
+"""
 
 config = policy.install(
     ClientConfig(
         source=SOURCE,
         version=__version__,
         base_url=BASE_URL,
-        timeouts=TIMEOUTS,
+        read_timeout=READ_TIMEOUT,
         rate_limit=RATE_LIMIT,
-        # The files change rarely (ListofReferences.json was last modified 2025-11-12 when
-        # the snapshot was taken) and the classification files are large (HS.json is about
-        # 2 MB, 8,262 codes), so a file is fetched once per process: no TTL, 64 entries for
-        # every file ListofReferences.json lists. Only HTTP 200 answers are kept.
-        cache=MemoryCache(ttl=None, maxsize=64),
-        cache_filter=_reference_file,
+        # 64 entries: every file ListofReferences.json lists, and room for the keyed reads.
+        cache=MemoryCache(lifetimes=CACHE_LIFETIMES, maxsize=64),
         classify=classify,
     )
 )
@@ -220,17 +223,18 @@ config = policy.install(
 # a request sent with auth=None. The public operations under public/v1
 # (getComtradeReleases, getWorldShare), where public.json's security makes a key optional
 # and its info says "No subscription key required", pass auth=None the same way and take
-# the pace alone; their answers are not cached.
-auth = HeaderKeyAuth("Ocp-Apim-Subscription-Key", API_KEY_ENV, source=SOURCE)
+# the pace alone.
+auth = KeyAuth(API_KEY_ENV, location="header", name="Ocp-Apim-Subscription-Key", source=SOURCE)
 client = AsyncClient(config, auth=auth)
 
 __all__ = [
     "API_KEY_ENV",
     "BASE_URL",
+    "CACHE_LIFETIMES",
     "ENV_VARS",
     "RATE_LIMIT",
+    "READ_TIMEOUT",
     "SOURCE",
-    "TIMEOUTS",
     "auth",
     "classify",
     "client",
