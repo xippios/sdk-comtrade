@@ -3,17 +3,15 @@
 Reference: ``docs/upstream/apidocs/comtrade.json``, operation ``get`` (operationId
 ``get-get``); parameters in the order and spelling the spec lists them. Two query
 parameters the spec does not list are used as the Help Center and the official
-``comtradeapicall`` package (1.3.2) use them, and the fixtures confirm both:
-
-- ``maxRecords`` caps the rows (``help/un-comtrade-api.md`` shows ``maxrecords=500``;
-  ``tests/fixtures/get/over_limit_max_records.json`` returns 5 rows for ``maxRecords=5``);
-- ``countOnly=true`` returns the number of records instead of the rows
-  (``tests/fixtures/get/count_ch_exports_2023.json``).
+``comtradeapicall`` package (1.3.2) use them: ``maxRecords`` caps the rows
+(``help/un-comtrade-api.md`` shows ``maxrecords=500``), and ``countOnly=true`` returns the
+number of records instead of the rows. What upstream answers to both, and to a query that
+nothing matches, stands in ``docs/upstream/OBSERVED.md`` under "Trade data": "``maxRecords``
+caps the rows", "The count's own shape" and "A code that upstream does not have counts 0".
 
 The ``countOnly`` answer has a different shape, ``data`` being a placeholder object rather
 than a list, so it has its own function here, ``get_count_only``. Error shapes are mapped
-once in ``xippios.comtrade._client.classify``. A query nothing matches answers HTTP 200
-with ``count`` 0 (``unknown_reporter.json``, ``count_zero_ch_1900.json``).
+once in ``xippios.comtrade._client.classify``.
 """
 
 from xippios.core import Answer
@@ -129,8 +127,7 @@ async def get_count_only(
 
     Same parameters as ``get`` without ``maxRecords``. Each call counts against the
     key's daily quota like a data call. A count over many reporters can take longer than
-    a minute upstream (one such count timed out at the 60 s read timeout before a repeat
-    answered in 27 s, 2026-10-23).
+    a minute upstream (``docs/upstream/OBSERVED.md``, "A broad count can outlast a minute").
     """
     params = upstream_query(
         UPSTREAM_NAMES,

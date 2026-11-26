@@ -176,7 +176,8 @@ class TradeDataResponse(UpstreamModel):
         elapsed_time: Server processing time as upstream words it, e.g. ``"0.93 secs"``.
         count: Number of rows in ``data``. Above the per-call record limit upstream cuts
             ``data`` at the limit and reports the cut length here, with an empty
-            ``error`` (observed 2026-10-23: 100,000 rows of a 5,006,385-record query).
+            ``error`` (``docs/upstream/OBSERVED.md``, "Over 100,000 records the answer is
+            cut without a word").
         data: The rows.
         error: Empty string on success.
     """
@@ -481,7 +482,7 @@ class BilateralData(UpstreamModel):
 
     Attributes:
         timestamp_requested: When upstream took the request, "UTC, yyyy-MM-dd
-            HH:mm:ss.fff" per the spec, read as UTC, e.g. 2026-10-28 16:15:58.965 UTC;
+            HH:mm:ss.fff" per the spec, read as UTC, e.g. ``"2026-10-28 16:15:58.965"``;
             ``None`` when upstream sends none.
         note: Upstream's "Data-gap note for the requested reporters/partners, if any." (the
             spec), as sent, HTML markup included; ``None`` when upstream sends none, which
@@ -1066,7 +1067,8 @@ class LiveUpdateResponse(UpstreamModel):
     Attributes:
         elapsed_time: Server processing time as upstream words it, e.g. ``"0.5870672 secs"``.
         count: Not the number of rows here, despite the spec: 174 with 50 rows in ``data``
-            when recorded (2026-10-23).
+            (``docs/upstream/OBSERVED.md``, "``getLiveUpdate``: 50 rows and a ``count`` of
+            174").
         data: The 50 most recent releases.
         error: Empty string on success.
     """
@@ -1082,9 +1084,10 @@ class ComtradeRelease(UpstreamModel):
 
     "A recent or upcoming dataset release." (``public.json``). Every field of the schema
     under its upstream name in snake_case, typed from the recorded answer
-    (``tests/fixtures/get_comtrade_releases/calendar.json``, 2026-10-28). The spec states
-    neither what ``nr`` nor what ``flag_code`` means; the recorded values are ``"N"`` and
-    ``"R"`` for ``nr`` and two letters for ``flag_code`` (``"CH"`` on reporter 757).
+    (``docs/upstream/OBSERVED.md``, "``getComtradeReleases``: the recent releases, newest
+    first"). The spec states neither what ``nr`` nor what ``flag_code`` means; the recorded
+    values are ``"N"`` and ``"R"`` for ``nr`` and two letters for ``flag_code`` (``"CH"`` on
+    reporter 757).
 
     Attributes:
         reporter_code: UN Comtrade's reporter code, e.g. ``757`` Switzerland.
@@ -1124,10 +1127,11 @@ class WorldShare(UpstreamModel):
 
     "A reporter's share of world trade for one period." (``public.json``). Every field of
     the schema under its upstream name in snake_case, all present in every recorded row
-    (``tests/fixtures/get_world_share/``, 2026-10-28). ``month`` is 52 on annual rows, as
-    on the trade data rows. The four times are printed without a UTC offset and upstream
-    states no zone, so they are naive and no zone is attached; seven fractional digits are
-    cut to microseconds (``2024-02-02T04:52:35.2166667`` reads ``.216666``). A row with
+    (``docs/upstream/OBSERVED.md``, under "The public operations"). ``month`` is 52 on
+    annual rows, as on the trade data rows. The four times are printed without a UTC offset
+    and upstream states no zone, so they are naive and no zone is attached; seven fractional
+    digits are cut to microseconds (``2024-02-02T04:52:35.2166667`` reads ``.216666``). A
+    row with
     ``is_available`` false carries ``0001-01-01T00:00:00`` in ``first_released`` and
     ``last_released``, upstream's placeholder on unavailable datasets (47 of the 214 rows
     in ``get_world_share/all_reporters_2023.json``): it is kept as sent, a naive datetime,

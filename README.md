@@ -6,6 +6,55 @@ Typed Python client, MCP server and FastAPI routes for
 upstream documentation; every response carries its metadata (source, endpoint,
 retrieved_at, request).
 
+## Scope
+
+Of UN Comtrade's API the package wraps eight of the 28 operations that its five API products
+document (`docs/upstream/apidocs/`). Of Comtrade it wraps the final data, `data/v1/get`, which
+`count_data` asks with `countOnly` and `get_data` asks for the rows, the availability of the
+datasets, `data/v1/getDa`, their publication notes, `data/v1/getMetadata`, and the release
+pipeline, `data/v1/getLiveUpdate`. Of Public it wraps the recent releases,
+`public/v1/getComtradeReleases`, and the shares of world trade, `public/v1/getWorldShare`, and
+of Comtrade Tools both operations, `tools/v1/getTradeBalance` and `tools/v1/getBilateralData`.
+Beside them the list tasks answer from UN Comtrade's public reference files, packaged with
+this version or fetched without the key. The twenty operations that no task wraps yet stand
+here with their public issues:
+
+- The two previews of Public, `public/v1/preview` and `public/v1/previewTariffline`
+  (https://github.com/xippios/sdk-comtrade/issues/23).
+- The tariff-line data and its availability, `data/v1/getTariffline` and
+  `data/v1/getDaTariffline` (https://github.com/xippios/sdk-comtrade/issues/24).
+- The keyless twins of the metadata and of the availability, `public/v1/getMetadata`,
+  `public/v1/getDA` and `public/v1/getDATariffline`
+  (https://github.com/xippios/sdk-comtrade/issues/25).
+- The unit values, the trade matrix and the two MBS series, `data/v1/getSUV`,
+  `data/v1/getTradeMatrix`, `data/v1/getMBS` and `public/v1/getMBS`
+  (https://github.com/xippios/sdk-comtrade/issues/43).
+- The nine operations of the premium Bulk and Async products, which a free key does not
+  reach: `bulk/v1/get`, `bulk/v1/file`, `bulk/v1/getTariffline`, `bulk/v1/fileTariffline`,
+  `bulk/v1/getClassic`, `bulk/v1/fileClassic`, `async/v1/get`, `async/v1/getTariffline` and
+  `async/v1/getDa` (https://github.com/xippios/sdk-comtrade/issues/44).
+
+A documented choice of a wrapped operation that a caller cannot make stands here with its
+public issue:
+
+- `maxRecords`, which the Help Center shows on the final data to cap the rows: `get_data`
+  takes no cap, counts first and refuses a query over 100,000 records
+  (https://github.com/xippios/sdk-comtrade/issues/26).
+- `format`, which the Help Center offers on the data operations as CSV and tab-separated
+  text beside the default JSON: the package asks for JSON
+  (https://github.com/xippios/sdk-comtrade/issues/45).
+- A query of `get_trade_balance` or `get_bilateral_data` that names neither `reporter_code`
+  nor `partner_code`, or no `cmd_code`, which the Tools specs take: the tasks refuse it
+  before it is sent, since UN Comtrade offers no count on the Tools to check a query's size
+  first.
+
+What the package adds is the count before `get_data`, the check of each code against the
+packaged lists before a request and the names of the codes in `meta.names`. It fixes no
+filter, ranks nothing and joins no series for the caller: the five tasks of 0.3.0 that did
+left in 0.4.0, and the query of each stays one `get_data` or `get_bilateral_data` call with
+the arguments that it fixed. What the package observed of UN Comtrade that its documentation
+does not say, each note with its probe, stands in `docs/upstream/OBSERVED.md`.
+
 ## Install
 
 ```bash
@@ -241,6 +290,7 @@ reopens. It hands over nothing, and the called workflow reads its switch itself:
 - sdk-core: [docs/review-checklist.md](https://github.com/xippios/sdk-core/blob/main/docs/review-checklist.md) — what the review of a pull request checks, in order.
 - sdk-comtrade: [docs/adr.md](https://github.com/xippios/sdk-comtrade/blob/main/docs/adr.md) — the index of this package's own decisions, generated from the records in `docs/adr/`.
 - sdk-comtrade: [docs/upstream/FETCHED.md](https://github.com/xippios/sdk-comtrade/blob/main/docs/upstream/FETCHED.md) — the snapshot of the upstream documentation, the reference for names, parameters and semantics.
+- sdk-comtrade: [docs/upstream/OBSERVED.md](https://github.com/xippios/sdk-comtrade/blob/main/docs/upstream/OBSERVED.md) — what UN Comtrade was observed to answer that the snapshot does not state, each note with its probe.
 
 ## Licence
 

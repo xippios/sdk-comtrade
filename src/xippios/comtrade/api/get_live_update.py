@@ -2,10 +2,10 @@
 
 Reference: ``docs/upstream/apidocs/comtrade.json``, operation ``getLiveUpdate``
 (operationId ``get-getliveupdate``), no parameters; ``help/un-comtrade-api.md`` ("extracts
-most recent publication updates"). Recorded 2026-10-23
-(``tests/fixtures/get_live_update/latest.json``): 50 rows, as the spec's "50 most recently
-updated releases" says, but ``count`` 174, not the number of rows; the rows carry the
-fields of ``LiveUpdateRecord`` and no ``publishedDate``.
+most recent publication updates"). The answer holds the spec's "50 most recently updated
+releases", but its ``count`` is not the number of rows, and the rows carry the fields of
+``LiveUpdateRecord`` and no ``publishedDate`` (``docs/upstream/OBSERVED.md``,
+"``getLiveUpdate``: 50 rows and a ``count`` of 174").
 """
 
 from xippios.core import Answer

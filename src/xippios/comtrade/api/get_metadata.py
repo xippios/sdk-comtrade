@@ -3,12 +3,10 @@
 Reference: ``docs/upstream/apidocs/comtrade.json``, operation ``getMetadata``
 (operationId ``getmetadata``), and ``docs/upstream/help/metadata.md``. The spec lists
 only the three path parameters. The official ``comtradeapicall`` package (1.3.2,
-``getMetadata``) also sends ``reporterCode`` and ``period``, and upstream honours both
-(recorded 2026-10-23 under ``tests/fixtures/get_metadata/``): ``reporterCode=757`` alone
-answers Switzerland's 38 datasets and nobody else's (``ch_all_periods.json``), adding
-``period=2023`` narrows it to one (``ch_2023.json``). A call without ``reporterCode``
-answers every reporter's notes and was not recorded. ``clCode`` ``H6``, missing from the
-spec's enum for this operation, is answered like ``HS`` (``ch_2023_h6.json``).
+``getMetadata``) also sends ``reporterCode`` and ``period``, and upstream honours both and
+answers ``clCode`` ``H6``, which the spec's enum for this operation lacks, as it answers
+``HS`` (``docs/upstream/OBSERVED.md``, "``getMetadata`` honours ``reporterCode`` and
+``period``").
 """
 
 from xippios.core import Answer

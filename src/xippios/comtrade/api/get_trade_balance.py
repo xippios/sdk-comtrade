@@ -5,25 +5,13 @@ Reference: ``docs/upstream/apidocs/comtradeTools.json``, operation ``getTradeBal
 conventions §2); parameters in the order and spelling the spec lists them. The spec marks
 it "(EXPERIMENTAL - USE SPARINGLY) Extract trade data in a pivoted flow (exports and
 imports) layout." The Help Center describes the matching UI tool, Trade Balance View
-(``un-comtrade-tools.md``). Recorded answers (2026-10-28, under
-``tests/fixtures/get_trade_balance/``), Switzerland (757) and the World (0), ``TOTAL``:
-
-- 2023 without ``breakdownMode``: 48 rows, every customs procedure and mode of transport
-  (``ch_world_2023_include_desc.json``); with ``classic``: the total row alone, the same
-  row (``ch_world_2023_include_desc_breakdown_mode_classic.json``). Upstream's default
-  gives every breakdown, not ``classic``'s total row; ``plus``, the spec's other value,
-  was not sent. With ``includeDesc`` the ``*_iso``/``*_desc`` fields are filled; no
-  answer with rows was recorded without it.
-- 1900: HTTP 200, ``count`` 0, no rows (``ch_world_1900_empty.json``).
-- 13 periods: HTTP 400 "Maximum number of periods is 12" (``ch_world_13_periods.json``),
-  which ``_client.classify`` maps to ``InvalidRequestError``.
-- ``countOnly=true``, which the spec does not list: HTTP 200 with ``count`` 0 and a
-  placeholder object in ``data`` for the query that answers 48 rows
-  (``count_only_ch_world_2023.json``), so it counts nothing and no wrapper sends it.
-
-The key was answered, not refused: the spec's 403 "Free-tier user not on the allow-list
-("User not allowed")" was not met. Error shapes are mapped once in
-``xippios.comtrade._client.classify``.
+(``un-comtrade-tools.md``). What upstream answers stands in ``docs/upstream/OBSERVED.md``
+under "The Tools": every breakdown without ``breakdownMode`` and the total row alone with
+``classic``, a 13th period refused with HTTP 400, which ``_client.classify`` maps to
+``InvalidRequestError``, and ``countOnly=true``, which the spec does not list, answered with
+``count`` 0 and a placeholder, so it counts nothing and no wrapper sends it. The package's
+free key was answered, not refused with the spec's HTTP 403 "User not allowed". Error shapes
+are mapped once in ``xippios.comtrade._client.classify``.
 """
 
 from xippios.core import Answer

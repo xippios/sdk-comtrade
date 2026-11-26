@@ -16,24 +16,10 @@ quota and takes the client's pace alone, so a spent key quota does not hold it b
 client's ``policy`` skips a request sent with ``auth=None``. The client's cache keeps no
 answer under ``public/v1``.
 
-Recorded answers (2026-10-28, under ``tests/fixtures/get_world_share/``):
-
-- ``period=2023&reporterCode=757``: one row (``ch_2023.json``); its ``firstReleased``
-  and ``lastReleased`` equal those of ``data/v1/getDa`` for the same reporter and period
-  (``tests/fixtures/get_da/ch_2023.json``). Monthly, ``C/M`` with ``period=202301``: one
-  row, ``month`` 1 (``ch_202301.json``).
-- ``period=2023`` alone: 214 rows, one per reporter, 47 of them with ``isAvailable``
-  false and ``0001-01-01T00:00:00`` as both release times; the 214 ``worldShare`` values
-  sum to 1.0 (``all_reporters_2023.json``). ``reporterCode=757`` alone: 64 rows, every
-  year from 1962 to 2025 (``ch_every_period.json``). ``period=1900``: HTTP 200, ``count``
-  0, no rows (``ch_1900_empty.json``).
-- ``period=recent``, which the spec lists: HTTP 500, ``count`` -1, ``error`` an object
-  ``{"error": "Something went wrong. Please try again or contact comtrade@un.org."}``, on
-  all three tries, with ``reporterCode=757`` and without (``ch_recent.json``,
-  ``all_reporters_recent.json``).
-- ``period=2023-01``: HTTP 400 "Invalid parameter value", its ``details`` spelt
-  ``MemberNames``/``ErrorMessage`` ("The field period is invalid"), no ``Content-Type``
-  (``period_malformed.json``).
+What upstream answers stands in ``docs/upstream/OBSERVED.md`` under "The public operations":
+one row for each reporter and period, the shares and the placeholder of an unavailable
+dataset, ``period=recent`` answered with HTTP 500 and a malformed period refused with HTTP
+400 without a ``Content-Type``.
 """
 
 from xippios.core import Answer

@@ -3,19 +3,11 @@
 Reference: ``docs/upstream/apidocs/comtrade.json``, operation ``getDa`` (operationId
 ``get-getda``); parameters in the order and spelling the spec lists them, and
 ``docs/upstream/help/data-availability.md``. One row per dataset: a reporter's data for a
-period in the classification it reported. Recorded answers (2026-10-23, under
-``tests/fixtures/get_da/``):
-
-- ``reporterCode=757&period=2023``: one dataset (``ch_2023.json``); ``period=2023``
-  alone: 169, one per reporter (``all_reporters_2023.json``); ``period=1900``: HTTP 200,
-  ``count`` 0, no rows (``nobody_1900.json``).
-- 13 comma-separated periods are answered, 13 rows (``ch_13_periods.json``): the 12-period
-  limit of ``data/v1/get`` does not apply here.
-- ``publishedDateFrom``/``publishedDateTo`` (``YYYY-MM-DD``) keep the datasets released in
-  the range: for 2024, Switzerland's 2022 dataset (first released 2023-02-01, last
-  2024-04-29) and 2023 dataset (``ch_published_2024.json``).
-- ``clCode`` ``EBSDMX``, in the spec's enum for this operation, is refused with HTTP 400
-  "The field clCode is invalid" (``services_ebsdmx.json``).
+period in the classification it reported. What upstream answers stands in
+``docs/upstream/OBSERVED.md`` under "Availability, metadata and the release pipeline": one
+dataset for each reporter and period, more than 12 periods answered, ``publishedDateFrom``
+and ``publishedDateTo`` keeping a dataset revised in the range, and ``clCode`` ``EBSDMX``, in
+the spec's enum for this operation, refused with HTTP 400.
 """
 
 from xippios.core import Answer

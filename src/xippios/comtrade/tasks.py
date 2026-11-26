@@ -221,8 +221,8 @@ async def count_data_async(
             it), an edition ``"H0"`` to ``"H5"``, SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC
             ``"B4"``, ``"B5"``, for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``,
             ``"EB10S"``; also ``"BE"`` and ``"TM"``, which the spec lists and upstream
-            accepts. ``"H6"`` is valid but upstream answered HTTP 500 to all five tries on
-            2026-10-23 (two reporters, two product codes); ``"HS"`` rows carry the edition
+            accepts. ``"H6"`` is valid but upstream answered it with HTTP 500 on every
+            recorded try (two reporters, two product codes); ``"HS"`` rows carry the edition
             the reporter used, e.g. ``classification_code`` ``"H6"`` for Switzerland 2023.
         reporter_code: Reporting areas as UN Comtrade's numeric codes, one or a list, e.g.
             ``"757"`` Switzerland, ``842`` USA, ``"276"`` Germany, ``"156"`` China,
@@ -326,8 +326,8 @@ async def get_data_async(
             it), an edition ``"H0"`` to ``"H5"``, SITC ``"SS"``, ``"S1"`` to ``"S4"``, BEC
             ``"B4"``, ``"B5"``, for services EBOPS ``"EB"``, ``"EB02"``, ``"EB10"``,
             ``"EB10S"``; also ``"BE"`` and ``"TM"``, which the spec lists and upstream
-            accepts. ``"H6"`` is valid but upstream answered HTTP 500 to all five tries on
-            2026-10-23 (two reporters, two product codes); ``"HS"`` rows carry the edition
+            accepts. ``"H6"`` is valid but upstream answered it with HTTP 500 on every
+            recorded try (two reporters, two product codes); ``"HS"`` rows carry the edition
             the reporter used, e.g. ``classification_code`` ``"H6"`` for Switzerland 2023.
         reporter_code: Reporting areas as UN Comtrade's numeric codes, one or a list, e.g.
             ``"757"`` Switzerland, ``842`` USA, ``"276"`` Germany, ``"156"`` China,
@@ -443,7 +443,7 @@ async def get_data_availability_async(
             ``["2021", "2022", "2023"]``; unlike ``get_data``, more than 12 are accepted.
         published_date_from: Upstream's ``publishedDateFrom``, a day ``"2024-01-01"``:
             datasets published from then on. A dataset revised in the range counts
-            (Switzerland 2022, first released 2023-02-01, revised 2024-04-29, is in 2024).
+            (Switzerland 2022, first released in 2023 and revised in 2024, is in 2024).
         published_date_to: Upstream's ``publishedDateTo``, a day ``"2024-12-31"``.
     """
     request = validate_datasets(
@@ -772,9 +772,8 @@ async def get_world_share_async(
             every reporter (214 rows for 2023, annual goods).
         period: Years ``"2023"`` (annual) or months ``"202301"`` (monthly), one or a
             list, e.g. ``["2022", "2023"]``. The spec also lists ``"recent"``, which is
-            accepted alone, but upstream answered it with HTTP 500 on all three tries on
-            2026-10-28, with and without a reporter (``ch_recent.json``,
-            ``all_reporters_recent.json``): the client makes 4 attempts (3 retries) on a
+            accepted alone, but upstream answered it with HTTP 500 on all three recorded
+            tries, with and without a reporter: the client makes 4 attempts (3 retries) on a
             5xx and then raises ``UpstreamError``, and what ``"recent"`` selects is
             unknown, so name the periods. Omit for every period (64 annual rows for
             Switzerland, 1962 to 2025).

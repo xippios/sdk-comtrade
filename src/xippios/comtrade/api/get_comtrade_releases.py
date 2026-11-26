@@ -14,9 +14,8 @@ quota and takes the client's pace alone, so a spent key quota does not hold it b
 client's ``policy`` skips a request sent with ``auth=None``. The client's cache keeps no
 answer under ``public/v1``, so a release calendar always comes from upstream.
 
-Recorded 2026-10-28 (``tests/fixtures/get_comtrade_releases/calendar.json``): 38 rows,
-``count`` 38, released from 2026-10-22 to 2026-10-28, newest first, every
-``dateRelease`` a midnight without an offset; no date after the recording day.
+What upstream answers stands in ``docs/upstream/OBSERVED.md``, "``getComtradeReleases``: the
+recent releases, newest first".
 """
 
 from xippios.core import Answer
