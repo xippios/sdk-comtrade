@@ -43,8 +43,8 @@ upstream's codes, several of them comma-separated as upstream takes them (`"757,
 Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757.
 Every argument is checked before the call: coded ones (`type_code`, `cl_code`,
 `flow_code`, `customs_code`, `mot_code`, `aggregate_by`, `breakdown_mode`) against
-the lists packaged from upstream's reference files and spec (`xippios.comtrade.enums`;
-`list_codes` gives each value with upstream's words for it),
+the lists packaged from upstream's reference files and spec (`list_codes` gives each value
+with upstream's words for it),
 `reporter_code` against the packaged copy of upstream's `Reporters.json`
 (`reference/Reporters.json`) and `partner_code` and `partner2_code` against that of
 `partnerAreas.json`, the others by shape. An unknown area, customs or transport code

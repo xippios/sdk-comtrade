@@ -4,8 +4,8 @@ One model per upstream object, subclassing ``xippios.core.UpstreamModel``, with 
 named as upstream names them in snake_case. The upstream spelling is the
 ``validation_alias``: it is read from upstream, while Python, the MCP tools and the HTTP
 routes all show the snake_case name, the same spelling the task parameters use.
-Within-source hygiene only: numbers become numbers, upstream enumerations become
-``StrEnum``. No cross-source normalisation (sdk-core ADR-0028): an upstream concept stays an
+Within-source hygiene only: numbers become numbers, and a code stays the text or number
+upstream sends. No cross-source normalisation (sdk-core ADR-0028): an upstream concept stays an
 upstream concept.
 
 Shapes come from ``components.schemas`` in ``docs/upstream/apidocs/comtrade.json`` and,

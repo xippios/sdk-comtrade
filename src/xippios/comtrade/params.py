@@ -1,8 +1,8 @@
 """Packaged reference data for UN Comtrade and the checks run before a call (conventions §3).
 
 Small, stable upstream lists and tables ship inside the package under ``reference/`` so
-lookups and checks need no network call; ``scripts/refresh_reference.py`` writes them and
-the matching ``StrEnum`` classes in ``enums.py``, never by hand. ``reference/README.md``
+lookups and checks need no network call; ``scripts/refresh_reference.py`` writes them,
+never by hand. ``reference/README.md``
 carries the provenance of every file. Each is a packaged-list file,
 ``reference/<name>.json``, read with ``xippios.core.PackagedList.load(PACKAGE, name)``
 (sdk-core ADR-0041): a list's records carry the value under the parameter's name and the
