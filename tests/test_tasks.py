@@ -94,6 +94,7 @@ from xippios.comtrade.params import (
     PACKAGED_LISTS,
     PACKAGED_TABLES,
     RECENT,
+    TOOLS_FLOW_CODES,
     classification_files,
     validate_bilateral_data,
     validate_get,
@@ -1354,6 +1355,74 @@ async def test_spec_cl_codes_upstream_accepts(replay_fixture: ReplayFixture) -> 
     replay_fixture("get", "count_cl_code_tm", match_params=COUNT_ONLY)
     assert (await api.get_count_only("C", "A", "TM", **RECORDED_COUNT)).payload.count == 1
     assert validate_get("C", "A", "BE", cmd_code="TOTAL")["cl_code"] == "BE"
+
+
+# The value sets written by hand from UN Comtrade's documents, each held against the snapshot
+# under docs/upstream/ (sdk-core ADR-0061, decision 12).
+
+
+def _parameter(spec: str, operation: str, name: str) -> dict[str, Any]:
+    """The parameter ``name`` of the operation whose path starts with ``operation``."""
+    document = json.loads((UPSTREAM / "apidocs" / spec).read_text(encoding="utf-8"))
+    [path] = [path for path in document["paths"] if path.startswith(f"/{operation}/")]
+    [found] = [
+        parameter
+        for method in document["paths"][path].values()
+        for parameter in method.get("parameters", [])
+        if parameter["name"] == name
+    ]
+    return dict(found)
+
+
+def test_tools_flow_codes_are_the_mirror_operations_enum() -> None:
+    """``TOOLS_FLOW_CODES`` is getBilateralData's ``flowCode`` enum in ``comtradeTools.json``."""
+    flow = _parameter("comtradeTools.json", "getBilateralData", "flowCode")
+    assert sorted(flow["schema"]["enum"]) == sorted(TOOLS_FLOW_CODES)
+
+
+def test_the_classifications_from_the_spec_are_its_own_and_have_no_file() -> None:
+    """``CL_CODES_FROM_SPEC`` stands in the spec's ``clCode`` enum and not in the index.
+
+    The enum of ``data/v1/get`` in ``comtrade.json`` lists them, and the snapshot's
+    ``reference/ListofReferences.json``, the index of the reference files, names no
+    ``cmd:`` file of theirs, as ``classification_files`` leaves them out.
+    """
+    enum = _parameter("comtrade.json", "get", "clCode")["schema"]["enum"]
+    index = json.loads((UPSTREAM / "reference" / "ListofReferences.json").read_text("utf-8"))
+    files = {row["category"].removeprefix("cmd:") for row in index["results"]}
+    for cl_code in CL_CODES_FROM_SPEC:
+        assert cl_code in enum, cl_code
+        assert cl_code not in files, cl_code
+    assert set(classification_files()) <= files
+
+
+def test_recent_is_the_one_word_of_the_world_shares_period() -> None:
+    """``RECENT`` is the word that ``getWorldShare``'s ``period`` takes besides periods."""
+    period = _parameter("public.json", "getWorldShare", "period")
+    assert period["schema"]["pattern"].endswith(f"|{RECENT}\\b)")
+    assert period["description"].endswith(f"or '{RECENT}'")
+
+
+def test_the_product_code_shapes_rest_on_the_snapshot_and_the_recordings() -> None:
+    """The wildcards, ``TOTAL`` and the levels that ``_CMD_SHAPES`` and ``_KEYWORD`` take.
+
+    The Help Center's article names the two wildcards, the spec's example answer the code
+    ``TOTAL``; the snapshot names no aggregation level, so ``AG2`` rests on its recorded
+    count, ``tests/fixtures/get/count_ch_exports_2023_ag2.json``, answered HTTP 200.
+    """
+    from xippios.comtrade import params
+
+    article = (UPSTREAM / "help" / "how-do-i-use-wildcards-to-query-data.md").read_text("utf-8")
+    assert "An asterisk (\\*) returns anything" in article
+    assert "A question mark (?) for any single character" in article
+    for shape, _ in params._CMD_SHAPES.values():
+        assert shape.pattern.endswith(params._WILDCARD)
+    assert params._WILDCARD == r"(\*|\?+)?"
+    spec = (UPSTREAM / "apidocs" / "comtrade.json").read_text(encoding="utf-8")
+    assert '"cmdCode": "TOTAL"' in spec
+    assert params._KEYWORD.fullmatch("TOTAL")
+    recorded = load_fixture(GET / "count_ch_exports_2023_ag2.json")
+    assert (recorded_query(recorded)["cmdCode"], recorded.response.status) == ("AG2", 200)
 
 
 @pytest.mark.anyio
