@@ -3565,8 +3565,9 @@ def test_the_readme_scope_names_every_operation_once() -> None:
     wrap yet in a bullet with its public issue. Each documented choice of a wrapped operation
     that a caller cannot make stands in a bullet of its own with its public issue,
     ``maxRecords`` and ``format`` of the Help Center, and so does the two Tools tasks'
-    requirement of an area and a product code
-    (https://github.com/xippios/sdk-faostat/issues/58, part 2)."""
+    requirement of an area and a product code, which the package keeps until UN Comtrade
+    counts a Tools query first (https://github.com/xippios/sdk-faostat/issues/58, part 2;
+    https://github.com/xippios/sdk-comtrade/issues/72)."""
     readme = (UPSTREAM.parents[1] / "README.md").read_text(encoding="utf-8")
     assert "\n## Scope\n" in readme
     scope = readme.split("\n## Scope\n", 1)[1].split("\n## ", 1)[0]
@@ -3604,3 +3605,4 @@ def test_the_readme_scope_names_every_operation_once() -> None:
     (tools,) = [item for item in bullets if "`get_trade_balance`" in item]
     for name in ("`get_bilateral_data`", "`reporter_code`", "`partner_code`", "`cmd_code`"):
         assert name in tools, name
+    assert f"{issue}72)" in tools
