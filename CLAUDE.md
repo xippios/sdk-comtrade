@@ -119,8 +119,9 @@ other table alone is named as such, since the two tables share one code space an
 ("The reporter and partner tables share one code space"). Every coded argument is checked so,
 against the declaration of its list in `codes.py` by core's `check`: the areas,
 `customs_code` and `mot_code`, where upstream's answer to an unknown code is not recorded,
-`cl_code` and `flow_code`, which upstream refuses with HTTP 400, and the spec's `type_code`,
-`freq_code`, `breakdown_mode` and `aggregate_by`. A list of codes is checked in its order,
+`cl_code` and `flow_code`, which upstream refuses with HTTP 400, the spec's `type_code`,
+`breakdown_mode` and `aggregate_by`, and `freq_code`, the spec's values with the words of
+`Frequency.json`. A list of codes is checked in its order,
 the arguments in theirs, and the first problem found is the refusal, which says that nothing
 was sent; the validators gather no list of problems
 (https://github.com/xippios/sdk-comtrade/issues/34).
@@ -128,14 +129,18 @@ was sent; the validators gather no list of problems
 The packaged lists carry upstream's words beside each value, under upstream's names, as
 `scripts/refresh_reference.py` fetched them, keyless, each list's `fetched` giving the time:
 `text` from `tradeRegimes.json` (`flowCode`), `CustomsCodes.json`,
-`ModeOfTransportCodes.json` and `ModeOfSupply.json` (`mosCode`); `qtyAbbr` and
+`ModeOfTransportCodes.json`, `ModeOfSupply.json` (`mosCode`) and `Frequency.json`
+(`freqCode`); `qtyAbbr` and
 `qtyDescription` from `QuantityUnits.json` (`qtyUnitCode`), which has no `text`; `variable`
 and `description` from the `cmd:<clCode>` entries of `ListofReferences.json` (`clCode`),
-which has no `id` or `text` either; and, as `text`, the wording the spec's description gives
-each value of `typeCode` and `freqCode` ("C for commodities"). A value the package adds from
+which has no `id` or `text` either. `freqCode` keeps the rows of `Frequency.json` whose id the
+spec's enum lists, `A` and `M`, and its `note` names the file's third row, `Q`, which
+`freq_code` refuses before the call ("`Frequency.json` holds `Q`, which `getDA` refuses"), by
+the maintainer's decision of 2026-11-27. A value the package adds from
 the spec stands alone (`MIF`, `XIF`, `BE`, `TM`, accepted upstream: "`BE`, `TM`, `MIF` and
-`XIF`: values of the spec that the reference files lack"), and so do `breakdownMode` and
-`aggregateBy`, whose descriptions word none. `ListofReferences.json`, the index of the
+`XIF`: values of the spec that the reference files lack"), and so do `typeCode`,
+`breakdownMode` and `aggregateBy`, which no reference file lists. `ListofReferences.json`, the
+index of the
 reference files, is packaged as a table too. `list_codes(param)` returns a list's records as
 the model `params.PACKAGED_LISTS` names for it (`MotCodeValue`: `mot_code`, `text`), and
 `list_classifications(*, category=None)` the index's rows (`Reference`), both without a
