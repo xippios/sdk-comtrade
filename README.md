@@ -98,7 +98,8 @@ numeric: Switzerland is 757. Every argument is checked before the call, in the o
 the arguments, and the first problem is the refusal: coded ones (`type_code`, `cl_code`,
 `flow_code`, `customs_code`, `mot_code`, `aggregate_by`, `breakdown_mode`) against the
 lists packaged from upstream's reference files and spec (`list_codes` gives each value
-with upstream's words for it), `reporter_code` against the packaged copy of upstream's
+with upstream's words for it where a reference file words it, `freq_code`'s from
+`Frequency.json`), `reporter_code` against the packaged copy of upstream's
 `Reporters.json` (`reference/Reporters.json`) and `partner_code` and `partner2_code`
 against that of `partnerAreas.json`, the others by shape. A code that its packaged list
 lacks raises `UnknownCode`, an `InvalidRequestError` naming the list, its fetch date and
