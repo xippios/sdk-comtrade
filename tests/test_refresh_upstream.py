@@ -9,6 +9,7 @@ an answer. Nothing here sends a request or writes under ``docs/upstream/``.
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 from types import ModuleType
 from urllib.parse import urlsplit
@@ -95,6 +96,8 @@ def test_a_capture_requests_the_declared_pages_and_no_other() -> None:
 
     The frame follows no redirect to another host, and ``linked`` names no page, so a capture
     sends one request for each of the 27 pages, before a retry; no section is the script's.
+    The one page that ``not_fetched`` names, the licence agreement, is no page of the snapshot:
+    the frame writes its row under ``Not fetched`` and requests it never.
     The answers below are inputs of the test, not answers from UN Comtrade.
     """
     snapshot = script.SNAPSHOT
@@ -106,7 +109,51 @@ def test_a_capture_requests_the_declared_pages_and_no_other() -> None:
         row = Row(page, answer(page.url, b"{}", "application/json"), None)
         assert snapshot.linked(row) == ()
     assert snapshot.sections([]) == ()
-    assert snapshot.not_fetched == ()
+    assert [entry.url for entry in snapshot.not_fetched] == [script.LICENCE_URL]
+    assert not {entry.url for entry in snapshot.not_fetched} & {page.url for page in snapshot.pages}
+
+
+def test_each_link_the_attribution_records_is_fetched_or_not_fetched() -> None:
+    """The documentation page's footer and the Policy on Comtrade Data Use link the licence
+    agreement, which the snapshot does not request, so ``not_fetched`` names it with its reason
+    and ``FETCHED.md``'s ``Not fetched`` holds its row (conventions §3)."""
+    fetched = {page.url for page in script.SNAPSHOT.pages}
+    left_out = {entry.url: entry.reason for entry in script.SNAPSHOT.not_fetched}
+    linked = {statement.link for statement in script.ATTRIBUTION if statement.link}
+    assert linked == {script.LICENCE_URL}
+    assert linked <= fetched | left_out.keys()
+    reason = left_out[script.LICENCE_URL]
+    assert "License Agreement" in reason
+    assert "Policy on Comtrade Data Use" in reason
+
+
+AGREEMENT = re.compile(r"https://comtrade\.un\.org/[^\s<>()\[\],;]+")
+"""An address of UN Comtrade's site, as a sentence or a link prints it."""
+
+
+def test_the_agreement_is_named_where_the_kept_policy_links_it() -> None:
+    """The Policy on Comtrade Data Use, as kept, links the agreement at the address that the
+    documentation page's footer links, and the statement that quotes the Policy's sentence and
+    the README's terms name that address and no other."""
+    kept = (ROOT / "docs/upstream/help/policy-on-comtrade-data-use.md").read_text(encoding="utf-8")
+    section = kept.split("\n## License Agreement\n", 1)[1].split("\n## ", 1)[0]
+    assert AGREEMENT.findall(section) == [script.LICENCE_URL]
+    [policy] = [s for s in script.ATTRIBUTION if s.text.startswith("Use of UN Comtrade data")]
+    assert AGREEMENT.findall(policy.where) == [script.LICENCE_URL]
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    terms = readme.split("\n## Upstream terms and attribution\n", 1)[1].split("\n## ", 1)[0]
+    assert AGREEMENT.findall(terms) == [script.LICENCE_URL]
+
+
+def test_fetched_md_records_the_declared_attribution_and_not_fetched() -> None:
+    """``FETCHED.md`` as committed records the declaration as it stands: the place of each
+    statement and the row of each page that ``not_fetched`` names, so a change of either is
+    written by the capture that follows it."""
+    fetched = " ".join((ROOT / "docs/upstream/FETCHED.md").read_text(encoding="utf-8").split())
+    for statement in script.ATTRIBUTION:
+        assert " ".join(statement.where.split()) in fetched, statement.text
+    for entry in script.SNAPSHOT.not_fetched:
+        assert f"| {entry.url} | (not requested) | - | {entry.reason} |" in fetched, entry.url
 
 
 FOOTER = (

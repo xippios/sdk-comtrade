@@ -27,6 +27,12 @@ reference file by its own."""
 DATE = re.compile(r"\b20\d\d-\d\d-\d\d\b")
 SAMPLE = re.compile(r"`((?:tests/fixtures|src/xippios/comtrade/reference)/[^`\s]+\.json)`")
 """A recording under ``tests/fixtures/`` or a packaged list, cited from the repository's root."""
+DOCUMENTATION = "`https://comtrade.un.org/en/api-docs`"
+"""The documentation page, which a probe of the documentation's own address names, with its row
+in ``FETCHED.md`` in place of a sample, since no fixture records a page of the documentation."""
+FETCHED = "`docs/upstream/FETCHED.md`"
+OLD_ADDRESS = "https://comtradeplus.un.org/ApiDocs"
+"""The documentation's address that the snapshot read before UN Comtrade rebuilt its site."""
 REFERENCE = re.compile(r"^\[[^\]\n]+\]: \S+\n?", re.MULTILINE)
 """A link reference definition, which renders as nothing and is no note's paragraph."""
 ANSWER_DATE = re.compile(r"(?<![`\"'])\b20\d\d-\d\d-\d\d\b")
@@ -70,14 +76,34 @@ def sample_date(path: str) -> str:
 
 def test_every_note_ends_with_its_probe() -> None:
     """The probe names an operation that the package sends to, in a code span, and a sample
-    of it: a recording or a packaged list."""
+    of it: a recording or a packaged list. A probe of the documentation's own address names
+    the documentation page and its row in ``FETCHED.md`` in their place."""
     found = notes()
     assert found
     for heading, paragraphs in found.items():
         probe = paragraphs[-1]
         assert re.match(r"(?:Probe|Observed): 20\d\d-\d\d-\d\d\b", probe), heading
+        if DOCUMENTATION in probe:
+            assert FETCHED in probe, heading
+            continue
         assert OPERATION.search(probe), heading
         assert SAMPLE.search(probe), heading
+
+
+def test_the_documentations_old_address_is_a_note() -> None:
+    """What the address that the snapshot read before the site was rebuilt answers stands in a
+    note, two redirects, the first to another host, and the snapshot requests no page of it
+    (https://github.com/xippios/sdk-comtrade/issues/71, the maintainer's decision of
+    2026-11-27 on what a snapshot requests)."""
+    [probe] = [
+        paragraphs[-1] for paragraphs in notes().values() if f"`{OLD_ADDRESS}`" in paragraphs[-1]
+    ]
+    assert probe.startswith("Probe: 2026-11-26, ")
+    assert "`https://comtrade.un.org/ApiDocs`" in probe
+    assert DOCUMENTATION in probe
+    assert FETCHED in probe
+    script = (ROOT / "scripts" / "refresh_upstream.py").read_text(encoding="utf-8")
+    assert "comtradeplus.un.org" not in script
 
 
 def test_every_sample_a_probe_names_was_taken_on_a_date_it_gives() -> None:
