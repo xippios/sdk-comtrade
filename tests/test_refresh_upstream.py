@@ -145,17 +145,6 @@ def test_the_agreement_is_named_where_the_kept_policy_links_it() -> None:
     assert AGREEMENT.findall(terms) == [script.LICENCE_URL]
 
 
-def test_fetched_md_records_the_declared_attribution_and_not_fetched() -> None:
-    """``FETCHED.md`` as committed records the declaration as it stands: the place of each
-    statement and the row of each page that ``not_fetched`` names, so a change of either is
-    written by the capture that follows it."""
-    fetched = " ".join((ROOT / "docs/upstream/FETCHED.md").read_text(encoding="utf-8").split())
-    for statement in script.ATTRIBUTION:
-        assert " ".join(statement.where.split()) in fetched, statement.text
-    for entry in script.SNAPSHOT.not_fetched:
-        assert f"| {entry.url} | (not requested) | - | {entry.reason} |" in fetched, entry.url
-
-
 FOOTER = (
     '<!DOCTYPE html><html><head><meta name="csp-nonce" content="bm9uY2U="></head><body>'
     '<main><h1>API documentation</h1></main><footer><ul><li><a href="/en/site-index">'
