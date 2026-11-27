@@ -1,7 +1,7 @@
 {
   "param": "typeCode",
   "endpoint": "files/v1/app/apim/comtrade.json",
-  "fetched": "2026-11-27T07:09:18Z",
+  "fetched": "2026-11-27T14:30:04Z",
   "note": "Read from docs/upstream/apidocs/comtrade.json, the snapshot of files/v1/app/apim/comtrade.json fetched 2026-11-27: operation get, the typeCode enum, values alone: no reference file of UN Comtrade's lists them.",
   "records": [
     {
