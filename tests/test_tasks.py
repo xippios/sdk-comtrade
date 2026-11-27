@@ -1311,7 +1311,7 @@ def test_the_frequencies_are_upstreams_frequency_json() -> None:
 
     ``ListofReferences.json`` lists the file as the list of the variable ``Frequency``. The
     list keeps its rows of ``A`` and ``M``, the values of the spec's ``freqCode`` enum, each
-    with its ``text``, and its ``note`` names the third row, ``Q``, which it leaves out, by
+    with its ``text``, and its ``note`` names the file's row ``Q``, which it leaves out, by
     the maintainer's decision of 2026-11-27 (https://github.com/xippios/sdk-comtrade/issues/68).
     """
     frequency = PackagedList.load(PACKAGE, "freqCode")
@@ -1342,7 +1342,7 @@ def test_the_frequencies_are_upstreams_frequency_json() -> None:
 def test_a_quarterly_frequency_is_refused_before_any_request(
     respx_mock: respx.MockRouter, task: Callable[..., object], arguments: dict[str, Any]
 ) -> None:
-    """``Q``, the third row of ``Frequency.json``, is no value of the spec's ``freqCode`` enum.
+    """``Q``, a row of ``Frequency.json``, is no value of the spec's ``freqCode`` enum.
 
     UN Comtrade refused it with HTTP 400 ("`Frequency.json` holds `Q`, which `getDA`
     refuses" in ``docs/upstream/OBSERVED.md``), so ``freq_code="Q"`` is refused as the
