@@ -1309,9 +1309,10 @@ def test_the_spec_lists_name_the_operation_they_were_read_from() -> None:
 def test_the_frequencies_are_upstreams_frequency_json() -> None:
     """``freqCode`` names its codes in the words of UN Comtrade's own ``Frequency.json``.
 
-    ``ListofReferences.json`` lists the file as the list of the variable ``Frequency``, and
-    its rows hold ``A`` and ``M``, the values of the spec's ``freqCode`` enum, each with its
-    ``text`` (https://github.com/xippios/sdk-comtrade/issues/68).
+    ``ListofReferences.json`` lists the file as the list of the variable ``Frequency``. The
+    list keeps its rows of ``A`` and ``M``, the values of the spec's ``freqCode`` enum, each
+    with its ``text``, and its ``note`` names the third row, ``Q``, which it leaves out, by
+    the maintainer's decision of 2026-11-27 (https://github.com/xippios/sdk-comtrade/issues/68).
     """
     frequency = PackagedList.load(PACKAGE, "freqCode")
     [listed] = [
@@ -1322,10 +1323,41 @@ def test_the_frequencies_are_upstreams_frequency_json() -> None:
     assert listed == "https://comtradeapi.un.org/files/v1/app/reference/Frequency.json"
     assert frequency.endpoint == "files/v1/app/reference/Frequency.json"
     assert frequency.note is not None
-    assert frequency.note.startswith("The ids of Frequency.json with their text")
-    codes = [record["freqCode"] for record in frequency.records]
-    assert {"A", "M"} <= set(codes)
+    assert frequency.note.startswith(
+        "The ids of Frequency.json that the freqCode enum of docs/upstream/apidocs/comtrade.json"
+    )
+    assert "Q (Quarterly) left out: a row of Frequency.json" in frequency.note
+    assert [record["freqCode"] for record in frequency.records] == ["A", "M"]
     assert all(record.get("text") for record in frequency.records)
+
+
+@pytest.mark.parametrize(
+    ("task", "arguments"),
+    [
+        (tasks.count_data, {"type_code": "C", "cl_code": "HS", "reporter_code": "757"}),
+        (tasks.get_world_share, {"type_code": "C", "reporter_code": "757"}),
+    ],
+    ids=["keyed", "keyless"],
+)
+def test_a_quarterly_frequency_is_refused_before_any_request(
+    respx_mock: respx.MockRouter, task: Callable[..., object], arguments: dict[str, Any]
+) -> None:
+    """``Q``, the third row of ``Frequency.json``, is no value of the spec's ``freqCode`` enum.
+
+    UN Comtrade refused it with HTTP 400 ("`Frequency.json` holds `Q`, which `getDA`
+    refuses" in ``docs/upstream/OBSERVED.md``), so ``freq_code="Q"`` is refused as the
+    other values that the spec does not list are, and nothing is sent.
+    """
+    with pytest.raises(UnknownCode) as info:
+        task(freq_code="Q", period="2023", **arguments)
+    assert (info.value.param, info.value.value, info.value.list_name) == (
+        "freq_code",
+        "Q",
+        "freqCode",
+    )
+    assert "Nothing was sent." in str(info.value)
+    assert _reason_text("freqCode") in str(info.value)
+    assert not respx_mock.calls
 
 
 def test_no_generated_module_repeats_the_packaged_lists() -> None:

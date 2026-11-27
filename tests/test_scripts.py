@@ -144,8 +144,42 @@ def test_refresh_reference_reads_the_words_of_freq_code_from_frequency_json(
         {"freqCode": "A", "text": "Annual"},
         {"freqCode": "M", "text": "Monthly"},
     ]
-    assert read.note is not None
-    assert read.note.startswith("The ids of Frequency.json with their text")
+    assert read.note == f"{FREQUENCY_NOTE}."
+
+
+FREQUENCY_NOTE = (
+    "The ids of Frequency.json that the freqCode enum of docs/upstream/apidocs/comtrade.json "
+    "(operation get) lists, with their text"
+)
+"""What the ``freqCode`` list is, the opening of its ``note``."""
+
+
+def test_refresh_reference_leaves_out_a_frequency_that_the_spec_does_not_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A row of ``Frequency.json`` whose id the spec's ``freqCode`` enum lacks is left out.
+
+    The list holds the codes that every task takes, ``A`` and ``M``, with the file's words,
+    and its ``note`` names each row left out with its text, by the maintainer's decision of
+    2026-11-27 (https://github.com/xippios/sdk-comtrade/issues/68).
+    """
+    _hand_frequency(
+        monkeypatch,
+        [
+            {"id": "A", "text": "Annual"},
+            {"id": "Q", "text": "Quarterly"},
+            {"id": "M", "text": "Monthly"},
+        ],
+    )
+    read = reference.from_file("freqCode")
+    assert read.records == [
+        {"freqCode": "A", "text": "Annual"},
+        {"freqCode": "M", "text": "Monthly"},
+    ]
+    assert read.note == (
+        f"{FREQUENCY_NOTE}. Q (Quarterly) left out: a row of Frequency.json that the enum "
+        "does not list."
+    )
 
 
 def _packaged_files() -> dict[str, bytes]:
