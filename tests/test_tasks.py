@@ -320,15 +320,20 @@ def test_several_codes_are_one_list_joined_as_upstream_takes_them(
 ) -> None:
     """Several values of one filter are a list, sent as UN Comtrade's comma-separated text.
 
-    sdk-core ADR-0061, decision 1. ``count_zero_ch_1900.json`` answers the count of this
-    test's query at its own path, a recording replayed for other parameters (conventions
-    §10, kind 3), so the call ends at its count, and the answer without rows names the codes
-    it asked for, each as the caller gave it, and keeps the list in ``meta.request``.
+    sdk-core ADR-0061, decision 1. ``count_zero_ch_1900.json``, Switzerland's count of 0 for
+    1900, answers the count of this test's query for two reporters in 1900 at its own path, a
+    recording replayed for other parameters (conventions §10, kind 3). UN Comtrade answers
+    alike for every reporter, partner, product and flow of 1900, since it covers annual trade
+    from 1962 (``docs/upstream/help/read-me-first-disclaimer.md``), so the call ends at its
+    count, and the answer without rows names the codes it asked for, each as the caller gave
+    it, and keeps the list in ``meta.request``.
     """
+    disclaimer = (UPSTREAM / "help" / "read-me-first-disclaimer.md").read_text("utf-8")
+    assert "It covers annual trade data from 1962 to the present year." in disclaimer
     counted = replay_fixture("get", "count_zero_ch_1900", match_params=COUNT_ONLY)
-    result = tasks.get_data("C", "A", "HS", reporter_code=[757, 842], period="2023")
+    result = tasks.get_data("C", "A", "HS", reporter_code=[757, 842], period="1900")
     query = sent_query(counted)
-    assert (query["reporterCode"], query["period"]) == ("757,842", "2023")
+    assert (query["reporterCode"], query["period"]) == ("757,842", "1900")
     assert len(respx_mock.calls) == 1
     assert result.data == []
     assert result.meta.request["reporter_code"] == [757, 842]
@@ -1421,8 +1426,11 @@ def test_the_product_code_shapes_rest_on_the_snapshot_and_the_recordings() -> No
     """The wildcards, ``TOTAL`` and the levels that ``_CMD_SHAPES`` and ``_KEYWORD`` take.
 
     The Help Center's article names the two wildcards, the spec's example answer the code
-    ``TOTAL``; the snapshot names no aggregation level, so ``AG2`` rests on its recorded
-    count, ``tests/fixtures/get/count_ch_exports_2023_ag2.json``, answered HTTP 200.
+    ``TOTAL``. Of the levels ``AG1`` to ``AG6``, which 0.3.0 took as well, ``AG6`` stands in
+    the example answer of the async ``getDa`` in ``comtradeAsync.json``, and ``AG2`` and
+    ``AG4`` in recorded queries that upstream answered with HTTP 200. ``AG1``, ``AG3`` and
+    ``AG5`` stand in no page of the snapshot and no recording, though no page rules them out,
+    so they stay admitted, for the maintainer to keep or to drop.
     """
     from xippios.comtrade import params
 
@@ -1434,9 +1442,19 @@ def test_the_product_code_shapes_rest_on_the_snapshot_and_the_recordings() -> No
     assert params._WILDCARD == r"(\*|\?+)?"
     spec = (UPSTREAM / "apidocs" / "comtrade.json").read_text(encoding="utf-8")
     assert '"cmdCode": "TOTAL"' in spec
-    assert params._KEYWORD.fullmatch("TOTAL")
-    recorded = load_fixture(GET / "count_ch_exports_2023_ag2.json")
-    assert (recorded_query(recorded)["cmdCode"], recorded.response.status) == ("AG2", 200)
+    asynchronous = (UPSTREAM / "apidocs" / "comtradeAsync.json").read_text(encoding="utf-8")
+    assert '"cmdCode": "AG6"' in asynchronous
+    recordings = {
+        "count_ch_exports_2023_ag2": "AG2",
+        "count_over_limit": "AG4",
+        "over_limit_max_records": "AG4",
+    }
+    for name, level in recordings.items():
+        recorded = load_fixture(GET / f"{name}.json")
+        assert (recorded_query(recorded)["cmdCode"], recorded.response.status) == (level, 200)
+    candidates = {"TOTAL", "AG", *(f"AG{n}" for n in range(10))}
+    admitted = {code for code in candidates if params._KEYWORD.fullmatch(code)}
+    assert admitted == {"TOTAL", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6"}
 
 
 @pytest.mark.anyio
