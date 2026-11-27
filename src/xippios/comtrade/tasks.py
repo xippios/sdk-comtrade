@@ -722,9 +722,10 @@ async def get_comtrade_releases_async() -> Result[list[ComtradeRelease]]:
     """List UN Comtrade's recent data releases: which reporter's dataset came out when.
 
     Upstream's public ``getComtradeReleases``, "the list of the recent releases, the same
-    with the UI live update page" (https://comtradeplus.un.org/RecentReleases). Keyless:
-    no key is sent and no daily quota is spent, so the call goes out once the key's daily
-    quota is spent too, at the client's pace. One row per release: ``reporter_code`` (UN
+    with the UI live update page"
+    (https://comtrade.un.org/en/data-availability/recent-releases). Keyless: no key is sent
+    and no daily quota is spent, so the call goes out once the key's daily quota is spent
+    too, at the client's pace. One row per release: ``reporter_code`` (UN
     Comtrade's code, e.g. 757 Switzerland), ``dataset_desc`` (e.g. ``"Switzerland CM
     202601"``), ``flag_code`` and ``nr``, whose meanings upstream does not state, and
     ``date_release``, a naive datetime: upstream prints it without a UTC offset and states

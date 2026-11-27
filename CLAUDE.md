@@ -66,8 +66,9 @@ and `_client.py` treats them so:
   minute"), so the read timeout is 180 s (`READ_TIMEOUT`), and a timed-out attempt that core
   retries counts against the quota each time; so does each retry of a 5xx.
 - **Keys may be periodically regenerated** on Basic accounts. A sudden 401 ("An unknown key:
-  HTTP 401", `AuthError`) means re-copying the key from
-  https://comtradeplus.un.org/MyComtrade/APIPortal into the environment.
+  HTTP 401", `AuthError`) means re-copying the key from My API Portal,
+  https://comtrade.un.org/en/api-portal, as `docs/upstream/help/subscriptions.md` links it,
+  into the environment.
 
 The reference files under `files/v1/app/reference/` are public: the one client fetches them
 with `auth=None`, without the key, and its cache keeps each for the life of the process, by
