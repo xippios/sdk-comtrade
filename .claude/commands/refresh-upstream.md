@@ -20,7 +20,7 @@ review checklist, https://github.com/xippios/sdk-core/blob/main/docs/review-chec
    refuses to run while `pages` is empty. The script imports and declares alone, its run
    under `if __name__ == "__main__":`. A source fills these fields, and its module
    docstring, which says what the script captures:
-   - `pages`: the documentation pages from https://comtradeplus.un.org/ApiDocs and any the arguments
+   - `pages`: the documentation pages from https://comtrade.un.org/en/api-docs and any the arguments
      name, each a `Page(url, file)` with its file under `docs/upstream/`, named stably:
      Markdown where the page is HTML, the original file where it is JSON, YAML, OpenAPI or
      PDF. A page recorded without a file, a 404 or a client-rendered shell, takes

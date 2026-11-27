@@ -32,7 +32,7 @@ xippios-comtrade-mcp = "xippios.comtrade.mcp:run"
 
 [project.urls]
 Homepage = "https://github.com/xippios/sdk-comtrade"
-Upstream = "https://comtradeplus.un.org"
+Upstream = "https://comtrade.un.org"
 Changelog = "https://github.com/xippios/sdk-comtrade/blob/main/CHANGELOG.md"
 Issues = "https://github.com/xippios/sdk-comtrade/issues"
 
