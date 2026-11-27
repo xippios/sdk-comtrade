@@ -13,9 +13,12 @@ Each note ends with its probe: the date, the operation by its path under
 `https://comtradeapi.un.org`, as a task's `meta.endpoint` names it, and the sample. A sample
 recorded as a fixture is named by its path under `tests/fixtures/`, whose `recorded_at` gives
 the time of the request, and a packaged list by its file, whose `fetched` gives the time of its
-fetch. A request that kept no answer is named in words beside a sample of its kind. The notes
-moved here on 2026-11-26 from `CLAUDE.md`, the docstrings of the wrappers and the modules, and
-the six tool descriptions that 0.4.0 trimmed; no request was sent to write this file.
+fetch. A request that kept no answer is named in words beside a sample of its kind. The note on
+the documentation's own address names the addresses requested and, in place of an operation and
+a sample, the page they lead to with its row in `FETCHED.md`. The notes moved here on
+2026-11-26 from `CLAUDE.md`, the docstrings of the wrappers and the modules, and the six tool
+descriptions that 0.4.0 trimmed, and the last from
+https://github.com/xippios/sdk-comtrade/issues/71; no request was sent to write this file.
 
 ## The key and the pace
 
@@ -478,3 +481,18 @@ Probe: 2026-10-23, `files/v1/app/reference/B4.json` and `files/v1/app/reference/
 samples `tests/fixtures/reference/b4.json` and `tests/fixtures/reference/eb10s.json`. The other
 classification files read that day, those of SITC and of the other EBOPS editions among them,
 kept no answer.
+
+## The documentation
+
+### The documentation's old address redirects to its new page
+
+`https://comtradeplus.un.org/ApiDocs`, where the snapshot of 2026-10-28 read the documentation,
+answered HTTP 302 to `https://comtrade.un.org/ApiDocs`, on another host, and that address
+answered HTTP 302 to `/en/api-docs` on its own. `scripts/refresh_upstream.py` names the page
+at the address that answers it and requests no page of the old one, since a capture follows no
+redirect to another host.
+
+Probe: 2026-11-26, 22:00 UTC, `https://comtradeplus.un.org/ApiDocs` and
+`https://comtrade.un.org/ApiDocs`, one request each without a key, no answer kept; the page
+they lead to, `https://comtrade.un.org/en/api-docs`, has the first row of the table of files
+in `docs/upstream/FETCHED.md`.

@@ -22,7 +22,10 @@ are its pages, its attribution and its hooks:
   ``help/<slug>.md``, and ``note`` words its row from the answer.
 
 Each file in ``REFERENCE_FILES`` is kept byte for byte as ``reference/<name>``, and the
-Help Center's home page is read for its footer alone. Run from the repository root::
+Help Center's home page is read for its footer alone. The licence agreement, ``LICENCE_URL``,
+which the page's footer and the Policy on Comtrade Data Use link, is no page of the
+snapshot: ``NOT_FETCHED`` gives it its row under ``Not fetched``, and no capture requests
+it. Run from the repository root::
 
     uv run scripts/refresh_upstream.py            # fetch, then write the snapshot
     uv run scripts/refresh_upstream.py --check    # fetch and compare; write nothing
@@ -37,6 +40,7 @@ from urllib.parse import urlencode, urljoin, urlsplit
 from bs4 import BeautifulSoup, Tag
 from markdownify import ATX, BACKSLASH, MarkdownConverter
 from xippios.core.refresh import (
+    NotFetched,
     Page,
     Response,
     Row,
@@ -125,7 +129,7 @@ ATTRIBUTION: tuple[Statement, ...] = (
         "Use of UN Comtrade data is subject to a license agreement found at",
         article_url("policy-on-comtrade-data-use"),
         'under "License Agreement" in the Policy on Comtrade Data Use, up to its link to the '
-        "agreement, https://comtrade.un.org/licenseagreement.html",
+        f"agreement, {LICENCE_URL}",
     ),
     Statement(
         "The License Agreement specifies that the UN Comtrade data are copyrighted by the "
@@ -149,6 +153,17 @@ reads a JSON answer as its text, the article's HTML in a string, so a line quote
 article stops where the printed text meets markup or a character outside ASCII, a link, a
 paragraph's end or a curly apostrophe; the articles are kept whole under ``help/``.
 """
+
+NOT_FETCHED = (
+    NotFetched(
+        LICENCE_URL,
+        "UN Comtrade's License Agreement, which the documentation page's footer and the Policy "
+        "on Comtrade Data Use link: terms of the data and no API documentation, and the "
+        "attribution records both links",
+    ),
+)
+"""Every page the documentation links that the snapshot deliberately does not request, which
+the frame lists under ``Not fetched`` and never requests (conventions §3)."""
 
 _NONCE = re.compile(r"""<meta\s+name=["']csp-nonce["']\s+content=["'][^"']+["']""")
 """The documentation page's Content Security Policy nonce, which its scripts carry."""
@@ -307,7 +322,8 @@ CAPTURE = """The API documentation, https://comtrade.un.org/en/api-docs, is a se
 page that names none of the OpenAPI files and prints no table of the API products: its
 console loads one product's document in a browser. The script reads the page for its
 footer's link to the licence agreement and keeps no file of it, and its row has no size or
-sha256, since its scripts carry a nonce that is new on every response. The five OpenAPI
+sha256, since its scripts carry a nonce that is new on every response. The agreement itself
+is not requested and stands under `Not fetched`. The five OpenAPI
 files of the API products are fixed pages under
 https://comtradeapi.un.org/files/v1/app/apim/, each saved byte for byte as served under
 `apidocs/`, the premium products' files among them, by the maintainer's decision of
@@ -350,6 +366,7 @@ SNAPSHOT = Snapshot(
         Page(HELP_HOME, note="read for the Attribution above, kept without a file"),
     ),
     attribution=ATTRIBUTION,
+    not_fetched=NOT_FETCHED,
     capture=CAPTURE,
     out=ROOT / "docs/upstream",
     reduce=reduce,

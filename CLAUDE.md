@@ -272,5 +272,6 @@ packaged lists without a request. A Basic Individual key allows 500 calls a day.
 
 `docs/upstream/OBSERVED.md` is the one file under `docs/upstream/` written by hand. Each note
 is a `###` section that ends with its probe, `Probe: <date>`, the operation by its path and
-its sample, and `tests/test_observed.py` holds that each sample was taken on a date the probe
+its sample, or, for the documentation's own address, the page it leads to and that page's row
+in `docs/upstream/FETCHED.md`, and `tests/test_observed.py` holds that each sample was taken on a date the probe
 gives and that the package's own text dates no answer but a decision's or an amendment's.

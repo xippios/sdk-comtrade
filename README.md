@@ -243,8 +243,9 @@ that those five fixed. Alpha: the public surface may change in a minor version b
 
 Data comes from UN Comtrade (https://comtradeplus.un.org), on the terms upstream states
 for it in its [Policy on Comtrade Data Use](https://uncomtrade.org/docs/policy-on-comtrade-data-use/),
-under which use of the data is subject to the license agreement at
-https://comtrade.un.org/licenseagreement.html; this package adds no rights to it.
+under which use of the data is subject to a license agreement found at
+https://comtrade.un.org/en/license-agreement, regardless of whether the data is accessed via
+free or premium access; this package adds no rights to it.
 Documentation snapshot and its attribution: `docs/upstream/FETCHED.md`.
 
 ## Workflows
