@@ -228,7 +228,7 @@ def test_count_data_sends_the_recorded_count_request(replay_fixture: ReplayFixtu
     result = tasks.count_data(**CH_EXPORTS_2023)
     assert result.data == 32
     assert result.meta.names == {
-        "freq_code": {"A": "annual"},
+        "freq_code": {"A": "Annual"},
         "reporter_code": {"757": "Switzerland"},
         "partner_code": {"0": "World"},
         "flow_code": {"X": "Export"},
@@ -308,7 +308,7 @@ def test_get_data_returns_empty_after_one_call_when_nothing_matches(
     ]
     assert result.meta.notes == [tasks.COUNTED_NONE]
     assert result.meta.names == {
-        "freq_code": {"A": "annual"},
+        "freq_code": {"A": "Annual"},
         "reporter_code": {"757": "Switzerland"},
         "partner_code": {"0": "World"},
         "flow_code": {"X": "Export"},
@@ -338,7 +338,7 @@ def test_several_codes_are_one_list_joined_as_upstream_takes_them(
     assert result.data == []
     assert result.meta.request["reporter_code"] == [757, 842]
     assert result.meta.names == {
-        "freq_code": {"A": "annual"},
+        "freq_code": {"A": "Annual"},
         "reporter_code": {"757": "Switzerland", "842": "USA"},
     }
     assert result.meta.notes == [tasks.COUNTED_NONE]
@@ -564,7 +564,7 @@ def test_every_answer_names_the_codes_of_its_rows(replay_fixture: ReplayFixture)
     names = answer.meta.names
     assert names["reporter_code"] == {"757": "Switzerland"}
     assert names["partner_code"] == names["partner2_code"] == {"0": "World"}
-    assert names["freq_code"] == {"A": "annual"}
+    assert names["freq_code"] == {"A": "Annual"}
     assert names["flow_code"] == {"X": "Export"}
     assert names["customs_code"]["C00"] == "TOTAL customs procedure codes"
     assert names["mot_code"]["9100"] == "Pipelines and cables"
@@ -2219,7 +2219,7 @@ def test_list_codes_carries_upstreams_words(respx_mock: respx.MockRouter) -> Non
     assert by_value("clCode")["H6"]["variable"] == "Product [HS 2022]"
     assert by_value("clCode")["BE"] == {"variable": None, "description": None}
     assert by_value("typeCode") == {"C": {}, "S": {}}, "no file of upstream's words them"
-    assert by_value("freqCode") == {"A": {"text": "annual"}, "M": {"text": "monthly"}}
+    assert by_value("freqCode") == {"A": {"text": "Annual"}, "M": {"text": "Monthly"}}
     assert by_value("breakdownMode") == {"classic": {}, "plus": {}}
     assert list(by_value("aggregateBy"))[:2] == ["cmdCode", "period"]
     assert not respx_mock.calls
@@ -2372,7 +2372,7 @@ def test_get_data_availability_for_every_reporter(replay_fixture: ReplayFixture)
 def test_a_period_nobody_reported_has_no_datasets(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get_da", "nobody_1900")
     nobody = tasks.get_data_availability("C", "A", "HS", period="1900")
-    assert (nobody.data, nobody.meta.names) == ([], {"freq_code": {"A": "annual"}})
+    assert (nobody.data, nobody.meta.names) == ([], {"freq_code": {"A": "Annual"}})
 
 
 def test_get_data_availability_by_publication_date(
