@@ -1,20 +1,24 @@
 """Refresh the packaged reference data from upstream (``/refresh-reference-data``).
 
-Fetches every list in ``LISTS`` and table in ``TABLES``, reads every list in
-``SPEC_LISTS``, and only then writes each to ``reference/<name>.json`` with
-``PackagedList.write`` (conventions §3, sdk-core ADR-0041): the list's name, the upstream
-operation it came from, the UTC time of the fetch to the second, upstream's records under
-upstream's field names and a ``note`` with its provenance in words. The time is the
-``retrieved_at`` the wrapper returns: a file the client's cache answers, as it answers
-``ListofReferences.json`` for the table after the ``clCode`` list fetched it, carries the
-time its entry was stored, when it was fetched (conventions §4). A list's record holds
-the value under the upstream parameter's name and, beside it, the fields upstream gives
-the value a text in (``text``; ``qtyAbbr`` and ``qtyDescription``; ``variable`` and
-``description``), under upstream's names; a value without one is a record of one field.
-Every record is checked against its list's model, ``params.PACKAGED_LISTS``.
+The script declares UN Comtrade's fifteen packaged lists and tables in one ``Lists``,
+``LISTS``, and hands it to core's ``run`` (sdk-core ADR-0062), which fetches every list
+through the declared fetch, the package's client with one attempt per request, each
+counted, then writes each to ``reference/<name>.json`` with ``PackagedList.write``
+(conventions §3, sdk-core ADR-0041) and the provenance rows of ``reference/README.md`` with
+the origins of ``ORIGINS``, and no ``enums.py``, since no list declares an enum. Each file
+holds the list's name, the upstream operation it came from, the UTC time of the fetch to the
+second, upstream's records under upstream's field names and a ``note`` with its provenance
+in words. The time is the ``retrieved_at`` the wrapper returns: a file the client's cache
+answers, as it answers ``ListofReferences.json`` for the table after the ``clCode`` list
+fetched it, carries the time its entry was stored, when it was fetched (conventions §4). A
+list's record holds the value under the upstream parameter's name and, beside it, the
+fields upstream gives the value a text in (``text``; ``qtyAbbr`` and ``qtyDescription``;
+``variable`` and ``description``), under upstream's names; a value without one is a record
+of one field. Every record is checked against its list's model, ``params.PACKAGED_LISTS``.
+What the fetches declare is UN Comtrade's:
 
-- ``LISTS`` come from UN Comtrade's public reference files, fetched through the layer-1
-  wrapper ``api.reference_rows`` (no key needed or sent): the ``id`` and ``text`` of
+- ``LISTS_FROM_FILES`` come from UN Comtrade's public reference files, fetched through the
+  layer-1 wrapper ``api.reference_rows`` (no key needed or sent): the ``id`` and ``text`` of
   ``tradeRegimes.json``, ``ModeOfTransportCodes.json``, ``CustomsCodes.json`` and
   ``ModeOfSupply.json``, the ``qtyCode`` values of ``QuantityUnits.json`` (the codes
   ``qtyUnitCode`` carries) with their ``qtyAbbr`` and ``qtyDescription``, and the
@@ -44,12 +48,19 @@ Every record is checked against its list's model, ``params.PACKAGED_LISTS``.
   description lists, without wording. Their ``endpoint`` is the URL path upstream serves
   the spec at, their ``fetched`` the snapshot's, from ``docs/upstream/FETCHED.md``.
 
-Run from the repository root; no API key is needed::
+UN Comtrade reports no quota in a header: its ``x-ratelimit-*`` headers describe the
+per-second pace, not the daily 500, so ``quota_header`` is ``None``. Run from the
+repository root; no API key is needed or sent::
 
-    uv run python scripts/refresh_reference.py
+    uv run python scripts/refresh_reference.py                  # fetch every list
+    uv run python scripts/refresh_reference.py --only motCode   # one list, the rest kept
+    uv run python scripts/refresh_reference.py --render-only    # no request
+
+A run sends ten requests, one per reference file, the client's cache answering the
+``ListofReferences`` table from the ``clCode`` list's fetch; the four spec lists send none.
 """
 
-import argparse
+import functools
 import json
 import re
 from collections.abc import Callable, Coroutine, Sequence
@@ -58,15 +69,14 @@ from pathlib import Path
 from typing import Any
 
 from xippios.core import PackagedList, UpstreamModel, parse, sync
+from xippios.core.refresh import Listed, Lists, run
 
 from xippios.comtrade import api
-from xippios.comtrade._client import SOURCE
+from xippios.comtrade._client import SOURCE, client
 from xippios.comtrade.models import QuantityUnit, Reference, ReferenceCode
-from xippios.comtrade.params import PACKAGED_LISTS, PACKAGED_TABLES
+from xippios.comtrade.params import PACKAGE, PACKAGED_LISTS, PACKAGED_TABLES
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_DIR = ROOT / "src/xippios/comtrade"
-REFERENCE = PACKAGE_DIR / "reference"
 SPEC = ROOT / "docs/upstream/apidocs/comtrade.json"
 SPEC_NAME = "apidocs/comtrade.json"
 SPEC_ENDPOINT = "files/v1/app/apim/comtrade.json"
@@ -134,7 +144,7 @@ async def _qty_codes() -> tuple[Records, datetime]:
     return records, retrieved_at
 
 
-LISTS: dict[str, tuple[str, str, Fetcher]] = {
+LISTS_FROM_FILES: dict[str, tuple[str, str, Fetcher]] = {
     "clCode": (
         "ListofReferences.json",
         "The cmd:<clCode> categories of ListofReferences.json with their variable and "
@@ -388,6 +398,12 @@ def _snapshot_fetched() -> datetime:
     return datetime.combine(date.fromisoformat(text), time(), UTC)
 
 
+@functools.cache
+def _spec() -> dict[str, Any]:
+    """The spec snapshot, read once for every list a run fetches."""
+    return dict(json.loads(SPEC.read_text(encoding="utf-8")))
+
+
 def _value_list(
     name: str, endpoint: str, fetched: datetime, note: str, records: Records
 ) -> PackagedList:
@@ -400,26 +416,27 @@ def _value_list(
     return PackagedList(param=name, endpoint=endpoint, fetched=fetched, note=note, records=records)
 
 
-def _list(name: str, spec: dict[str, Any]) -> PackagedList:
+def from_file(name: str) -> PackagedList:
     """The reference-file list ``name``, fetched now and reconciled with the spec.
 
     ``fetched`` is the file's ``retrieved_at``. A value the reconciliation adds keeps its
     value alone, since the spec gives it no text; one it removes takes its record with it.
     """
-    file, what, fetch = LISTS[name]
+    file, what, fetch = LISTS_FROM_FILES[name]
     records, fetched = sync(fetch)()
     note = f"{what}."
     if name in SUPPLEMENTS:
-        values, exceptions = _reconcile(name, [record[name] for record in records], spec)
+        values, exceptions = _reconcile(name, [record[name] for record in records], _spec())
         by_value = {record[name]: record for record in records}
         records = [by_value.get(value, {name: value}) for value in values]
         note = f"{what}, reconciled with {SUPPLEMENTS[name][0]}. {' '.join(exceptions)}"
     return _value_list(name, f"{FILES}{file}", fetched, note.rstrip(), records)
 
 
-def _spec_list(name: str, spec: dict[str, Any], fetched: datetime) -> PackagedList:
+def from_spec(name: str) -> PackagedList:
     """The list ``name`` as the spec snapshot documents it, with the wording it gives."""
-    what, records = SPEC_LISTS[name](spec)
+    what, records = SPEC_LISTS[name](_spec())
+    fetched = _snapshot_fetched()
     note = (
         f"Read from docs/upstream/{SPEC_NAME}, the snapshot of {SPEC_ENDPOINT} fetched "
         f"{fetched:%Y-%m-%d}: operation get, {what}."
@@ -427,7 +444,7 @@ def _spec_list(name: str, spec: dict[str, Any], fetched: datetime) -> PackagedLi
     return _value_list(name, SPEC_ENDPOINT, fetched, note, records)
 
 
-def _table(name: str) -> PackagedList:
+def table(name: str) -> PackagedList:
     """The table ``name``, fetched now: upstream's rows with the keys upstream sent.
 
     ``fetched`` is the file's ``retrieved_at``, the time its cache entry was stored where
@@ -453,44 +470,120 @@ def _table(name: str) -> PackagedList:
     )
 
 
-def refresh() -> None:
-    """Fetch every list and table, then write their files."""
-    spec = json.loads(SPEC.read_text(encoding="utf-8"))
-    snapshot = _snapshot_fetched()
-    packaged = [
-        *(_list(name, spec) for name in LISTS),
-        *(_spec_list(name, spec, snapshot) for name in SPEC_LISTS),
-        *(_table(name) for name in TABLES),
-    ]
-    REFERENCE.mkdir(exist_ok=True)
-    for fetched in packaged:
-        path = REFERENCE / f"{fetched.param}.json"
-        fetched.write(path)
-        print(f"{path.name}: {len(fetched.records)} records from {fetched.endpoint}")  # noqa: T201
+def _rows_of(text: str) -> Callable[[PackagedList], str]:
+    """A table's origin, its row count read from the list as written."""
+    return lambda packaged: text.format(rows=f"{len(packaged.records):,}")
 
 
-def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """The command line, which takes no option; ``--help`` exits before any fetch."""
-    summary, _, details = (__doc__ or "").partition("\n\n")
-    parser = argparse.ArgumentParser(
-        prog="refresh_reference.py",
-        description=summary,
-        epilog=details,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    return parser.parse_args(argv)
+ORIGINS: dict[str, str | Callable[[PackagedList], str]] = {
+    "aggregateBy": (
+        "`docs/upstream/apidocs/comtrade.json`, operation `get`, the names `aggregateBy`'s "
+        "description lists, values alone (same snapshot)"
+    ),
+    "breakdownMode": (
+        "`docs/upstream/apidocs/comtrade.json`, operation `get`, the `breakdownMode` enum, "
+        'values alone: the description ("Breakdown mode to choose from") words none (same '
+        "snapshot)"
+    ),
+    "clCode": (
+        "the `cmd:<clCode>` categories of "
+        "https://comtradeapi.un.org/files/v1/app/reference/ListofReferences.json with their "
+        "`variable` and `description`, plus `BE` and `TM`, values alone, from the `clCode` "
+        "enum of `docs/upstream/apidocs/comtrade.json` (operation `get`), which upstream "
+        "accepted (`tests/fixtures/get/count_cl_code_be.json`, `count_cl_code_tm.json`); the "
+        "enum's `BE5` left out, refused (`count_cl_code_be5.json`). Every other value rests "
+        "on a recorded count too (HTTP 200), except `H6`, which answered HTTP 500 to all five "
+        "tries and stays, unsettled. Exceptions and evidence are in the file's `note`"
+    ),
+    "customsCode": (
+        "`id` and `text` of https://comtradeapi.un.org/files/v1/app/reference/CustomsCodes.json"
+    ),
+    "flowCode": (
+        "`id` and `text` of https://comtradeapi.un.org/files/v1/app/reference/tradeRegimes.json, "
+        "plus `MIF` and `XIF`, values alone, from the `flowCode` description of "
+        "`docs/upstream/apidocs/comtrade.json` (operation `get`), which lists values without "
+        "wording; upstream accepted both (`tests/fixtures/get/count_flow_code_mif.json`, "
+        "`count_flow_code_xif.json`, HTTP 200). Exceptions and evidence are in the file's "
+        "`note`"
+    ),
+    "freqCode": (
+        "`docs/upstream/apidocs/comtrade.json`, operation `get`, the `freqCode` enum, each "
+        "value's `text` the wording of the description (\"Trade frequency: A for annual and M "
+        'for monthly"; same snapshot)'
+    ),
+    "mosCode": (
+        "`id` and `text` of https://comtradeapi.un.org/files/v1/app/reference/ModeOfSupply.json. "
+        "The file's ids (`0`, `Mode 1` to `Mode 4`), not proven parameter values: "
+        "`data/v1/get` accepts `mosCode` though the spec does not list it, refused `Mode 1` "
+        "and accepted `0` and `1` (`tests/fixtures/get/count_services_eb10_mos_code_*.json`). "
+        "`mosCode` is not a task parameter; the file's `note` says the same"
+    ),
+    "motCode": (
+        "`id` and `text` of "
+        "https://comtradeapi.un.org/files/v1/app/reference/ModeOfTransportCodes.json"
+    ),
+    "qtyUnitCode": (
+        "`qtyCode`, as text, with `qtyAbbr` and `qtyDescription`, of "
+        "https://comtradeapi.un.org/files/v1/app/reference/QuantityUnits.json, the codes "
+        "`qtyUnitCode` and `altQtyUnitCode` carry on trade rows"
+    ),
+    "typeCode": (
+        "`docs/upstream/apidocs/comtrade.json`, operation `get`, the `typeCode` enum, each "
+        "value's `text` the wording the parameter's description gives it (\"Type of trade: C "
+        'for commodities and S for service"; snapshot of '
+        "https://comtradeapi.un.org/files/v1/app/apim/comtrade.json)"
+    ),
+    "Reporters": _rows_of(
+        "https://comtradeapi.un.org/files/v1/app/reference/Reporters.json, every column "
+        "({rows} rows)"
+    ),
+    "partnerAreas": _rows_of(
+        "https://comtradeapi.un.org/files/v1/app/reference/partnerAreas.json, every column "
+        "({rows} rows)"
+    ),
+    "country_area_code_iso": _rows_of(
+        "https://comtradeapi.un.org/files/v1/app/reference/country_area_code_iso.json ({rows} "
+        "rows). Not in `ListofReferences.json`; it is the table the official "
+        "`comtradeapicall` package (1.3.2, `convertCountryIso3ToCode`) reads to map ISO "
+        "alpha-3 codes to UN Comtrade's"
+    ),
+    "TradeDataItems": _rows_of(
+        "https://comtradeapi.un.org/files/v1/app/reference/TradeDataItems.json, every column "
+        "({rows} rows); also in the snapshot as `docs/upstream/reference/TradeDataItems.json`"
+    ),
+    "ListofReferences": _rows_of(
+        "https://comtradeapi.un.org/files/v1/app/reference/ListofReferences.json, the index of "
+        "the reference files, every column ({rows} rows: `category`, `variable`, "
+        "`description`, `fileuri`); also in the snapshot as "
+        "`docs/upstream/reference/ListofReferences.json`"
+    ),
+}
+"""The Origin of each list's provenance row in ``reference/README.md``, as the README keeps it."""
 
 
-def main(argv: Sequence[str] | None = None) -> None:
-    """Refresh the packaged lists and tables from upstream."""
-    parse_args(argv)
-    names = [*LISTS, *SPEC_LISTS]
-    if sorted(names) != sorted(PACKAGED_LISTS):
-        raise SystemExit(f"params.PACKAGED_LISTS {list(PACKAGED_LISTS)} does not match {names}")
-    if sorted(TABLES) != sorted(PACKAGED_TABLES):
-        raise SystemExit(f"params.PACKAGED_TABLES {list(PACKAGED_TABLES)} does not match {TABLES}")
-    refresh()
+def _listed(name: str, fetch: Callable[[str], PackagedList]) -> Listed:
+    return Listed(name, functools.partial(fetch, name), origin=ORIGINS[name])
+
+
+LISTS = Lists(
+    package=PACKAGE,
+    lists=(
+        *(_listed(name, from_file) for name in LISTS_FROM_FILES),
+        *(_listed(name, from_spec) for name in SPEC_LISTS),
+        *(_listed(name, table) for name in TABLES),
+    ),
+    packaged=(*PACKAGED_LISTS, *PACKAGED_TABLES),
+    client=client,
+    quota_header=None,
+)
+"""The fifteen packaged lists and tables, the ``clCode`` list before the ``ListofReferences``
+table, which the client's cache then answers; no enum."""
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run core's frame on ``LISTS``: every list, some with ``--only``, or ``--render-only``."""
+    return run(LISTS, argv)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

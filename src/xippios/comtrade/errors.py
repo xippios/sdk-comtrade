@@ -1,10 +1,13 @@
-"""UN Comtrade failure modes with a distinct, documented meaning (conventions §5)."""
+"""UN Comtrade's limits and the words of the refusals they cause (conventions §5).
 
-from xippios.core import InvalidRequestError
+A query over upstream's per-call record limit is refused with core's
+``xippios.core.QueryTooLarge`` (sdk-core ADR-0053), which ``get_data``'s count first,
+core's ``fetch_counted``, raises with the count, the limit and ``NARROW``.
+"""
 
 from xippios.comtrade._client import SOURCE
 
-__all__ = ["MAX_PERIODS", "RECORD_LIMIT", "QueryTooLarge", "over_mcp"]
+__all__ = ["MAX_PERIODS", "NARROW", "RECORD_LIMIT", "over_mcp"]
 
 
 def over_mcp(task: str) -> str:
@@ -39,37 +42,14 @@ Not in the snapshot; upstream answers HTTP 400 ``Maximum number of periods is 12
 """
 
 
-class QueryTooLarge(InvalidRequestError):
-    """The query would return more than UN Comtrade's per-call record limit (HTTP 422).
+NARROW = (
+    "The count was sent and no data fetched. "
+    f"Split by period (max {MAX_PERIODS} per call), then by reporter, then raise the "
+    "aggregation level (for example cmd_code 'AG2' instead of 'AG6'), and check each part "
+    f"with get_counts {over_mcp('get_counts')}."
+)
+"""What closes ``QueryTooLarge`` after ``get_data``'s count: core's ``narrow``.
 
-    Raised by ``get_data`` from the ``countOnly`` count, before any data is fetched,
-    because upstream would otherwise cut the answer at the limit without saying so.
-    ``bound=True`` words the refusal for an upper bound taken from a query's arguments
-    rather than upstream's count; no task of this version raises it so.
-
-    Attributes:
-        count: Records the query would return, or with ``bound`` at most return.
-        limit: The per-call limit.
-        bound: ``True`` when ``count`` is an upper bound from the arguments, ``False``
-            when it is upstream's count.
-    """
-
-    def __init__(self, count: int, *, limit: int = RECORD_LIMIT, bound: bool = False) -> None:
-        if bound:
-            what = f"query could return up to {count:,} records"
-            advice = "Name fewer product codes or periods per call."
-        else:
-            what = f"query would return {count:,} records"
-            advice = (
-                f"Split by period (max {MAX_PERIODS} per call), then by reporter, then raise "
-                "the aggregation level (for example cmd_code 'AG2' instead of 'AG6'), and "
-                f"check each part with get_counts {over_mcp('get_counts')}."
-            )
-        super().__init__(
-            f"{what}; UN Comtrade serves at most {limit:,} per call and silently cuts the "
-            f"rest. {advice}",
-            source=SOURCE,
-        )
-        self.count = count
-        self.limit = limit
-        self.bound = bound
+Its first sentence says what was sent, as a refusal after a request of the call does
+(conventions §5; sdk-core ADR-0054, amendment 2026-11-22), the rest what narrows the query.
+"""

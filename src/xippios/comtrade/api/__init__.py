@@ -3,9 +3,11 @@
 Layer 1 of sdk-core ADR-0001: one module per upstream operation, named after it. A wrapper
 takes the parameters as upstream names them (snake_cased), calls
 ``xippios.comtrade._client.client`` (with ``auth=None`` for the public reference files
-and the public operations under ``public/v1``, so they never send the key) and returns
-models from ``models.py`` that mirror the payload. No composition and no defaults beyond
-upstream's own. The reference is the snapshot in ``docs/upstream/``.
+and the public operations under ``public/v1``, so they never send the key) by
+``get_answer`` and returns core's ``Answer``: the model from ``models.py`` that mirrors
+the payload, with the time the answer was retrieved, which a task hands to its
+``ResultMeta`` (sdk-core ADR-0037). No composition and no defaults beyond upstream's
+own. The reference is the snapshot in ``docs/upstream/``.
 """
 
 from xippios.comtrade.api.get import get, get_count_only

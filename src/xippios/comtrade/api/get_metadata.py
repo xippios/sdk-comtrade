@@ -11,9 +11,9 @@ answers every reporter's notes and was not recorded. ``clCode`` ``H6``, missing 
 spec's enum for this operation, is answered like ``HS`` (``ch_2023_h6.json``).
 """
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.comtrade._client import SOURCE, client
+from xippios.comtrade._client import client
 from xippios.comtrade.api._query import upstream_query
 from xippios.comtrade.models import MetadataResponse
 
@@ -33,7 +33,7 @@ async def get_metadata(
     *,
     reporter_code: str | None = None,
     period: str | None = None,
-) -> MetadataResponse:
+) -> Answer[MetadataResponse]:
     """Call ``data/v1/getMetadata`` with the parameters as upstream names them.
 
     Args:
@@ -43,8 +43,9 @@ async def get_metadata(
         reporter_code: ``reporterCode``, comma-separated reporter codes, e.g. ``"757"``.
         period: ``period``, comma-separated ``YYYY`` or ``YYYYMM`` values.
     """
-    raw = await client.get_json(
+    return await client.get_answer(
         f"/{ENDPOINT}/{type_code}/{freq_code}/{cl_code}",
         params=upstream_query(UPSTREAM_NAMES, reporter_code=reporter_code, period=period),
+        parse=MetadataResponse,
+        endpoint=ENDPOINT,
     )
-    return parse(MetadataResponse, raw, source=SOURCE, endpoint=ENDPOINT)

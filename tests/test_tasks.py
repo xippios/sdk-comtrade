@@ -10,7 +10,6 @@ import importlib
 import inspect
 import json
 import re
-import sys
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -21,15 +20,16 @@ import httpx
 import pytest
 import respx
 from mcp.client import Client
-from mcp.types import TextContent
 from xippios.core import (
     Answer,
     AsyncClient,
     AuthError,
     EnvVar,
     InvalidRequestError,
+    MemoryCache,
     NotFoundError,
     PackagedList,
+    QueryTooLarge,
     RateLimitError,
     ResultCap,
     RetryPolicy,
@@ -38,7 +38,6 @@ from xippios.core import (
     UpstreamModel,
     ValidationError,
 )
-from xippios.core.http import status_for
 from xippios.core.mcp import ToolSet, build_server
 from xippios.core.testing import (
     ReplayFixture,
@@ -57,17 +56,18 @@ from xippios.comtrade import api, tasks
 from xippios.comtrade._client import (
     API_KEY_ENV,
     BASE_URL,
+    CACHE_LIFETIMES,
     ENV_VARS,
     RATE_LIMIT,
-    TIMEOUTS,
+    READ_TIMEOUT,
     _quota_reset,
     auth,
     classify,
     config,
     policy,
 )
-from xippios.comtrade.errors import RECORD_LIMIT, QueryTooLarge
-from xippios.comtrade.mcp import build, run, server
+from xippios.comtrade.errors import NARROW, RECORD_LIMIT
+from xippios.comtrade.mcp import build, server
 from xippios.comtrade.models import (
     BilateralData,
     BilateralDataRecord,
@@ -106,6 +106,19 @@ UPSTREAM = Path(__file__).resolve().parents[1] / "docs" / "upstream"
 GET = Path(__file__).resolve().parent / "fixtures" / "get"
 """The recorded ``data/v1/get`` answers."""
 
+RECORDED_COUNT: dict[str, Any] = {
+    "reporter_code": "757",
+    "period": "2023",
+    "partner_code": "0",
+    "cmd_code": "TOTAL",
+    "flow_code": "X",
+}
+"""The query of the recorded counts of ``count_cl_code_*.json`` and ``count_rate_limited.json``.
+
+A test that replays one of them sends this query, so that its replay answers the request
+it was recorded for (conventions §10).
+"""
+
 COUNT_ONLY = ["countOnly"]
 """``match_params`` of a count fixture: a count and a data call share one path.
 
@@ -134,29 +147,20 @@ def test_the_adapters_name_no_task() -> None:
             assert name not in source, f"{adapter} names {name}"
 
 
-def test_the_package_contract_names_the_key_and_builds_the_served_tools() -> None:
-    """What a host reads: the key's variable, and the tool set the entry point serves.
+def test_the_key_is_the_one_variable_and_the_tool_set_takes_what_tasks_declares() -> None:
+    """The key's variable, and the caps and instructions that ``tasks.py`` declares.
 
-    Conventions §7 and §8, sdk-core ADR-0026, amendment 2026-11-18, points c and d: the key
-    is the one variable the package reads, a secret the data operations need, and
-    ``build()`` hands a host every task with the caps of ``tasks.py``.
+    Conventions §7 and §8: the key is the one variable the package reads, a secret the
+    data operations need. Core's family check holds the rest of the package contract
+    (sdk-core ADR-0063, decision 8); what stays here is the package's own declaration.
     """
-    declared = ENV_VARS
-    assert declared == (EnvVar(API_KEY_ENV, secret=True, required=True),)
+    assert (EnvVar(API_KEY_ENV, secret=True, required=True),) == ENV_VARS
     tools = build()
     assert isinstance(tools, ToolSet)
-    assert (tools.source, tools.read_only) == ("comtrade", True)
-    assert [task.__name__ for task in tools.tasks] == list(tasks.__all__)
+    assert tools.read_only is True
     assert dict(tools.caps) == dict(tasks.MCP_CAPS)
-
-
-@pytest.mark.anyio
-async def test_a_host_serves_what_the_entry_point_serves() -> None:
-    """A server a host builds from ``build()`` lists the entry point's tools, no other."""
-    async with Client(server) as served, Client(build_server(build())) as hosted:
-        entry = sorted(tool.name for tool in (await served.list_tools()).tools)
-        host = sorted(tool.name for tool in (await hosted.list_tools()).tools)
-    assert entry == host == sorted(f"comtrade_{name}" for name in tasks.__all__)
+    assert tools.instructions == tasks.MCP_INSTRUCTIONS
+    assert "comtrade_list_" in tasks.MCP_INSTRUCTIONS
 
 
 FOURTEEN = [
@@ -201,52 +205,6 @@ async def test_no_task_fixes_filters_sorts_ranks_or_cuts_for_the_caller() -> Non
     async with Client(server) as client:
         served = sorted(tool.name for tool in (await client.list_tools()).tools)
     assert served == [f"comtrade_{name}" for name in FOURTEEN]
-
-
-ENTRY_USAGE = (
-    "usage: xippios-comtrade-mcp [-h] [--http] [--host HOST] [--port PORT] [--allow-remote]"
-)
-"""The entry point's usage line at a width that holds it, as ``--help`` prints it."""
-
-
-@pytest.fixture
-def plain_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
-    """argparse's output without color and at a width of 100, whatever the shell sets.
-
-    Python 3.14 colors the help where ``FORCE_COLOR`` is set and wraps it to ``COLUMNS``.
-    """
-    monkeypatch.setenv("PYTHON_COLORS", "0")
-    monkeypatch.delenv("FORCE_COLOR", raising=False)
-    monkeypatch.setenv("COLUMNS", "100")
-
-
-@pytest.mark.usefixtures("plain_terminal")
-def test_the_entry_point_names_itself_in_its_usage_and_errors(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """``xippios-comtrade-mcp --help`` and an unknown option name the entry point that runs.
-
-    Core 0.4.0 names ``sys.argv[0]`` (https://github.com/xippios/sdk-core/issues/167), where
-    0.3.0 named the server's slug, ``xippios-comtrade``; ``--allow-remote`` says that it
-    changes nothing on this read server. Both exit before a server starts.
-    """
-    entry = str(Path(sys.executable).parent / "xippios-comtrade-mcp")
-    monkeypatch.setattr(sys, "argv", [entry, "--help"])
-    with pytest.raises(SystemExit) as helped:
-        run()
-    out = capsys.readouterr().out
-    assert helped.value.code == 0
-    assert out.splitlines()[0] == ENTRY_USAGE
-    assert "--allow-remote  changes nothing: this read server is not held to loopback" in out
-    monkeypatch.setattr(sys, "argv", [entry, "--nope"])
-    with pytest.raises(SystemExit) as refused:
-        run()
-    err = capsys.readouterr().err
-    assert refused.value.code == 2
-    assert err.splitlines() == [
-        ENTRY_USAGE,
-        "xippios-comtrade-mcp: error: unrecognized arguments: --nope",
-    ]
 
 
 # Switzerland (reporter 757 in Reporters.json) exports to the World in 2023, all products.
@@ -342,10 +300,14 @@ def test_get_data_refuses_over_the_limit_before_fetching(
         )
     assert info.value.count == 5_006_385
     assert info.value.limit == RECORD_LIMIT == 100_000
-    assert info.value.bound is False
+    assert isinstance(info.value, InvalidRequestError)
     message = str(info.value)
-    assert "5,006,385" in message
-    assert "Split by period (max 12 per call), then by reporter" in message
+    assert message.startswith(
+        "query would return 5,006,385 records; upstream serves at most 100,000 per call. "
+        "The count was sent and no data fetched. "
+        "Split by period (max 12 per call), then by reporter"
+    )
+    assert "Nothing was sent." not in message
     assert message.endswith(
         "and check each part with get_counts (over MCP, the tool comtrade_get_counts)."
     )
@@ -354,9 +316,64 @@ def test_get_data_refuses_over_the_limit_before_fetching(
     assert "reporterCode" not in sent_query(counted)
 
 
-def test_query_too_large_is_an_invalid_request_for_http_too() -> None:
-    assert issubclass(QueryTooLarge, InvalidRequestError)
-    assert status_for(QueryTooLarge(200_000)) == 422
+def test_get_data_counts_first_sets_the_total_and_dates_by_the_older_read(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Core's ``fetch_counted`` counts first, and the count is ``meta.total`` (ADR-0053).
+
+    ``get_data`` dates its answer by the older of its two reads (conventions §4): after
+    ``get_counts`` the cache answers the count, so the answer is as old as that count, and
+    the call sends the data request alone (https://github.com/xippios/sdk-comtrade/issues/38).
+    """
+    counted = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
+    fetched = replay_fixture("get", "ch_exports_2023")
+    count = tasks.get_counts(**CH_EXPORTS_2023)
+    result = tasks.get_data(**CH_EXPORTS_2023)
+    assert result.meta.total == count.data == len(result.data) == 32
+    assert result.meta.retrieved_at == count.meta.retrieved_at
+    assert (counted.call_count, fetched.call_count) == (1, 1)
+
+
+@pytest.mark.anyio
+async def test_the_wrappers_return_cores_answer(replay_fixture: ReplayFixture) -> None:
+    """Each wrapper reads by ``get_answer`` and returns its ``Answer`` (sdk-core ADR-0037)."""
+    replay_fixture("get_live_update", "latest")
+    replay_fixture("get_comtrade_releases", "calendar")
+    for answer in (await api.get_live_update(), await api.get_comtrade_releases()):
+        assert isinstance(answer, Answer)
+        assert answer.retrieved_at.tzinfo is UTC
+        assert answer.payload.data
+    assert tasks.get_live_update().meta.retrieved_at.tzinfo is UTC
+
+
+def test_every_answer_names_the_codes_of_its_rows(replay_fixture: ReplayFixture) -> None:
+    """Each record's code fields declare their packaged list (sdk-core ADR-0067, decision 6).
+
+    So ``meta.names`` names every reporter, partner, customs, transport, supply, unit and
+    frequency code of the rows, and a code the list lacks is said in ``meta.notes``: the
+    aggregated partner, ``-2``, which no packaged table holds.
+    """
+    replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
+    replay_fixture("get", "ch_exports_2023")
+    answer = tasks.get_data(**CH_EXPORTS_2023)
+    names = answer.meta.names
+    assert names["reporter_code"] == {"757": "Switzerland"}
+    assert names["partner_code"] == names["partner2_code"] == {"0": "World"}
+    assert names["freq_code"] == {"A": "annual"}
+    assert names["customs_code"]["C00"] == "TOTAL customs procedure codes"
+    assert names["mot_code"]["9100"] == "Pipelines and cables"
+    assert names["mos_code"] == {"0": "All Modes of Supply"}
+    assert names["qty_unit_code"] == {"-1": "Not available or not specified or no quantity."}
+    assert answer.meta.notes == []
+    assert not {"flow_code", "cmd_code", "type_code", "classification_code"} & set(names)
+    replay_fixture("get_live_update", "latest")
+    live = tasks.get_live_update()
+    assert live.meta.names["reporter_code"]["234"] == "Faroe Isds", "a text code, named"
+    replay_fixture("get", "count_aggregate_by_partner_code_cmd_code", match_params=COUNT_ONLY)
+    replay_fixture("get", "ch_exports_2023_ag2_aggregate_by_partner_code_cmd_code")
+    aggregated = tasks.get_data(**AG2, aggregate_by="partnerCode,cmdCode")
+    assert "-2" not in aggregated.meta.names.get("partner_code", {})
+    assert any("partner_code -2" in note for note in aggregated.meta.notes)
 
 
 @pytest.mark.anyio
@@ -365,10 +382,10 @@ async def test_a_code_that_is_not_a_reporter_counts_zero_upstream(
 ) -> None:
     """Layer 1: 756 is Switzerland's ISO numeric code, not a reporter; upstream counts 0."""
     replay_fixture("get", "count_not_a_reporter_756", match_params=COUNT_ONLY)
-    response = await api.get_count_only(
+    response = (await api.get_count_only(
         "C", "A", "HS", reporter_code="756", period="2023", partner_code="0", cmd_code="TOTAL",
         flow_code="X",
-    )  # fmt: skip
+    )).payload  # fmt: skip
     assert (response.count, response.error) == (0, "")
 
 
@@ -378,7 +395,8 @@ def _day(name: str) -> str:
 
 
 REFUSED_756 = (
-    f"'756' is not a reporter_code in the packaged Reporters list (fetched {_day('Reporters')}). "
+    f"756 is not a reporter_code in the packaged Reporters list (fetched {_day('Reporters')}). "
+    "Nothing was sent. "
     "Did you mean 757 (Switzerland)? UN Comtrade answers a code it does not have with count "
     "0, so the package refuses it before the call. list_reporters lists every code (over "
     "MCP, the tool comtrade_list_reporters). If upstream added it since, the packaged list is "
@@ -386,8 +404,9 @@ REFUSED_756 = (
 )
 """``UnknownCode``'s message for reporter 756 (conventions §5): core's text, comtrade's hint.
 
-The list task is named with its tool (conventions §8), and core 0.4.0's last sentence names
-no command an agent cannot run (https://github.com/xippios/sdk-core/issues/111).
+Core's check of the table's integer codes names the integer, and says that nothing was sent
+after the first sentence (sdk-core ADR-0045, amendment 2026-11-24). The list task is named
+with its tool (conventions §8), and the last sentence names no command an agent cannot run.
 """
 
 
@@ -407,11 +426,11 @@ def test_a_code_that_is_not_a_reporter_is_refused_naming_the_reporter(
     assert str(refused) == REFUSED_756
     assert (refused.param, refused.value, refused.list_name) == (
         "reporter_code",
-        "756",
+        756,
         "Reporters",
     )
     assert refused.fetched == PackagedList.load(PACKAGE, "Reporters").fetched
-    assert refused.closest == (("757", "Switzerland"),)
+    assert refused.closest == ((757, "Switzerland"),)
     assert refused.source == "comtrade"
 
 
@@ -419,25 +438,46 @@ def test_unknown_partner_codes_are_refused(respx_mock: respx.MockRouter) -> None
     unknown = _unknown(respx_mock, partner_code="0,9999")
     assert (unknown.param, unknown.value, unknown.list_name) == (
         "partner_code",
-        "9999",
+        9999,
         "partnerAreas",
     )
     assert str(unknown).startswith(
-        "'9999' is not a partner_code in the packaged partnerAreas list "
-        f"(fetched {_day('partnerAreas')})."
+        "9999 is not a partner_code in the packaged partnerAreas list "
+        f"(fetched {_day('partnerAreas')}). Nothing was sent."
     )
     assert "list_partners lists every code (over MCP, the tool comtrade_list_partners)." in str(
         unknown
     )
     reporter_only = _unknown(respx_mock, partner2_code="97")
     assert (reporter_only.param, reporter_only.closest) == ("partner2_code", ())
-    assert "'97' (European Union) is a reporter code only." in str(reporter_only)
+    assert "97 (European Union) is a reporter code only." in str(reporter_only)
 
 
 def test_world_is_a_partner_not_a_reporter(respx_mock: respx.MockRouter) -> None:
     refused = _unknown(respx_mock, reporter_code="0")
-    assert str(refused).startswith("'0' is not a reporter_code in the packaged Reporters list")
-    assert "'0' (World) is a partner code only." in str(refused)
+    assert str(refused).startswith("0 is not a reporter_code in the packaged Reporters list")
+    assert "0 (World) is a partner code only." in str(refused), "the integer, as it is refused"
+    assert "'0'" not in str(refused)
+
+
+def test_an_area_code_is_checked_as_upstream_writes_it(respx_mock: respx.MockRouter) -> None:
+    """A member whose text is not its integer's own is no code of the tables.
+
+    ``int`` reads ``0757`` and ``757`` in digits outside ASCII as 757, while the task sends
+    the text as given, and upstream counts 0 for a code it does not have. So the check
+    takes such a member as its text, which the table lacks, and names the code to write.
+    """
+    for given in ["0757", "\uff17\uff15\uff17", "\u0667\u0665\u0667"]:
+        refused = _unknown(respx_mock, reporter_code=f"842,{given}")
+        assert refused.value == given
+        assert str(refused).startswith(
+            f"{given!r} is not a reporter_code in the packaged Reporters list"
+        )
+        assert "UN Comtrade writes this code 757, in the digits 0 to 9 without a leading zero." in (
+            str(refused)
+        )
+    world = _unknown(respx_mock, partner_code="00")
+    assert "UN Comtrade writes this code 0, in the digits 0 to 9" in str(world)
 
 
 @pytest.mark.anyio
@@ -451,7 +491,7 @@ async def test_a_refusal_that_names_another_task_names_a_served_tool(
     server lists, after the task or the clause it ends.
     """
     refusals = [
-        str(QueryTooLarge(200_000)),
+        str(QueryTooLarge(200_000, limit=RECORD_LIMIT, narrow=NARROW)),
         str(_unknown(respx_mock, reporter_code="756")),
         str(_unknown(respx_mock, partner_code="9999")),
         str(_unknown(respx_mock, customs_code="C16")),
@@ -477,18 +517,18 @@ def test_every_member_of_an_area_list_is_checked() -> None:
     assert checked["partner_code"] == "0,276,756"
     with pytest.raises(UnknownCode) as info:
         validate_get("C", "A", "HS", reporter_code="757,999,842,1000")
-    assert info.value.value == "999"
-    assert "'1000'" not in str(info.value)
+    assert info.value.value == 999
+    assert "1000" not in str(info.value)
 
 
 @pytest.mark.anyio
 async def test_unknown_reporter_is_an_empty_answer_upstream(replay_fixture: ReplayFixture) -> None:
     """Layer 1: reporterCode 999 answers HTTP 200 with count 0 and no rows, not an error."""
     route = replay_fixture("get", "unknown_reporter")
-    response = await api.get(
+    response = (await api.get(
         "C", "A", "HS", reporter_code="999", period="2023", partner_code="0", cmd_code="TOTAL",
         flow_code="X",
-    )  # fmt: skip
+    )).payload  # fmt: skip
     assert (response.count, response.data, response.error) == (0, [], "")
     assert sent_query(route) == recorded_query(load_fixture(GET / "unknown_reporter.json"))
 
@@ -504,10 +544,10 @@ def test_invalid_key_is_an_auth_error(replay_fixture: ReplayFixture) -> None:
 @pytest.mark.anyio
 async def test_max_records_caps_the_rows(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("get", "over_limit_max_records")
-    response = await api.get(
+    response = (await api.get(
         "C", "A", "HS", period="2022", partner_code="0", cmd_code="AG4", flow_code="M",
         max_records=5,
-    )  # fmt: skip
+    )).payload  # fmt: skip
     assert response.count == 5
     assert len(response.data) == 5
     assert sent_query(route)["maxRecords"] == "5"
@@ -517,10 +557,10 @@ async def test_max_records_caps_the_rows(replay_fixture: ReplayFixture) -> None:
 @pytest.mark.anyio
 async def test_wildcard_product_codes_are_counted_upstream(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get", "count_cmd_code_wildcard", match_params=COUNT_ONLY)
-    response = await api.get_count_only(
+    response = (await api.get_count_only(
         "C", "A", "HS", reporter_code="757", period="2023", partner_code="0", cmd_code="27??",
         flow_code="X",
-    )  # fmt: skip
+    )).payload  # fmt: skip
     assert response.count == 113
 
 
@@ -547,7 +587,7 @@ async def test_upstream_parameter_refusal_names_the_parameter(
     """``BE5`` is in the spec's clCode enum, but upstream refuses it (HTTP 400)."""
     replay_fixture("get", "count_cl_code_be5", match_params=COUNT_ONLY)
     with pytest.raises(InvalidRequestError) as info:
-        await api.get_count_only("C", "A", "BE5", reporter_code="757", period="2023")
+        await api.get_count_only("C", "A", "BE5", **RECORDED_COUNT)
     assert "Invalid parameter value" in str(info.value)
     assert "The field clCode is invalid" in str(info.value)
 
@@ -556,10 +596,10 @@ async def test_upstream_parameter_refusal_names_the_parameter(
 async def test_mif_is_accepted_upstream(replay_fixture: ReplayFixture) -> None:
     """The spec lists MIF, tradeRegimes.json does not; upstream answers 200, so it is packaged."""
     replay_fixture("get", "count_flow_code_mif", match_params=COUNT_ONLY)
-    response = await api.get_count_only(
+    response = (await api.get_count_only(
         "C", "A", "HS", reporter_code="757", period="2023", partner_code="0", cmd_code="TOTAL",
         flow_code="MIF",
-    )  # fmt: skip
+    )).payload  # fmt: skip
     assert (response.count, response.error) == (0, "")
 
 
@@ -680,10 +720,10 @@ def test_aggregate_by_collapses_the_named_parameters_into_minus_2(
 @pytest.mark.anyio
 async def test_include_desc_fills_the_descriptions(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("get", "ch_exports_2023_include_desc")
-    response = await api.get(
+    response = (await api.get(
         "C", "A", "HS", reporter_code="757", period="2023", partner_code="0", cmd_code="TOTAL",
         flow_code="X", include_desc=True,
-    )  # fmt: skip
+    )).payload  # fmt: skip
     assert sent_query(route) == recorded_query(
         load_fixture(GET / "ch_exports_2023_include_desc.json")
     )
@@ -808,7 +848,7 @@ def test_thirteen_periods_are_refused_before_any_call(respx_mock: respx.MockRout
 def test_unknown_flow_code_names_the_closest_value(respx_mock: respx.MockRouter) -> None:
     message = _refused(respx_mock, flow_code="X,XX")
     assert "flow_code 'XX' is not a UN Comtrade flowCode value; closest: 'X'" in message
-    assert "Valid values: M, X, DX, FM, MIP, MOP, RM, RX, XIP, XOP, MIF, XIF" in message
+    assert "valid values: M, X, DX, FM, MIP, MOP, RM, RX, XIP, XOP, MIF, XIF" in message
 
 
 def test_flow_codes_the_spec_adds_pass_validation(replay_fixture: ReplayFixture) -> None:
@@ -879,7 +919,8 @@ def test_every_list_parameter_is_checked() -> None:
 
 REFUSED_C16 = (
     "'C16' is not a customs_code in the packaged customsCode list (fetched "
-    f"{_day('customsCode')}). Did you mean C15 (Relief consignments), C14 (Stores), C13 "
+    f"{_day('customsCode')}). Nothing was sent. Did you mean C15 (Relief consignments), C14 "
+    "(Stores), C13 "
     "(Postal traffic)? UN Comtrade's answer to a customs or transport code it does not have "
     "is not recorded, so the package refuses it before the call, as it does an unknown "
     "area. list_codes('customsCode') lists every code (over MCP, the tool "
@@ -914,7 +955,7 @@ def test_an_unknown_customs_or_transport_code_is_an_unknown_code(
     assert transport.closest == (("9900", "Other"),)
     assert str(transport).startswith(
         f"'9' is not a mot_code in the packaged motCode list (fetched {_day('motCode')}). "
-        "Did you mean 9900 (Other)?"
+        "Nothing was sent. Did you mean 9900 (Other)?"
     )
     assert _unknown(respx_mock, mot_code="air").closest == (("1000", "Air"),), "by text"
     assert _unknown(respx_mock, customs_code="travellers").closest == (("C12", "Travellers"),)
@@ -1069,7 +1110,7 @@ def test_list_exceptions_rest_on_recorded_answers(fixtures_dir: Path) -> None:
 @pytest.mark.anyio
 async def test_spec_cl_codes_upstream_accepts(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get", "count_cl_code_tm", match_params=COUNT_ONLY)
-    assert (await api.get_count_only("C", "A", "TM", reporter_code="757")).count == 1
+    assert (await api.get_count_only("C", "A", "TM", **RECORDED_COUNT)).payload.count == 1
     assert validate_get("C", "A", "BE", cmd_code="TOTAL")["cl_code"] == "BE"
 
 
@@ -1080,7 +1121,7 @@ async def test_a_server_error_is_retried_and_each_retry_is_a_call(
     """Upstream answered a count on H6 with HTTP 500; core retries it, every attempt a call."""
     route = replay_fixture("get", "count_cl_code_h6", match_params=COUNT_ONLY)
     with pytest.raises(UpstreamError) as info:
-        await api.get_count_only("C", "A", "H6", reporter_code="757", period="2023")
+        await api.get_count_only("C", "A", "H6", **RECORDED_COUNT)
     assert info.value.status == 500
     assert "Something went wrong" in str(info.value)
     assert route.call_count == config.retry.max_attempts == 4
@@ -1098,7 +1139,12 @@ def test_replay_never_sends_the_key_from_the_shell(
 
 @pytest.mark.anyio
 async def test_reference_files_are_fetched_without_the_key(respx_mock: respx.MockRouter) -> None:
-    """Constructed route, not a fixture: what matters is the request, not upstream's answer."""
+    """Constructed route, not a fixture: what matters is the request, not upstream's answer.
+
+    NOT RECORDED: one row of ``tradeRegimes.json``, which ``ListofReferences.json`` lists,
+    composed in the shape the reference files were recorded answering, ``{"results": [...]}``;
+    the test asserts what was sent (conventions §10, kind 2).
+    """
     route = respx_mock.get(
         "https://comtradeapi.un.org/files/v1/app/reference/tradeRegimes.json"
     ).mock(return_value=httpx.Response(200, json={"results": [{"id": "X", "text": "Export"}]}))
@@ -1122,17 +1168,22 @@ async def test_upstreams_rate_limit_answer_is_a_rate_limit_error(
     route = replay_fixture("get", "count_rate_limited", match_params=COUNT_ONLY)
     once = AsyncClient(dataclasses.replace(config, retry=RetryPolicy(max_attempts=1)), auth=auth)
     with pytest.raises(RateLimitError) as info:
-        await once.get_json(
-            "/data/v1/get/C/A/H1", params={"reporterCode": "757", "countOnly": "true"}
-        )
+        await once.get_answer(
+            "/data/v1/get/C/A/H1",
+            params={
+                "reporterCode": "757", "period": "2023", "partnerCode": "0", "cmdCode": "TOTAL",
+                "flowCode": "X", "countOnly": "true",
+            },
+        )  # fmt: skip
     assert info.value.retry_after == 1.0
     assert "Rate limit is exceeded" in str(info.value)
     assert route.call_count == 1
 
 
 def test_read_timeout_is_three_minutes_the_rest_family_defaults() -> None:
-    assert config.timeouts is TIMEOUTS
-    assert (TIMEOUTS.connect, TIMEOUTS.read, TIMEOUTS.write, TIMEOUTS.pool) == (10, 180, 10, 10)
+    """One read timeout of 180 s; core's 10 s for the connection, the write and the pool."""
+    assert READ_TIMEOUT == 180.0
+    assert config.read_timeout == 180.0
     assert config.retry.max_attempts == 4
 
 
@@ -1142,7 +1193,12 @@ def _response(status: int, body: object) -> httpx.Response:
 
 
 def test_classify_maps_the_quota_answer_to_a_rate_limit() -> None:
-    """Not observed (never provoked): API Management's standard quota text, per the spec's 403."""
+    """Not observed (never provoked): API Management's standard quota text, per the spec's 403.
+
+    NOT RECORDED: the 403 that the spec documents for a spent quota ("APIM quota / access
+    denial"), composed in the shape of the recorded 401 and 429, ``statusCode`` and
+    ``message`` (conventions §10, kind 2).
+    """
     error = classify(
         _response(
             403,
@@ -1158,6 +1214,7 @@ def test_classify_maps_the_quota_answer_to_a_rate_limit() -> None:
 
 
 def test_quota_reset_is_none_without_a_replenish_time() -> None:
+    """NOT RECORDED: the spec's quota 403 without its replenish time (conventions §10, kind 2)."""
     assert _quota_reset("Out of call volume quota.") is None
     assert _quota_reset("Quota will be replenished in 00:00:07.") == 7.0
     error = classify(_response(403, {"statusCode": 403, "message": "Out of call volume quota."}))
@@ -1166,6 +1223,12 @@ def test_quota_reset_is_none_without_a_replenish_time() -> None:
 
 
 def test_classify_leaves_other_answers_to_the_core_mapping() -> None:
+    """``classify`` maps none of these, so core's mapping by status answers them.
+
+    NOT RECORDED: the 403 "User not allowed" that the spec documents, a 401 and an empty 200
+    in the shapes upstream was recorded answering (conventions §10, kind 2), and a 400 of no
+    shape upstream sends, to show that the source leaves it to core (kind 5).
+    """
     assert classify(_response(403, {"error": "User not allowed", "details": None})) is None
     assert classify(_response(401, {"statusCode": 401, "message": "Access denied"})) is None
     assert classify(_response(200, {"elapsedTime": "0.1 secs", "count": 0, "data": []})) is None
@@ -1184,7 +1247,13 @@ PACE_REFUSED = {"statusCode": 429, "message": "Rate limit is exceeded. Try again
 
 
 def test_the_policy_reads_the_quota_and_pace_answers_and_no_other() -> None:
-    """The policy's ``spent`` hook: the 403's replenish time, a 429's seconds, nothing else."""
+    """The policy's ``spent`` hook: the 403's replenish time, a 429's seconds, nothing else.
+
+    NOT RECORDED: ``QUOTA_SPENT`` and the 403 "User not allowed", composed from the 403 the
+    spec documents (conventions §10, kind 2); ``PACE_REFUSED`` and a 429 without its message,
+    the recorded 429 changed in memory (kind 4); a 200 with a replenish time, of no shape
+    upstream sends, to show that the hook reads no 200 (kind 5).
+    """
     assert policy.spent is not None
     assert (policy.limit_header, policy.remaining_header, policy.window) == (None, None, 86_400.0)
     assert policy.spent(_response(403, QUOTA_SPENT)) == 5 * 3600 + 12 * 60 + 34
@@ -1207,6 +1276,8 @@ def test_a_spent_daily_quota_refuses_the_next_call_before_sending(
 
     Constructed route, not a fixture: the answer was never observed, and never provoked.
     Marked ``rate_limited``, since the plugin turns the policy's pause off otherwise.
+    NOT RECORDED: ``QUOTA_SPENT``, the 403 the spec documents for a spent quota, composed in
+    the recorded gateway shape (conventions §10, kind 2).
     """
     route = respx_mock.get(f"{BASE_URL}/data/v1/get/C/A/HS").mock(
         return_value=httpx.Response(403, json=QUOTA_SPENT)
@@ -1234,7 +1305,9 @@ def test_a_spent_key_quota_holds_no_keyless_call_back(
     Core 0.4.0's ``QuotaPolicy`` neither holds back nor reads a request sent with
     ``auth=None`` (https://github.com/xippios/sdk-core/issues/163), so once the key's quota is
     spent, the keyless calls still go out at the pace and the keyed ones wait. Constructed
-    quota answer, as above; the keyless answers are the recordings.
+    quota answer, as above; the keyless answers are the recordings. NOT RECORDED:
+    ``QUOTA_SPENT``, the spec's documented 403 in the recorded gateway shape (conventions §10,
+    kind 2).
     """
     respx_mock.get(f"{BASE_URL}/data/v1/get/C/A/HS").mock(
         return_value=httpx.Response(403, json=QUOTA_SPENT)
@@ -1259,7 +1332,9 @@ async def test_a_pace_refusal_without_retry_after_holds_calls_back_seconds_not_a
 
     Constructed route, not a fixture: the recorded 429 carries ``Retry-After: 1``; without
     it, ``QuotaPolicy`` would hold calls back for ``window``, a day, unless ``spent`` names
-    the time.
+    the time. NOT RECORDED: ``PACE_REFUSED``, the recorded 429 (``count_rate_limited.json``)
+    changed in memory, its ``Retry-After`` removed and 7 seconds for its 1 (conventions §10,
+    kind 4).
     """
     respx_mock.get(f"{BASE_URL}/data/v1/get/C/A/H1").mock(
         return_value=httpx.Response(429, json=PACE_REFUSED)
@@ -1267,7 +1342,7 @@ async def test_a_pace_refusal_without_retry_after_holds_calls_back_seconds_not_a
     once = AsyncClient(dataclasses.replace(config, retry=RetryPolicy(max_attempts=1)), auth=auth)
     before = datetime.now(UTC)
     with pytest.raises(RateLimitError):
-        await once.get_json(
+        await once.get_answer(
             "/data/v1/get/C/A/H1", params={"reporterCode": "757", "countOnly": "true"}
         )
     after = datetime.now(UTC)
@@ -1289,6 +1364,32 @@ def test_the_list_tasks_have_caps_of_their_own() -> None:
     assert "search" in commodities.note
     assert set(tasks.MCP_CAPS) <= set(tasks.__all__)
     assert not tasks.BULK_TASKS
+
+
+@pytest.mark.anyio
+async def test_no_tool_is_paged_while_its_answer_can_pass_the_cache_bound(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """No tool takes ``offset``, so a cut answer is narrowed, never continued.
+
+    The client keeps a body up to core's ``cache_max_bytes`` of 8 MiB, and an answer of
+    ``get_data`` can hold 100,000 rows of about 900 bytes, so a continuation past the bound
+    would send its count and its data again: conventions §8 leave such a tool unpaged
+    (sdk-core ADR-0061, decision 9). The default cap cuts the datasets of every reporter for
+    one period at 108 of 169 rows, and its note says to narrow the query.
+    """
+    assert config.cache_max_bytes == 8 * 1024 * 1024
+    assert not [name for name, cap in tasks.MCP_CAPS.items() if cap.paged]
+    async with Client(server) as client:
+        tools = (await client.list_tools()).tools
+    assert not [tool.name for tool in tools if "offset" in tool.input_schema["properties"]]
+    datasets = replay_fixture("get_da", "all_reporters_2023", match_params=["period"])
+    every_reporter = {"type_code": "C", "freq_code": "A", "cl_code": "HS", "period": "2023"}
+    first = await mcp_call(server, "comtrade_get_data_availability", every_reporter)
+    assert first["note"] == (
+        "showing 108 of 169 rows (cap: 200 rows or 65536 bytes); narrow the query to see the rest"
+    )
+    assert datasets.call_count == 1
 
 
 @pytest.mark.anyio
@@ -1495,18 +1596,28 @@ def test_a_cached_reference_file_was_retrieved_when_it_was_stored(
         assert_time_between(answer.meta.retrieved_at, before, after)
 
 
-def test_the_cache_keeps_the_reference_files_and_nothing_else(
+def test_the_cache_keeps_the_reference_files_and_the_keyed_reads_for_five_minutes(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """One client: ``cache_filter`` admits the reference files only (sdk-core ADR-0037)."""
-    keeps = config.cache_filter
-    assert keeps is not None
-    assert keeps(httpx.Request("GET", f"{BASE_URL}/files/v1/app/reference/HS.json"))
-    assert not keeps(httpx.Request("GET", f"{BASE_URL}/data/v1/get/C/A/HS"))
+    """One client, one cache by path prefix (sdk-core ADR-0040; ADR-0061, decision 11).
+
+    The reference files for the life of the process, the keyed reads under ``data/v1`` and
+    ``tools/v1`` for core's 300 s, so a repeated call spends no call of the daily 500, and
+    nothing under ``public/v1``, which no prefix matches.
+    """
+    assert CACHE_LIFETIMES == {
+        "/files/v1/app/reference/": None,
+        "/data/v1/": 300.0,
+        "/tools/v1/": 300.0,
+    }
+    assert isinstance(config.cache, MemoryCache)
+    assert dict(config.cache.lifetimes) == CACHE_LIFETIMES
     route = replay_fixture("get", "count_ch_exports_2023", match_params=COUNT_ONLY)
-    tasks.get_counts(**CH_EXPORTS_2023)
-    tasks.get_counts(**CH_EXPORTS_2023)
-    assert route.call_count == 2, "a data call is never answered from the cache"
+    first = tasks.get_counts(**CH_EXPORTS_2023)
+    again = tasks.get_counts(**CH_EXPORTS_2023)
+    assert route.call_count == 1, "the repeated count is answered from the cache"
+    assert again.data == first.data == 32
+    assert again.meta.retrieved_at == first.meta.retrieved_at
 
 
 def test_services_classifications_have_no_leaf_or_level(replay_fixture: ReplayFixture) -> None:
@@ -1522,7 +1633,10 @@ def test_services_classifications_have_no_leaf_or_level(replay_fixture: ReplayFi
 
 
 def test_hs_spells_the_level_aggr_level_the_other_files_aggrlevel() -> None:
-    """Model check: HS.json (2 MB, not recorded) spells it ``aggrLevel``; the live test reads it."""
+    """Model check: HS.json (2 MB, not recorded) spells it ``aggrLevel``; the live test reads it.
+
+    The two rows are an input of the test, not an answer from UN Comtrade.
+    """
     hs = Commodity.model_validate(
         {"id": "0901", "text": "0901 - Coffee", "parent": "09", "isLeaf": "0", "aggrLevel": 4,
          "standardUnitAbbr": "n/a"}
@@ -1539,7 +1653,7 @@ def test_a_classification_without_a_file_is_refused(respx_mock: respx.MockRouter
     assert not respx_mock.calls
     message = str(info.value)
     assert "cl_code 'BE' has no classification file at UN Comtrade" in message
-    assert "Valid values: B4, B5, EB02, EB10, EB10S, EB, H0," in message
+    assert ". Nothing was sent. Valid values: B4, B5, EB02, EB10, EB10S, EB, H0," in message
     with pytest.raises(InvalidRequestError, match="closest: 'HS'"):
         tasks.list_commodities("hs")
 
@@ -1571,9 +1685,10 @@ def test_a_reference_file_whose_answer_fails_is_asked_for_again(
     """A file whose answer the wrapper cannot read is not kept: the next call asks again.
 
     NOT RECORDED: the first answer is the recorded ``reference/b4.json`` with its
-    ``results`` key renamed in memory, a form upstream was not seen to send; the second is
-    the recording. ``get_answer`` parses before the cache stores, so the cache, which keeps
-    a file for the life of the process, never keeps a body that failed.
+    ``results`` key renamed in memory, a form upstream was not seen to send (conventions
+    §10, kind 4); the second is the recording. ``get_answer`` parses before the cache
+    stores, so the cache, which keeps a file for the life of the process, never keeps a body
+    that failed.
     """
     recorded = response_from_fixture(load_fixture(FIXTURES / "reference" / "b4.json"))
     body = json.loads(recorded.content)
@@ -1593,48 +1708,6 @@ async def test_a_missing_reference_file_is_not_found(replay_fixture: ReplayFixtu
     replay_fixture("reference", "be_absent")
     with pytest.raises(NotFoundError, match="BlobNotFound"):
         await api.reference("BE.json", Commodity)
-
-
-async def _answer(name: str, arguments: dict[str, Any]) -> tuple[bool, str]:
-    """A tool's answer through an in-process client: its ``isError`` flag and its text."""
-    async with Client(server) as client:
-        result = await client.call_tool(name, arguments)
-    [content] = result.content
-    assert isinstance(content, TextContent)
-    return result.is_error, content.text
-
-
-@pytest.mark.anyio
-async def test_a_tool_refuses_an_argument_it_does_not_declare(respx_mock: respx.MockRouter) -> None:
-    """A misspelt argument is refused before the task runs, naming the ones the tool takes.
-
-    Core 0.4.0 (https://github.com/xippios/sdk-core/issues/84): under 0.3.0 the tool dropped
-    ``paramm`` and answered ``motCode``'s list as if it had not been sent.
-    """
-    flagged, text = await _answer("comtrade_list_codes", {"param": "motCode", "paramm": "x"})
-    assert (flagged, text) == (
-        True,
-        "error: InvalidRequestError: paramm: Not an argument of this tool; it takes param",
-    )
-    assert not respx_mock.calls
-
-
-@pytest.mark.anyio
-async def test_an_error_answer_is_flagged_beside_its_text(respx_mock: respx.MockRouter) -> None:
-    """Every error answer sets ``isError``, so a client tells it from data without the text.
-
-    Core 0.4.0 (https://github.com/xippios/sdk-core/issues/168): the refusal of an unknown
-    code and of an unknown list are flagged; a list's records are not.
-    """
-    unknown = await _answer("comtrade_get_data", {**CH_EXPORTS_2023, "reporter_code": "756"})
-    assert unknown == (True, f"error: UnknownCode: {REFUSED_756}")
-    flagged, text = await _answer("comtrade_list_codes", {"param": "nope"})
-    assert flagged
-    assert text.startswith("error: InvalidRequestError: param 'nope' is not a list")
-    flagged, text = await _answer("comtrade_list_codes", {"param": "motCode"})
-    assert not flagged
-    assert json.loads(text)["data"][0] == {"mot_code": "0", "text": "TOTAL modes of transport"}
-    assert not respx_mock.calls
 
 
 @pytest.mark.anyio
@@ -1691,38 +1764,6 @@ def test_list_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
         )
         refused = http.get("/comtrade/list_commodities", params={"cl_code": "BE"})
         assert refused.status_code == 422
-
-
-def test_a_route_answers_an_argument_its_schema_refuses_as_problem_details(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Status 422, the family's problem details, the argument and the message, no input.
-
-    Core 0.4.0 (https://github.com/xippios/sdk-core/issues/66): FastAPI's own 422 answered a
-    ``detail`` list that echoed the value sent.
-    """
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from xippios.comtrade.http import router
-
-    app = FastAPI()
-    app.include_router(router)
-    without_type = {key: value for key, value in CH_EXPORTS_2023.items() if key != "type_code"}
-    with TestClient(app) as http:
-        typed = http.get("/comtrade/get_counts", params={**CH_EXPORTS_2023, "include_desc": "five"})
-        missing = http.get("/comtrade/get_counts", params=without_type)
-    assert (typed.status_code, typed.headers["content-type"]) == (422, "application/problem+json")
-    assert typed.json() == {
-        "type": "urn:xippios:error:InvalidRequestError",
-        "title": "InvalidRequestError",
-        "status": 422,
-        "detail": "include_desc: Input should be a valid boolean, unable to interpret input",
-        "source": "comtrade",
-    }
-    assert "five" not in typed.text
-    assert (missing.status_code, missing.json()["detail"]) == (422, "type_code: Field required")
-    assert not respx_mock.calls
 
 
 # The packaged lists and the index of the reference files, with upstream's words.
@@ -1785,7 +1826,7 @@ def test_list_codes_refuses_a_list_the_package_lacks(respx_mock: respx.MockRoute
     message = str(info.value)
     assert message.startswith("param 'flow_code' is not a list the package carries; closest: ")
     assert "closest: 'flowCode'" in message
-    assert f"Valid values: {', '.join(PACKAGED_LISTS)}." in message
+    assert f". Nothing was sent. Valid values: {', '.join(PACKAGED_LISTS)}." in message
     assert not respx_mock.calls
 
 
@@ -1817,7 +1858,7 @@ def test_list_classifications_refuses_an_unknown_category(respx_mock: respx.Mock
     message = str(info.value)
     assert message.startswith(
         "category 'cmd:hs' is not a category of UN Comtrade's ListofReferences.json; "
-        "closest: 'cmd:HS'. Valid values: dataitem, freq, flow,"
+        "closest: 'cmd:HS'. Nothing was sent. Valid values: dataitem, freq, flow,"
     )
     assert "cmd:SS." in message
     assert not respx_mock.calls
@@ -1966,10 +2007,12 @@ def test_dataset_arguments_are_checked_before_the_call(respx_mock: respx.MockRou
         "published_date_to '2024-02-30' is not a day as YYYY-MM-DD",
     ]:
         assert fragment in message
+    assert message.endswith(". Nothing was sent."), "one first sentence, then what was sent"
+    assert message.count("Nothing was sent.") == 1
     with pytest.raises(UnknownCode) as unknown:
         tasks.get_data_availability("C", "A", "HS", reporter_code="756", period="2023")
     assert str(unknown.value) == REFUSED_756
-    with pytest.raises(UnknownCode, match="'0' is not a reporter_code in the packaged Reporters"):
+    with pytest.raises(UnknownCode, match="0 is not a reporter_code in the packaged Reporters"):
         tasks.get_metadata("C", "A", "HS", reporter_code="0")
     assert not respx_mock.calls
 
@@ -2071,7 +2114,11 @@ def _live_update_row(fixtures_dir: Path) -> dict[str, Any]:
 
 
 def test_a_live_update_time_that_does_not_parse_is_none(fixtures_dir: Path) -> None:
-    """Only Released/Success rows were recorded; other shapes must not fail the whole call."""
+    """Only Released/Success rows were recorded; other shapes must not fail the whole call.
+
+    The recorded row with its times changed is an input of the test, not an answer from UN
+    Comtrade: no route serves it, and the model reads it.
+    """
     row = _live_update_row(fixtures_dir)
     odd = {
         **row, "startedAt": "", "completedAt": "soon",
@@ -2115,7 +2162,7 @@ def test_live_update_times_do_not_depend_on_the_locale(fixtures_dir: Path) -> No
 @pytest.mark.anyio
 async def test_live_updates_count_is_not_the_number_of_rows(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get_live_update", "latest")
-    response = await api.get_live_update()
+    response = (await api.get_live_update()).payload
     assert (response.count, len(response.data)) == (174, 50)
 
 
@@ -2420,7 +2467,8 @@ def test_trade_balance_refuses_an_unknown_dimension_code(
     """``validate_get``'s ``UnknownCode`` for the breakdowns getTradeBalance takes too."""
     with pytest.raises(UnknownCode) as info:
         validate_trade_balance(**{**CH_WORLD_2023, argument: value})
-    unknown = value.split(",")[-1]
+    last = value.split(",")[-1]
+    unknown = int(last) if list_name == "partnerAreas" else last
     assert (info.value.param, info.value.value, info.value.list_name) == (
         argument,
         unknown,
@@ -2437,7 +2485,7 @@ def test_tools_refuse_an_unknown_area_before_the_call(respx_mock: respx.MockRout
         tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "partner_code": "842,9999"})
     assert (bilateral.value.param, bilateral.value.value, bilateral.value.list_name) == (
         "partner_code",
-        "9999",
+        9999,
         "partnerAreas",
     )
     assert not respx_mock.calls
@@ -2608,7 +2656,7 @@ def test_bilateral_data_takes_one_flow(respx_mock: respx.MockRouter) -> None:
         lambda: tasks.get_bilateral_data(**{**CH_US_EXPORTS_2023, "flow_code": "RX"}),
     )
     assert "flow_code 'RX' is not a flowCode getBilateralData takes" in re_exports
-    assert "Valid values: M, X" in re_exports
+    assert "valid values: M, X" in re_exports
 
 
 @pytest.mark.anyio
@@ -2630,10 +2678,10 @@ async def test_the_bilateral_envelope_has_a_utc_timestamp_and_a_note(
 ) -> None:
     """Layer 1: ``timestampRequested`` is UTC per the spec; the note's wording varies."""
     replay_fixture("get_bilateral_data", "ch_us_kp_af_exports_2023", match_params=BY_QUERY)
-    gap = await api.get_bilateral_data(
+    gap = (await api.get_bilateral_data(
         "C", "A", "HS", reporter_code="757", period="2023", partner_code="842,408,4",
         cmd_code="TOTAL", flow_code="X",
-    )  # fmt: skip
+    )).payload  # fmt: skip
     assert gap.timestamp_requested == datetime(2026, 10, 28, 16, 17, 21, 134000, tzinfo=UTC)
     assert gap.note is not None
     assert gap.note.startswith(

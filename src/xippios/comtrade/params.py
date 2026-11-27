@@ -2,8 +2,8 @@
 
 Small, stable upstream lists and tables ship inside the package under ``reference/`` so
 lookups and checks need no network call; ``scripts/refresh_reference.py`` writes them,
-never by hand. ``reference/README.md``
-carries the provenance of every file. Each is a packaged-list file,
+never by hand. ``reference/README.md`` carries the provenance of every file. Each is a
+packaged-list file,
 ``reference/<name>.json``, read with ``xippios.core.PackagedList.load(PACKAGE, name)``
 (sdk-core ADR-0041): a list's records carry the value under the parameter's name and the
 fields upstream words it in, under upstream's names, parsed into the list's model
@@ -13,19 +13,23 @@ against them, and the free-form ones by shape, before anything is sent (sdk-core
 ``validate_datasets`` does the same for ``data/v1/getDa`` and ``data/v1/getMetadata``,
 ``validate_trade_balance`` and ``validate_bilateral_data`` for the Tools operations
 ``tools/v1/getTradeBalance`` and ``tools/v1/getBilateralData``, ``validate_world_share``
-for ``public/v1/getWorldShare``.
+for ``public/v1/getWorldShare``. Each refusal says that nothing was sent, after its first
+sentence (conventions §5): an area, customs or transport code is checked by core's
+``check`` of its declaration in ``codes.py``, once for the codes given, and the other
+problems are gathered into one refusal.
 """
 
 import difflib
 import functools
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 from typing import Any
 
-from xippios.core import InvalidRequestError, PackagedList, UnknownCode, UpstreamModel, closest
+from xippios.core import InvalidRequestError, PackagedCodes, PackagedList, UpstreamModel, closest
 
 from xippios.comtrade._client import SOURCE
+from xippios.comtrade.codes import CUSTOMS_CODES, MOT_CODES, PACKAGE, PARTNERS, REPORTERS
 from xippios.comtrade.errors import MAX_PERIODS, over_mcp
 from xippios.comtrade.models import (
     AggregateByValue,
@@ -63,8 +67,6 @@ __all__ = [
     "validate_trade_balance",
     "validate_world_share",
 ]
-
-PACKAGE = "xippios.comtrade"
 
 PACKAGED_LISTS: Mapping[str, type[CodeValue]] = {
     "typeCode": TypeCodeValue,
@@ -113,13 +115,6 @@ def _allowed(name: str) -> tuple[str, ...]:
     return tuple(str(record[name]) for record in PackagedList.load(PACKAGE, name).records)
 
 
-@functools.cache
-def _texts(name: str) -> dict[str, str]:
-    """The values of the packaged list ``name`` that carry upstream's ``text``, to their text."""
-    records = PackagedList.load(PACKAGE, name).records
-    return {str(record[name]): record["text"] for record in records if "text" in record}
-
-
 _AREA = re.compile(r"\d+")
 _PERIOD = re.compile(r"\d{4}(0[1-9]|1[0-2])?")
 _KEYWORD = re.compile(r"TOTAL|AG[1-6]", re.IGNORECASE)
@@ -157,6 +152,15 @@ def _closest(value: str, allowed: Sequence[str]) -> str | None:
     return folded[match[0]] if match else None
 
 
+_UNSENT = "Nothing was sent."
+"""The sentence after the first of each refusal before a request (conventions §5)."""
+
+
+def _refused(problems: Sequence[str]) -> InvalidRequestError:
+    """The one refusal of the problems gathered, each a clause of its first sentence."""
+    return InvalidRequestError(f"{'; '.join(problems)}. {_UNSENT}", source=SOURCE)
+
+
 def _members(argument: str, value: str, problems: list[str]) -> list[str]:
     members = value.split(",")
     if any(not member or member != member.strip() for member in members):
@@ -168,7 +172,10 @@ def _members(argument: str, value: str, problems: list[str]) -> list[str]:
     return members
 
 
-_DIMENSIONS = frozenset({"customsCode", "motCode"})
+_DIMENSIONS: Mapping[str, PackagedCodes] = {
+    "customsCode": CUSTOMS_CODES,
+    "motCode": MOT_CODES,
+}
 """Packaged lists whose unknown member raises ``UnknownCode`` (conventions §5).
 
 Dimension codes of the data rows, like the areas; upstream's answer to a code it does not
@@ -184,19 +191,19 @@ _UNKNOWN_DIMENSION = (
 """``UnknownCode``'s reason for a member of a ``_DIMENSIONS`` list."""
 
 
-def _closest_texts(member: str, upstream: str) -> list[tuple[str, str]]:
-    """The codes of ``upstream`` close to ``member``, with upstream's text, best first.
+def _closest_texts(member: Any, texts: Mapping[Any, str]) -> list[tuple[str, str]]:
+    """The codes close to ``member``, with upstream's text, best first: ``check``'s strategy.
 
     Core's ``closest``, by code and then by text (``"air"`` finds ``1000`` Air); where it
     finds none, the one most similar code, as for an unknown area (``"9"`` finds
     ``9900``).
     """
-    texts = _texts(upstream)
-    near = closest(member, texts)
+    shown = {str(code): text for code, text in texts.items()}
+    near = closest(str(member), shown)
     if near:
-        return near
-    code = _closest(member, list(texts))
-    return [(code, texts[code])] if code else []
+        return list(near)
+    code = _closest(str(member), list(shown))
+    return [(code, shown[code])] if code else []
 
 
 def _check_list(
@@ -210,38 +217,38 @@ def _check_list(
 ) -> None:
     if value is None:
         return
-    allowed = _allowed(upstream)
     members = _members(argument, value, problems) if multi else [value]
-    known = {option.upper() for option in allowed} if case_insensitive else set(allowed)
-    for member in members:
-        if (member.upper() if case_insensitive else member) in known:
-            continue
-        if upstream in _DIMENSIONS:
-            raise UnknownCode(
+    listed = _DIMENSIONS.get(upstream)
+    if listed is not None:
+        if members:
+            listed.check(
                 argument,
-                member,
-                list_name=upstream,
-                fetched=PackagedList.load(PACKAGE, upstream).fetched,
-                closest=_closest_texts(member, upstream),
+                members,
+                closest=_closest_texts,
                 reason=(
                     f"{_UNKNOWN_DIMENSION} list_codes({upstream!r}) lists every code "
                     f"{over_mcp('list_codes')}."
                 ),
-                source=SOURCE,
             )
+        return
+    allowed = _allowed(upstream)
+    known = {option.upper() for option in allowed} if case_insensitive else set(allowed)
+    for member in members:
+        if (member.upper() if case_insensitive else member) in known:
+            continue
         near = _closest(member, allowed)
         hint = f"; closest: {near!r}" if near else ""
         problems.append(
-            f"{argument} {member!r} is not a UN Comtrade {upstream} value{hint}. "
-            f"Valid values: {', '.join(allowed)}"
+            f"{argument} {member!r} is not a UN Comtrade {upstream} value{hint}; "
+            f"valid values: {', '.join(allowed)}"
         )
 
 
-_AREA_TABLES: dict[str, tuple[str, str, str]] = {
-    "reporter": ("Reporters", "Reporters.json", "list_reporters"),
-    "partner": ("partnerAreas", "partnerAreas.json", "list_partners"),
+_AREA_TABLES: dict[str, tuple[PackagedCodes, str]] = {
+    "reporter": (REPORTERS, "list_reporters"),
+    "partner": (PARTNERS, "list_partners"),
 }
-"""Kind of area code: (packaged table, upstream file, the task that lists the codes)."""
+"""Kind of area code: (the table's codes, the task that lists them)."""
 
 
 @functools.cache
@@ -276,64 +283,95 @@ _UNKNOWN_CODE = (
 """
 
 
-def _unknown_area(
-    argument: str,
-    value: str,
-    kind: str,
-    *,
-    closest: Sequence[tuple[str, str]] = (),
-    hint: str | None = None,
-) -> UnknownCode:
-    """The refusal of an area ``value`` the packaged reporter or partner table lacks."""
-    list_name, _, task = _AREA_TABLES[kind]
-    return UnknownCode(
-        argument,
-        value,
-        list_name=list_name,
-        fetched=PackagedList.load(PACKAGE, list_name).fetched,
-        closest=closest,
-        hint=hint,
-        reason=f"{_UNKNOWN_CODE} {task} lists every code {over_mcp(task)}.",
-        source=SOURCE,
-    )
+def _reason(kind: str) -> str:
+    """The reason of the refusal of an area code, with the task that lists the codes."""
+    _, task = _AREA_TABLES[kind]
+    return f"{_UNKNOWN_CODE} {task} lists every code {over_mcp(task)}."
 
 
-def _unknown_code(argument: str, member: str, kind: str) -> UnknownCode:
-    """``UnknownCode`` for a numeric ``member`` that is no code of ``kind``.
+def _same_area(member: str, kind: str) -> str | None:
+    """The code of ``kind`` with the ISO alpha-3 of the area code ``member``, if any.
 
-    Comtrade's own strategy for the closest code (conventions §5):
     ``country_area_code_iso.json`` gives the ISO alpha-3 of every reporter and partner code,
     and a code of the table with the same alpha-3 is the same area: 756, Switzerland as a
-    partner, is 757 among the reporters. Failing that, a code of the other table is named
-    as such (0 World is a partner only), and anything else gets the most similar code of
-    the table.
+    partner, is 757 among the reporters.
     """
-    areas = _areas(kind)
     alpha3 = _iso3().get(member)
-    same = [code for code, (_, iso3) in areas.items() if alpha3 and iso3 == alpha3]
-    if same:
-        return _unknown_area(argument, member, kind, closest=[(same[0], areas[same[0]][0])])
+    same = [code for code, (_, iso3) in _areas(kind).items() if alpha3 and iso3 == alpha3]
+    return same[0] if same else None
+
+
+def _closest_area(kind: str) -> Callable[[Any, Mapping[Any, str]], list[tuple[int, str]]]:
+    """Comtrade's own strategy for the closest code of ``kind``: ``check``'s ``closest``.
+
+    The code of the same area by its ISO alpha-3 (conventions §5), else the most similar
+    code of the table.
+    """
+
+    def strategy(member: Any, names: Mapping[Any, str]) -> list[tuple[int, str]]:
+        areas = _areas(kind)
+        same = _same_area(str(member), kind)
+        if same is not None:
+            return [(int(same), areas[same][0])]
+        near = _closest(str(member), list(areas))
+        return [(int(near), areas[near][0])] if near else []
+
+    return strategy
+
+
+@functools.cache
+def _other_table(kind: str) -> dict[str, str]:
+    """``check``'s hints for the codes of the other table alone: 0 World is a partner only.
+
+    A code of the other table whose area this table holds under another code is left to
+    ``_closest_area``, which names that code.
+    """
     other = "partner" if kind == "reporter" else "reporter"
-    if member in _areas(other):
-        hint = f"{member!r} ({_areas(other)[member][0]}) is a {other} code only."
-        return _unknown_area(argument, member, kind, hint=hint)
-    closest = _closest(member, list(areas))
-    near = [(closest, areas[closest][0])] if closest else []
-    return _unknown_area(argument, member, kind, closest=near)
+    return {
+        code: f"{code} ({desc}) is a {other} code only."
+        for code, (desc, _) in _areas(other).items()
+        if code not in _areas(kind) and _same_area(code, kind) is None
+    }
 
 
 def _check_areas(argument: str, value: str | None, kind: str, problems: list[str]) -> None:
-    """Gather a malformed area code; raise ``UnknownCode`` for the first one the table lacks."""
+    """Gather a malformed area code; raise ``UnknownCode`` for the first one the table lacks.
+
+    The table's codes are integers, so the numeric codes are checked as integers by one
+    call of core's ``check`` (sdk-core ADR-0045), and the value is sent as given. A member
+    whose digits are not its integer's own text, ``0757`` or digits outside ASCII, which
+    ``int`` reads as 757, is checked as its text, which the table lacks, with a hint that
+    names the code as UN Comtrade writes it.
+    """
     if value is None:
         return
+    numeric: list[int | str] = []
+    written: dict[str, str] = {}
     for member in _members(argument, value, problems):
-        if not _AREA.fullmatch(member):
+        if _AREA.fullmatch(member):
+            code = int(member)
+            if str(code) == member:
+                numeric.append(code)
+            else:
+                numeric.append(member)
+                written[member] = (
+                    f"UN Comtrade writes this code {code}, in the digits 0 to 9 without a "
+                    "leading zero."
+                )
+        else:
             problems.append(
                 f"{argument} {member!r} is not a numeric UN Comtrade area code; use codes "
                 "such as '757' (Switzerland) or '0' (World), separated by commas"
             )
-        elif member not in _areas(kind):
-            raise _unknown_code(argument, member, kind)
+    if numeric:
+        listed, _ = _AREA_TABLES[kind]
+        listed.check(
+            argument,
+            numeric,
+            hints={**_other_table(kind), **written},
+            closest=_closest_area(kind),
+            reason=_reason(kind),
+        )
 
 
 def _check_period(
@@ -406,7 +444,7 @@ def validate_get(
             ``InvalidRequestError``. The first one found ends the checks: other problems
             are reported once it is fixed.
         InvalidRequestError: Naming every problem found, with the closest valid value
-            where there is one.
+            where there is one, and that nothing was sent.
     """
     problems: list[str] = []
     _check_list("type_code", type_code, "typeCode", problems)
@@ -427,7 +465,7 @@ def validate_get(
     _check_list("aggregate_by", aggregate_by, "aggregateBy", problems, multi=True)
     _check_list("breakdown_mode", breakdown_mode, "breakdownMode", problems)
     if problems:
-        raise InvalidRequestError("; ".join(problems) + ".", source=SOURCE)
+        raise _refused(problems)
     arguments: dict[str, Any] = {
         "type_code": type_code,
         "freq_code": freq_code,
@@ -494,8 +532,8 @@ def _check_tools_flow(value: str | None, problems: list[str]) -> None:
     closest = _closest(value, TOOLS_FLOW_CODES)
     hint = f"; closest: {closest!r}" if closest else ""
     problems.append(
-        f"flow_code {value!r} is not a flowCode getBilateralData takes{hint}. "
-        f"Valid values: {', '.join(TOOLS_FLOW_CODES)}"
+        f"flow_code {value!r} is not a flowCode getBilateralData takes{hint}; "
+        f"valid values: {', '.join(TOOLS_FLOW_CODES)}"
     )
 
 
@@ -534,7 +572,7 @@ def validate_trade_balance(
             or a ``customs_code`` or ``mot_code`` the packaged list lacks (conventions
             §5); the first one found ends the checks.
         InvalidRequestError: Naming every problem found, with the closest valid value
-            where there is one.
+            where there is one, and that nothing was sent.
     """
     problems: list[str] = []
     _check_bounded("get_trade_balance", reporter_code, partner_code, cmd_code, problems)
@@ -555,7 +593,7 @@ def validate_trade_balance(
     _check_list("aggregate_by", aggregate_by, "aggregateBy", problems, multi=True)
     _check_list("breakdown_mode", breakdown_mode, "breakdownMode", problems)
     if problems:
-        raise InvalidRequestError("; ".join(problems) + ".", source=SOURCE)
+        raise _refused(problems)
     arguments: dict[str, Any] = {
         "type_code": type_code,
         "freq_code": freq_code,
@@ -602,7 +640,7 @@ def validate_bilateral_data(
         UnknownCode: A reporter or partner code the packaged table lacks (conventions
             §5); the first one found ends the checks.
         InvalidRequestError: Naming every problem found, with the closest valid value
-            where there is one.
+            where there is one, and that nothing was sent.
     """
     problems: list[str] = []
     _check_bounded("get_bilateral_data", reporter_code, partner_code, cmd_code, problems)
@@ -616,7 +654,7 @@ def validate_bilateral_data(
         _check_cmd_code(cmd_code, cl_code, problems)
     _check_tools_flow(flow_code, problems)
     if problems:
-        raise InvalidRequestError("; ".join(problems) + ".", source=SOURCE)
+        raise _refused(problems)
     arguments: dict[str, Any] = {
         "type_code": type_code,
         "freq_code": freq_code,
@@ -671,7 +709,7 @@ def validate_datasets(
             ``InvalidRequestError``. The first one found ends the checks: other problems
             are reported once it is fixed.
         InvalidRequestError: Naming every problem found, with the closest valid value
-            where there is one.
+            where there is one, and that nothing was sent.
     """
     problems: list[str] = []
     _check_list("type_code", type_code, "typeCode", problems)
@@ -682,7 +720,7 @@ def validate_datasets(
     _check_day("published_date_from", published_date_from, problems)
     _check_day("published_date_to", published_date_to, problems)
     if problems:
-        raise InvalidRequestError("; ".join(problems) + ".", source=SOURCE)
+        raise _refused(problems)
     arguments: dict[str, Any] = {
         "type_code": type_code,
         "freq_code": freq_code,
@@ -728,7 +766,7 @@ def validate_world_share(
             ``InvalidRequestError``. The first one found ends the checks: other problems
             are reported once it is fixed.
         InvalidRequestError: Naming every problem found, with the closest valid value
-            where there is one.
+            where there is one, and that nothing was sent.
     """
     problems: list[str] = []
     _check_list("type_code", type_code, "typeCode", problems)
@@ -736,7 +774,7 @@ def validate_world_share(
     _check_period(period, problems, max_periods=None, keyword=RECENT)
     _check_areas("reporter_code", reporter_code, "reporter", problems)
     if problems:
-        raise InvalidRequestError("; ".join(problems) + ".", source=SOURCE)
+        raise _refused(problems)
     arguments: dict[str, Any] = {
         "type_code": type_code,
         "freq_code": freq_code,
@@ -771,7 +809,7 @@ def validate_classification_file(cl_code: str) -> dict[str, Any]:
         hint = f"; closest: {closest!r}" if closest else ""
         raise InvalidRequestError(
             f"cl_code {cl_code!r} has no classification file at UN Comtrade{hint}. "
-            f"Valid values: {', '.join(files)}.",
+            f"{_UNSENT} Valid values: {', '.join(files)}.",
             source=SOURCE,
         )
     return {"cl_code": cl_code}
@@ -791,7 +829,7 @@ def validate_code_list(param: str) -> dict[str, Any]:
         hint = f"; closest: {near!r}" if near else ""
         raise InvalidRequestError(
             f"param {param!r} is not a list the package carries{hint}. "
-            f"Valid values: {', '.join(PACKAGED_LISTS)}.",
+            f"{_UNSENT} Valid values: {', '.join(PACKAGED_LISTS)}.",
             source=SOURCE,
         )
     return {"param": param}
@@ -816,7 +854,7 @@ def validate_reference_category(category: str | None) -> dict[str, Any]:
         hint = f"; closest: {near!r}" if near else ""
         raise InvalidRequestError(
             f"category {category!r} is not a category of UN Comtrade's "
-            f"ListofReferences.json{hint}. Valid values: {', '.join(categories)}.",
+            f"ListofReferences.json{hint}. {_UNSENT} Valid values: {', '.join(categories)}.",
             source=SOURCE,
         )
     return {"category": category}
