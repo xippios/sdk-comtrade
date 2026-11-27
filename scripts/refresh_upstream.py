@@ -4,22 +4,28 @@ The script declares the snapshot, ``SNAPSHOT``, and core's frame runs it
 (``xippios.core.refresh``, sdk-core ADR-0062): the fetch, the attribution check,
 ``FETCHED.md``, the write and ``--check`` are the frame's. Every page is public, on three
 hosts, so the snapshot hands the frame no client: the frame's own, built from the slug,
-holds no credentials, and the script reads no environment variable. What is UN Comtrade's
-own are its pages, its attribution and its hooks:
+holds no credentials, and the script reads no environment variable. Each page is named at
+the address that answers it, since the frame follows no redirect to another host, and no
+page is read from another, so a capture sends one request a page. What is UN Comtrade's own
+are its pages, its attribution and its hooks:
 
-- ``linked``: ApiDocs (https://comtradeplus.un.org/ApiDocs) is a React app that embeds
-  Swagger UI. Its bundle ``/static/js/main.<hash>.js`` holds the table of API products
-  (key, label, OpenAPI file, subscription tiers) and the base URL the files are loaded
-  from. The page shows only the products of the viewer's tier; ``linked`` reads the
-  bundle from the page and the table from the bundle, so every product file is saved as
-  served, ``apidocs/<file>``;
+- the API documentation, ``DOCS_URL``, a server-rendered page that names none of the
+  OpenAPI files: it is read for its footer's link to the licence agreement and kept
+  without a file, and its scripts' nonce, new on every response, leaves its row without a
+  size or a sha256;
+- the five OpenAPI files of the API products, ``APIDOCS_FILES``, fixed pages under
+  ``APIM_BASE`` that no page names, each saved byte for byte as served,
+  ``apidocs/<file>``, and ``note`` gives its row the file's OpenAPI version (the
+  maintainer's decision of 2026-11-27);
 - ``reduce``: each Help Center article in ``HELP_SLUGS`` is the article body from the
   WordPress REST API converted to Markdown under a two-line provenance header,
-  ``help/<slug>.md``, and ``note`` words its row from the answer;
-- ``sections``: the products found, with their OpenAPI versions.
+  ``help/<slug>.md``, and ``note`` words its row from the answer.
 
 Each file in ``REFERENCE_FILES`` is kept byte for byte as ``reference/<name>``, and the
-Help Center's home page is read for its footer alone. Run from the repository root::
+Help Center's home page is read for its footer alone. The licence agreement, ``LICENCE_URL``,
+which the page's footer and the Policy on Comtrade Data Use link, is no page of the
+snapshot: ``NOT_FETCHED`` gives it its row under ``Not fetched``, and no capture requests
+it. Run from the repository root::
 
     uv run scripts/refresh_upstream.py            # fetch, then write the snapshot
     uv run scripts/refresh_upstream.py --check    # fetch and compare; write nothing
@@ -27,8 +33,6 @@ Help Center's home page is read for its footer alone. Run from the repository ro
 
 import html
 import re
-from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlsplit
@@ -36,10 +40,10 @@ from urllib.parse import urlencode, urljoin, urlsplit
 from bs4 import BeautifulSoup, Tag
 from markdownify import ATX, BACKSLASH, MarkdownConverter
 from xippios.core.refresh import (
+    NotFetched,
     Page,
     Response,
     Row,
-    Section,
     Snapshot,
     Statement,
     changed,
@@ -49,7 +53,19 @@ from xippios.core.refresh import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-APIDOCS_URL = "https://comtradeplus.un.org/ApiDocs"
+DOCS_URL = "https://comtrade.un.org/en/api-docs"
+"""UN Comtrade's API documentation at the address that answers it, on a host of its own
+since the site was rebuilt (https://github.com/xippios/sdk-comtrade/issues/71)."""
+LICENCE_URL = "https://comtrade.un.org/en/license-agreement"
+APIM_BASE = "https://comtradeapi.un.org/files/v1/app/apim/"
+APIDOCS_FILES = (
+    "public.json",
+    "comtrade.json",
+    "comtradeTools.json",
+    "comtradebulk.json",
+    "comtradeAsync.json",
+)
+"""The OpenAPI files of the five API products, by the names ``APIM_BASE`` serves them at."""
 HELP_HOME = "https://uncomtrade.org/"
 HELP_API = "https://uncomtrade.org/wp-json/wp/v2/docs"
 HELP_FIELDS = "id,slug,link,modified,title,content"
@@ -93,6 +109,12 @@ def article_url(slug: str) -> str:
 
 ATTRIBUTION: tuple[Statement, ...] = (
     Statement(
+        "License agreement",
+        DOCS_URL,
+        "in the footer of UN Comtrade's pages",
+        link=LICENCE_URL,
+    ),
+    Statement(
         "\N{COPYRIGHT SIGN} 2026 UN Comtrade Help Center",
         HELP_HOME,
         "in the footer of the UN Comtrade Help Center's pages",
@@ -107,7 +129,7 @@ ATTRIBUTION: tuple[Statement, ...] = (
         "Use of UN Comtrade data is subject to a license agreement found at",
         article_url("policy-on-comtrade-data-use"),
         'under "License Agreement" in the Policy on Comtrade Data Use, up to its link to the '
-        "agreement, https://comtrade.un.org/licenseagreement.html",
+        f"agreement, {LICENCE_URL}",
     ),
     Statement(
         "The License Agreement specifies that the UN Comtrade data are copyrighted by the "
@@ -122,25 +144,29 @@ ATTRIBUTION: tuple[Statement, ...] = (
 )
 """Every copyright line, licence or terms of use the documentation states, as printed.
 
-The REST API serves an article's body without the Help Center's footer, so the footer's
-line is read from the Help Center's home page. The data's terms are two articles of their
-own, captured with the others and marked ``terms``: each must print its lines. The frame
+The documentation page states none but its footer's link, whose text the check reads past
+only as the text of a link to the agreement. The REST API serves an article's body without
+the Help Center's footer, so the footer's line is read from the Help Center's home page.
+The data's terms are two articles of their own, captured with the others and marked
+``terms``: each must print its lines. The frame
 reads a JSON answer as its text, the article's HTML in a string, so a line quoted from an
 article stops where the printed text meets markup or a character outside ASCII, a link, a
 paragraph's end or a curly apostrophe; the articles are kept whole under ``help/``.
 """
 
-_IDENT = r"[A-Za-z_$][\w$]*"
-_BUNDLE = re.compile(r"""src=["'](/static/js/main\.[0-9a-f]+\.js)["']""")
-_TIERS = re.compile(rf'({_IDENT})="anonymous",({_IDENT})="free",({_IDENT})="premium"')
-_ENTRY = rf'\{{key:"[^"\\]+",label:"[^"\\]+",file:"[^"\\]+",access:\[(?:{_IDENT},?)*\]\}}'
-_PRODUCT_TABLE = re.compile(rf"{_IDENT}=\[((?:{_ENTRY},?)+)\]")
-_PRODUCT_FIELDS = re.compile(
-    r'\{key:"([^"\\]+)",label:"([^"\\]+)",file:"([^"\\]+)",access:\[([^\]]*)\]\}'
+NOT_FETCHED = (
+    NotFetched(
+        LICENCE_URL,
+        "UN Comtrade's License Agreement, which the documentation page's footer and the Policy "
+        "on Comtrade Data Use link: terms of the data and no API documentation, and the "
+        "attribution records both links",
+    ),
 )
-_APIM_BASE = re.compile(r'"(https://[^"\s]+/apim/)"\s*\+')
-_SAFE_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\.json")
-_BUNDLE_PATH = re.compile(r"/static/js/main\.[0-9a-f]+\.js$")
+"""Every page the documentation links that the snapshot deliberately does not request, which
+the frame lists under ``Not fetched`` and never requests (conventions §3)."""
+
+_NONCE = re.compile(r"""<meta\s+name=["']csp-nonce["']\s+content=["'][^"']+["']""")
+"""The documentation page's Content Security Policy nonce, which its scripts carry."""
 _RENDER_ID = re.compile(r"data-wp-key=")
 """WordPress's lightbox image block, whose ``data-wp-key`` id is new on every render."""
 
@@ -220,71 +246,6 @@ def _merged_tables(fragment: str) -> int:
     return sum(1 for table in tables if _has_merged_cells(table))
 
 
-@dataclass(frozen=True)
-class Product:
-    """One row of the ApiDocs product table."""
-
-    key: str
-    label: str
-    file: str
-    tiers: tuple[str, ...]
-
-
-def bundle_url(shell: Response) -> str:
-    """The URL of the one ``main.<hash>.js`` the ApiDocs page loads."""
-    bundles: list[str] = sorted(set(_BUNDLE.findall(decode(shell))))
-    if len(bundles) != 1:
-        raise _bundle_changed(f"expected one main.<hash>.js, found {bundles}", APIDOCS_URL)
-    return urljoin(APIDOCS_URL, bundles[0])
-
-
-def products(bundle: Response) -> tuple[str, list[Product]]:
-    """The apim base URL and the product table the ApiDocs bundle holds."""
-    source = decode(bundle)
-    constants = _TIERS.findall(source)
-    if len(constants) != 1:
-        raise _bundle_changed(f"found {len(constants)} sets of tier constants", bundle.url)
-    tier_names = dict(zip(constants[0], ("anonymous", "free", "premium"), strict=True))
-    tables = _PRODUCT_TABLE.findall(source)
-    if len(tables) != 1:
-        raise _bundle_changed(f"found {len(tables)} product tables", bundle.url)
-    found: list[Product] = []
-    for key, label, file, access in _PRODUCT_FIELDS.findall(tables[0]):
-        idents = [ident for ident in access.split(",") if ident]
-        if not idents or any(ident not in tier_names for ident in idents):
-            raise _bundle_changed(f"product {key!r} has access [{access}]", bundle.url)
-        if not _SAFE_FILE.fullmatch(file):
-            raise _bundle_changed(f"product {key!r} names the file {file!r}", bundle.url)
-        found.append(Product(key, label, file, tuple(tier_names[i] for i in idents)))
-    files = [product.file for product in found]
-    if not found or len(set(files)) != len(files):
-        raise _bundle_changed(f"product files are {files}", bundle.url)
-    bases = sorted(set(_APIM_BASE.findall(source)))
-    if len(bases) != 1:
-        raise _bundle_changed(f"expected one apim base URL, found {bases}", bundle.url)
-    return bases[0], found
-
-
-def _bundle_changed(what: str, where: str) -> SystemExit:
-    return changed(
-        where,
-        f"the ApiDocs bundle changed: {what}. Look for the product table "
-        '[{key:"...",label:"...",file:"....json",access:[...]}], the tier constants '
-        'X="anonymous",Y="free",Z="premium" and the "https://.../apim/"+file base URL',
-    )
-
-
-def linked(row: Row) -> Sequence[Page]:
-    """The bundle after the ApiDocs page, and every product file after the bundle."""
-    if row.page.url == APIDOCS_URL:
-        note = "the ApiDocs bundle: the product table and apim base are read here"
-        return (Page(bundle_url(row.response), note=note),)
-    if _BUNDLE_PATH.search(urlsplit(row.page.url).path):
-        base, found = products(row.response)
-        return tuple(Page(base + product.file, f"apidocs/{product.file}") for product in found)
-    return ()
-
-
 def openapi_version(response: Response) -> str:
     """The ``openapi`` version of a product file, which must be 3.x."""
     document = parse_json(response)
@@ -324,8 +285,16 @@ def reduce(page: Page, response: Response) -> bytes:
 
 
 def note(row: Row) -> str:
-    """An article's note from its answer, a product file's its version; else the page's."""
+    """An article's note from its answer, a product file's its version; else the page's.
+
+    The documentation page keeps its note while it carries the nonce that leaves its row
+    without a size or a sha256, and stops the run where the nonce is gone.
+    """
     file = row.page.file or ""
+    if row.page.url == DOCS_URL:
+        if _NONCE.search(decode(row.response)) is None:
+            raise changed(DOCS_URL, "its csp-nonce is gone: declare the page stable")
+        return row.page.note
     if file.startswith("apidocs/"):
         return f"OpenAPI {openapi_version(row.response)}, as served"
     if not file.startswith("help/"):
@@ -349,43 +318,16 @@ def note(row: Row) -> str:
     return text
 
 
-def sections(rows: Sequence[Row]) -> Sequence[Section]:
-    """The section "Products found": the bundle, the apim base and each product's version."""
-    bundles = [row for row in rows if _BUNDLE_PATH.search(urlsplit(row.page.url).path)]
-    if len(bundles) != 1:
-        return ()
-    base, found = products(bundles[0].response)
-    versions = {
-        row.page.file: openapi_version(row.response)
-        for row in rows
-        if (row.page.file or "").startswith("apidocs/")
-    }
-    name = bundles[0].page.url.rsplit("/", 1)[-1]
-    lines = [
-        f"In the ApiDocs bundle `{name}`, each an OpenAPI file under `{base}`:",
-        "",
-        "| Key | Label | File | Tiers | OpenAPI |",
-        "| --- | --- | --- | --- | --- |",
-        *(
-            f"| {_cell(p.key)} | {_cell(p.label)} | {p.file} | {', '.join(p.tiers)} | "
-            f"{_cell(versions.get(f'apidocs/{p.file}', '-'))} |"
-            for p in found
-        ),
-    ]
-    return (Section("Products found", "\n".join(lines)),)
-
-
-def _cell(value: str) -> str:
-    return value.replace("|", r"\|")
-
-
-CAPTURE = """ApiDocs is a React app that embeds Swagger UI. Its JavaScript bundle holds a table
-of API products, each an OpenAPI file with the subscription tiers that may see it. The page
-loads only the products of the viewer's tier (anonymous, free or premium) and merges them
-client-side into one document, "UN Comtrade API Products", with one collapsible Swagger UI
-tag per product. The script reads the product table from the bundle and saves every product
-file byte for byte as served, so the snapshot holds every product, including the premium
-ones a free-tier browser never shows; "Products found" lists them.
+CAPTURE = """The API documentation, https://comtrade.un.org/en/api-docs, is a server-rendered
+page that names none of the OpenAPI files and prints no table of the API products: its
+console loads one product's document in a browser. The script reads the page for its
+footer's link to the licence agreement and keeps no file of it, and its row has no size or
+sha256, since its scripts carry a nonce that is new on every response. The agreement itself
+is not requested and stands under `Not fetched`. The five OpenAPI
+files of the API products are fixed pages under
+https://comtradeapi.un.org/files/v1/app/apim/, each saved byte for byte as served under
+`apidocs/`, the premium products' files among them, by the maintainer's decision of
+2026-11-27.
 
 Help Center articles come from the WordPress REST API, as the article body only (no theme,
 no navigation), converted to Markdown. A table with merged cells (`rowspan`/`colspan`)
@@ -399,7 +341,15 @@ SNAPSHOT = Snapshot(
     name="UN Comtrade",
     slug="comtrade",
     pages=(
-        Page(APIDOCS_URL, note="the ApiDocs page, a client-rendered shell that names the bundle"),
+        Page(
+            DOCS_URL,
+            stable=False,
+            note=(
+                "the API documentation, read for the Attribution above, kept without a file; "
+                "its scripts carry a nonce that is new on every response, so no size or sha256"
+            ),
+        ),
+        *(Page(APIM_BASE + name, f"apidocs/{name}") for name in APIDOCS_FILES),
         *(
             Page(
                 article_url(slug),
@@ -416,12 +366,11 @@ SNAPSHOT = Snapshot(
         Page(HELP_HOME, note="read for the Attribution above, kept without a file"),
     ),
     attribution=ATTRIBUTION,
+    not_fetched=NOT_FETCHED,
     capture=CAPTURE,
     out=ROOT / "docs/upstream",
     reduce=reduce,
-    linked=linked,
     note=note,
-    sections=sections,
 )
 """UN Comtrade's snapshot, which core's frame runs through its own client, without a key."""
 

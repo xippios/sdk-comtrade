@@ -2,7 +2,7 @@
     "openapi": "3.0.1",
     "info": {
         "title": "comtradeAsync",
-        "description": "Premium APIs for asynchronous requests. You will be notified through email about your results sets. Please add your email in the userId parameter. You must also pass subscription key. See examples at https://bit.ly/42JNSaZ",
+        "description": "Premium APIs for asynchronous requests. You will be notified through email about your results sets. Please add your email in the userId parameter. You must also pass subscription key. See examples at https://unstats.un.org/go/498d8e",
         "version": "v1"
     },
     "servers": [

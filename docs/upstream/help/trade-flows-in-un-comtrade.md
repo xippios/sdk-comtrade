@@ -1,6 +1,6 @@
 # [Trade Flows in UN Comtrade](https://uncomtrade.org/docs/trade-flows-in-un-comtrade/)
 
-Upstream modified: 2026-04-09T20:59:14
+Upstream modified: 2026-11-24T01:34:57
 
 ## 1. Overview
 
@@ -10,7 +10,7 @@ Upstream modified: 2026-04-09T20:59:14
 - Customs procedures applied to the goods
 - Statistical treatment under international standards
 
-The list of flows is defined in the reference tables (<https://comtradeplus.un.org/ListOfReferences> – under the “Trade Flow”) and implemented in the API and datasets.
+The list of flows is defined in the reference tables (<https://comtrade.un.org/en/reference-tables> – under the “Trade Flow”) and implemented in the API and datasets.
 
 These flows are derived from:
 

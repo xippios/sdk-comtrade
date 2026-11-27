@@ -1,6 +1,6 @@
 # [Read Me First (Disclaimer)](https://uncomtrade.org/docs/read-me-first-disclaimer/)
 
-Upstream modified: 2025-02-17T13:23:49
+Upstream modified: 2026-11-24T00:40:25
 
 Every UN Comtrade user should know the coverage and limitations of the data.
 
@@ -16,7 +16,7 @@ UN Comtrade is available to the general public and should be used with good know
 2. Countries (or areas) do not necessarily report their trade statistics for each and every year. This means that aggregations of data into groups of countries may involve countries with no reported data for a specific year. UN Comtrade does not contain estimates for missing data. Therefore, the trade of a country group could be understated due to the unavailability of some country data.
 3. Data are made available in several commodity classifications, but not all countries necessarily report in the most recent commodity classification. Again, UN Comtrade does not contain estimates for data of countries that do not report in the most recent classification.
 4. When data are converted from a more recent to an older classification it may occur that some of the converted commodity codes contain more (or less) products than what is implied by the official commodity heading. No adjustments are made for these cases.
-5. Imports reported by one country do not coincide with exports reported by its trading partner. Differences are due to various factors including valuation (imports CIF, exports FOB), differences in inclusions/ exclusions of particular commodities, timing etc. The recommendations for international merchandise trade statistics can be found in the [International Merchandise Trade Statistics: Compilers Manual](https://unstats.un.org/unsd/trade/imts/methodology.asp)). Additional methodological information can be found on the same web page.
+5. Imports reported by one country do not coincide with exports reported by its trading partner. Differences are due to various factors including valuation (imports CIF, exports FOB), differences in inclusions/ exclusions of particular commodities, timing etc. The recommendations for international merchandise trade statistics can be found in the [International Merchandise Trade Statistics: Compilers Manual](https://unstats.un.org/unsd/econstats/trade/imts/methodology)). Additional methodological information can be found on the same web page.
 6. Almost all countries report as partner country for imports the country of origin which is determined by the rules of origin established by each country (see International Merchandise Trade Statistics, Concepts and Definitions, Rev.2, para. 139 and 140). Hence, the term ‘partner country’ in the case of imports does not necessarily imply any direct trading relationship.
 
 ### **General UN disclaimer**
@@ -25,4 +25,4 @@ The designations employed and the presentation of material on UN Comtrade do not
 
 ### **License Agreement**
 
-Before using the UN Comtrade data, you should also read and agree with the [License Agreement](https://comtrade.un.org/licenseagreement.html) which can be found at the bottom bar of each of the web pages of the UN Comtrade site. The License Agreement specifies that the UN Comtrade data are copyrighted by the United Nations and are made available for your internal use only. They may not be re-disseminated in any form without prior written consent of the United Nations Statistics Division subject to the clarification at [Policy on use and re-dissemination](https://uncomtrade.org/docs/policy-on-use-and-re-dissemination/).\
+Before using the UN Comtrade data, you should also read and agree with the [License Agreement](https://comtrade.un.org/en/license-agreement) which can be found at the bottom bar of each of the web pages of the UN Comtrade site. The License Agreement specifies that the UN Comtrade data are copyrighted by the United Nations and are made available for your internal use only. They may not be re-disseminated in any form without prior written consent of the United Nations Statistics Division subject to the clarification at [Policy on use and re-dissemination](https://uncomtrade.org/docs/policy-on-use-and-re-dissemination/).\

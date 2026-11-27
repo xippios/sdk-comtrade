@@ -1,10 +1,10 @@
 # [UN Comtrade Tools](https://uncomtrade.org/docs/un-comtrade-tools/)
 
-Upstream modified: 2025-03-03T19:29:02
+Upstream modified: 2026-11-24T00:56:00
 
 Discover the exciting new tools that empower you to dive deep into trade data! These innovative features allow you to view insightful indicators, transforming the way you look at the information or utilize the query.
 
-## [Trade Balance View](https://comtradeplus.un.org/TradeBalance)
+## [Trade Balance View](https://comtrade.un.org/en/trade-balance)
 
 The trade balance view tool rotates the original data from a stacked format to a side-by-side view, facilitating easier comparison between export and import figures. Note: The trade flow pivot limits are only to exports/imports.
 
@@ -12,7 +12,7 @@ The example below pivots the 2023 exports/imports of Norway and India of HS Code
 
 ![](https://uncomtrade.org/wp-content/uploads/2025/02/image-2-1024x153.png)
 
-## [Bilateral Data Comparison](https://comtradeplus.un.org/BilateralData)
+## [Bilateral Data Comparison](https://comtrade.un.org/en/bilateral-comparison)
 
 The bilateral data comparison tool puts the reported data and its mirror data side-by-side, allowing the analysis of [bilateral trade asymmetries](https://uncomtrade.org/docs/bilateral-asymmetries/). Note that the outcome of the mirror data depends on the availability of other reporters rather than no-trade, and it should be considered when utilizing this tool. The tool only compares the data in classic breakdown mode.
 

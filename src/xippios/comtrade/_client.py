@@ -48,17 +48,17 @@ beside these joins the list."""
 RATE_LIMIT = RateLimit(per_minute=40, burst=1)
 """One call every 1.5 s, no burst: upstream's 1 call per second with a margin.
 
-Spaced exactly 1.0 s apart, 9 of 18 calls drew HTTP 429 "Rate limit is exceeded. Try
-again in 1 seconds." with ``Retry-After: 1`` (2026-10-23, ``count_rate_limited.json``):
-the gateway's one-second window is not exact. At 1.5 s 2 of 39 calls drew one, at 2.0 s
-none of 10. Core retries a 429 after ``Retry-After``; every retry is another call.
+The gateway's one-second window is not exact: spaced exactly 1.0 s apart, half the calls
+drew HTTP 429, and spaced 1.5 s apart a few (``docs/upstream/OBSERVED.md``, "Calls spaced
+1.0 s apart draw HTTP 429"). Core retries a 429 after ``Retry-After``; every retry is
+another call.
 """
 READ_TIMEOUT = 180.0
 """The client's one read timeout, 180 s where the family's is 60 s (conventions §6).
 
-A ``countOnly`` count over all reporters outlasted 60 s once and answered in 27 s on the
-repeat (2026-10-23, ``count_over_limit.json``). Core's retry policy stays: a timed-out
-attempt it retries is another call against the daily quota.
+A ``countOnly`` count over all reporters outlasted 60 s once (``docs/upstream/OBSERVED.md``,
+"A broad count can outlast a minute"). Core's retry policy stays: a timed-out attempt it
+retries is another call against the daily quota.
 """
 
 _REPLENISHED = re.compile(r"replenished in (\d+):(\d{2}):(\d{2})", re.IGNORECASE)
@@ -194,8 +194,8 @@ CACHE_LIFETIMES: dict[str, float | None] = {
 }
 """How long the cache keeps an answer, by the longest path prefix it starts with.
 
-The reference files change rarely (``ListofReferences.json`` was last modified 2025-11-12
-when the snapshot was taken) and the classification files are large (``HS.json`` is about
+The reference files change rarely (``docs/upstream/FETCHED.md`` gives the Last-Modified
+of ``ListofReferences.json``) and the classification files are large (``HS.json`` is about
 2 MB, 8,262 codes), so a file is fetched once per process. A keyed answer under
 ``data/v1`` or ``tools/v1`` is kept for core's 300 s, so a repeated call spends no call of
 the daily 500 (sdk-core ADR-0061, decision 11). A body above core's ``cache_max_bytes`` of

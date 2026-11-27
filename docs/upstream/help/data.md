@@ -1,107 +1,160 @@
 # [How to query data](https://uncomtrade.org/docs/data/)
 
-Upstream modified: 2025-03-10T16:39:49
+Upstream modified: 2026-11-24T02:26:00
 
-![](https://uncomtrade.org/wp-content/uploads/2024/02/data-menu.png)
+The Data menu has all the types of data in UN Comtrade. Each link opens the query page of that type of data. The query pages have a similar structure. This page uses [Trade statistics](https://comtrade.un.org/en/trade-statistics) as the example.
 
-The Data menu links all types of data available in the UN Comtrade database. Each link directs the user to the standard query page for the selected type of data.
-
-**The query page maintains a consistent structure across various data pages, ensuring a standardized approach to data retrieval.**
+![](https://uncomtrade.org/wp-content/uploads/2024/02/home-02-menu-data-1.jpg)
 
 ### Querying Data
 
-**Standard Query Page:**For illustration purposes, see the example below for ***[Trade Data](https://comtradeplus.un.org/TradeFlow):***
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-01-trade-statistics-2-1024x559.jpg "UN Comtrade > New Comtrade User Guide > image2022-10-25_14-54-28.png")
 
-![](https://uncomtrade.org/wp-content/uploads/2024/02/query-page-1024x346.png "UN Comtrade > New Comtrade User Guide > image2022-10-25_14-54-28.png")
+To query data:
 
-**Query parameters:** Each query parameter features a drill-down list that allows users to select and submit either single or multiple values for their queries. Additionally, users can enter a search term, and the drill-down list will provide matching values based on the input text or string.
+1. Choose the type, frequency and classification.
+2. Refine your search: choose the commodity codes, periods, reporters, partners and trade flows.
+3. If you need them, set the query options.
+4. Select **Preview**. To clear the form, select **Start again**.
 
-![](https://uncomtrade.org/wp-content/uploads/2024/02/image-24.png)
+### Step 1. Type, frequency and classification
 
-For the query parameter “**Periods**,” users can expand the list by clicking the chevron or expansion symbol on the right. This action reveals additional values for the parameter, allowing users to scroll through and select one or more options by clicking on the available values.
+- **Type:** Goods or Services.
+- **Frequency:** Annual or Monthly (goods only).
+- **Classification:** for goods, HS, SITC or BEC; for services, EBOPS. “HS, as reported” gives the data in the HS edition each country used.
 
-Additionally, users can manually input search text into the query field. The drill-down functionality will then retrieve matches based on this entered text.
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-02-type-frequency-classification-1024x143.jpg)
 
-The maximum number of periods that you can submit is 12.
+### Step 2. Refine your search
 
-#### Parameter value “ALL”
+You can choose one or several values in each field. Select the information icon next to a field for help on it.
 
-The parameter value ALL is available under the reporter, partner, 2nd partner, trade flows, modes of transport, and customs codes criteria. Passing ALL will return all individual values under the data item. For partners and 2nd partners, passing ALL will return all individual partners and the WORLD aggregate.
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-03-refine-your-search-1024x435.jpg)
 
-#### Parameter value “WORLD” as partner and 2nd partner
+- **Commodity codes:** type a code or a product name and choose from the suggestions. Wildcards: 0901\* for every code starting with 0901; 27?? for every 4-digit code in chapter 27. AG2 gives all 2-digit codes and ALL gives every code separately. TOTAL is the total of all commodities.
+- **Periods:** years such as 2025 for annual data, months such as 202501 for monthly data, or “recent”. For monthly data, “All of 2025” chooses every month of that year.
+- **Reporters:** a name, numeric code or ISO code, such as Kenya, 404 or KEN.
+- **Partners:** the trading partners. 0 is the world.
+- **Second partner:** the country of consignment or destination. 0 is the world.
+- **Trade flows:** such as exports (X) and imports (M).
+- **Mode of transport:** 0 is the total of all modes.
+- **Customs procedure:** C00 is the total of all procedures.
 
-Passing WORLD as a partner and 2nd partner returns the world the aggregate value. “World” as a partner is the same as the sum of individual partners.
+Second partner, mode of transport and customs procedure apply to goods only and are available when you log in.
 
----
+Type in a field to search for a value:
 
-### Saving Parameters and Searches
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-04-search-a-code.jpg)
 
-As a standard feature, users can save full queries and their parameters for future use. This is particularly useful for those who frequently retrieve data using the same parameters. This functionality is available at both the parameter (field) level and the query level. *Note: To enable aggregation for specific parameters, you must select those parameters in the “Aggregate By” option.*
+Or select the arrow on the right of a field to open its list. To remove a value, select the x next to it.
 
-#### Saving Parameters
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-05-periods-list.jpg)
 
-![](https://uncomtrade.org/wp-content/uploads/2024/02/image-25.png)
+How many values you can choose depends on your account:
 
-You must be logged in to save your parameters. Once you have defined a list or group, click the **Save Group** icon to the right of each parameter field. This will save the current values selected in the parameter field.\
-
-In this example, ASEAN member countries were selected as trade partners. The user clicks on the **Save Group** icon.
-
-![](https://uncomtrade.org/wp-content/uploads/2024/02/image-26.png)
-
-A window will pop up and ask the user to provide a search name. A user provides “ASEAN Partners.” The user clicks on “Submit,” and the partner grouping is saved.
-
-![](https://uncomtrade.org/wp-content/uploads/2024/02/image-27.png)
-
-The saved partner group will now appear under the **Partners** query field and be available for future queries.
-
----
-
-#### Saving Queries / Searches
-
-![](https://uncomtrade.org/wp-content/uploads/2024/02/image-30.png)
-
-A window will pop up and ask the user to provide a search name. A user provides the search name, “USA Imports From ASEAN.” The user clicks on “Submit,” and the **query** is saved
-
-![](https://uncomtrade.org/wp-content/uploads/2024/02/image-29-1024x451.png)
-
-First, construct your query by selecting a value for each parameter to save your full query. Click on the Save Query icon on the bottom right.
-
-![](https://uncomtrade.org/wp-content/uploads/2024/02/image-31.png)
-
-Saved parameters and queries can be found under your My Comtrade profile.
-
----
-
-### Query Options
-
-In addition to specifying selection criteria, the system offers two options for querying:
-
-![](https://uncomtrade.org/wp-content/uploads/2024/02/image2022-8-9_16-16-8.png "UN Comtrade > New Comtrade User Guide > image2022-8-9_16-16-8.png")
-
-- **Breakdown Mode**
-
-Accepted values: **Plus** or **Classic**. The *Plus* enables the breakdown of new data items in Comtrade+ notably detailed trade flow, mode of transport, customs procedure codes, and the 2nd partner (when reported by countries). Whereas the *Classic*, the selection criteria are automatically set to the following values: trade flows to exports, imports, re-imports, and re-exports), mode of transport to total, customs procedure codes to total, and the 2nd partner to World. The *classic* mode returns the same dataset as the legacy Comtrade.
-
-- **Aggregate By**
-
-Accepted values**:** None, or any combinations of Commodity Code, Period, Reporter, Partner, 2nd Partner, Mode of Transports and Customs Procedure Codes. If the Aggregate By is active, then the trade values, netweight and gross weight will be aggregated along the selected combination. For example, the following selection will return four records because all reporters will be aggregated into single code.
-
-![](https://uncomtrade.org/wp-content/uploads/2024/02/image2022-10-25_15-1-55-1024x414.png "UN Comtrade > New Comtrade User Guide > image2022-10-25_15-1-55.png")
-
-And by adding the Period in the Aggregate By, the query will return two records.
-
-![](https://uncomtrade.org/wp-content/uploads/2024/02/image2022-10-25_15-2-57-1024x415.png "UN Comtrade > New Comtrade User Guide > image2022-10-25_15-2-57.png")
-![](https://uncomtrade.org/wp-content/uploads/2024/02/image2022-8-9_16-17-21.png "UN Comtrade > New Comtrade User Guide > image2022-8-9_16-17-21.png")
-
----
-
-### Viewing and saving query results
-
-Users can choose Preview, Download, or Deliver options to receive the requested data. See the table below for the differences.
-
-|  |  |  |
+| Account | Commodity codes | Periods |
 | --- | --- | --- |
-| **Data Extraction Mode** | **Description** | **Access** |
-| [Preview](https://uncomtrade.org/docs/what-is-data-preview/) | The data will be shown on screen and be limited to 500 records (regardless of the actual results) | Public (no-registration) |
-| Download | The data will be downloaded directly and limited to 100K and 250K records for registered users and subscribers, respectively | Registration required |
-| [Deliver](https://uncomtrade.org/docs/what-is-data-delivery/) | The data will be prepared in the background, and the link will be sent to the email. The data is limited to 2.5M records | Subscription required |
+| Not logged in | 1 | 1 |
+| Free | Up to 10 | More than one |
+| Premium | Up to 500 | More than one |
+
+### The value “all”
+
+The value “all” is available for reporters, partners, second partner, trade flows, mode of transport and customs procedure. It returns every individual value of that field. For partners, it returns every individual partner and also the World total.
+
+### The value “World” as partner and second partner
+
+Choosing World (0) as partner or second partner returns the total for all partners. “World” as a partner is the same as the sum of the individual partners.
+
+### Example
+
+Imports of the United States of America from the ASEAN countries in 2024, all commodities:
+
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-06-example-query-1024x602.jpg)
+
+## Saving lists and searches
+
+If you often use the same values or the same query, save them. You must be logged in.
+
+### Saving a list of values
+
+1. Choose the values in a field, for example the ASEAN countries in Partners.
+2. Select **Save list** below the field.
+3. Enter a name, for example “ASEAN partners”, and select **Save list**.
+
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-07-save-list.jpg)
+
+To use the list again, select **My lists** below the same field.
+
+Note: to add up the values of a list into one total, choose that field in “Aggregate by” (see [Query options](https://uncomtrade.org/docs/data/#query-options)).
+
+### Saving a search
+
+1. Build your query and select **Preview**.
+2. Select **Save search**.
+3. Enter a name, for example “USA imports from ASEAN”, and select **Save**.
+
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-08-save-search-1024x241.jpg)
+
+To use the search again, select **My saved searches** at the top of the Trade statistics page, choose the search and select **Load**.
+
+All your lists and searches are in My Comtrade > Saved searches and lists, where you can open or delete them.
+
+## Query options
+
+When you are logged in, there are two more options:
+
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-09-query-options-1-1024x141.jpg)
+
+### Breakdown mode
+
+- **Plus** includes trade value in CIF and FOB, quantity in secondary units, gross weight, mode of transport, second partner and customs procedure, when countries report them.
+- **Classic** has only the first partner and commodities, in the standard trade flows: imports, exports, re-exports and re-imports.
+
+### Aggregate by
+
+Accepted values: None, or any combination of Reporter, Partner, Second partner, Commodity code, Customs procedure and Mode of transport. The values chosen in those fields are added up into one row. With None, each value has its own row.
+
+Example: imports of the United States of America from the 11 ASEAN countries in 2023 and 2024. With None, the query returns 22 rows: one for each country and year. Aggregated by Partner, it returns 2 rows: one total of the 11 countries for each year.
+
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-10-aggregate-by-1024x567.jpg)
+
+## Viewing and saving query results
+
+After you select **Preview**, the results are shown below the form, with buttons to get or share the data. If you change the query, select Preview again.
+
+### Preview
+
+The preview shows up to 500 records, 50 on each page. Select a column heading to sort by it.
+
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-11-preview-1024x601.jpg)
+
+### Download
+
+Choose a format: CSV, Excel workbook (.xlsx), JSON or tab-separated text. You must be logged in.
+
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-12-download-1024x251.jpg)
+
+### Deliver
+
+For large queries (Premium). The file is prepared in the background. Select **Send me the link**, and a link to download the file is sent to the email address of your account. The file is also in My Comtrade > My data deliveries. Files are deleted 48 hours after they are ready.
+
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-13-deliver-1024x266.jpg)
+
+### Copy link to share
+
+Copies a link to your query. Anyone who opens the link sees the same query, within the limits of their own account.
+
+### API call
+
+Shows the same query as a call to the UN Comtrade API, to use in your own code or tools. Add your subscription key, which you can get in My API portal.
+
+![](https://uncomtrade.org/wp-content/uploads/2024/02/data-14-api-call-1024x491.jpg)
+
+### Preview, Download and Deliver
+
+| Data extraction mode | Description | Access |
+| --- | --- | --- |
+| [Preview](https://uncomtrade.org/docs/what-is-data-preview/) | The data is shown on screen, up to 500 records. | Public (no registration) |
+| Download | The data is downloaded directly: up to 100,000 records per request with a Free account and up to 250,000 with Premium. | Log in required |
+| [Deliver](https://uncomtrade.org/docs/what-is-data-delivery/) | The file is prepared in the background and the link is sent by email: up to 2.5 million records. | Premium subscription required |

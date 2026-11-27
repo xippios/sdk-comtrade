@@ -1059,12 +1059,11 @@
                     {
                         "name": "freqCode",
                         "in": "path",
-                        "description": "Trade frequency: A for annual and M for monthly",
+                        "description": "Trade frequency: A for annual",
                         "required": true,
                         "schema": {
                             "enum": [
-                                "A",
-                                "M"
+                                "A"
                             ],
                             "type": "string"
                         }
@@ -1072,7 +1071,7 @@
                     {
                         "name": "clCode",
                         "in": "path",
-                        "description": "Product classifications: HS, SITC, BEC (for goods)",
+                        "description": "Product classifications: only TM (for trade matrix)",
                         "required": true,
                         "schema": {
                             "enum": [
@@ -1108,7 +1107,7 @@
                     {
                         "name": "cmdCode",
                         "in": "query",
-                        "description": "Commodity code. Multi value input should be in the form of csv (Codes separated by comma (,))",
+                        "description": "Commodity code S3 classification. Multi value input should be in the form of csv (Codes separated by comma (,))",
                         "schema": {
                             "type": "string"
                         }

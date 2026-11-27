@@ -1,8 +1,8 @@
 # [List of References & Parameter Codes](https://uncomtrade.org/docs/list-of-references-parameter-codes/)
 
-Upstream modified: 2026-04-09T21:00:44
+Upstream modified: 2026-11-24T01:03:50
 
-In UN Comtrade website, you can go to [List of References](https://comtradeplus.un.org/ListOfReferences) to view and download the relevant codes.
+In UN Comtrade website, you can go to [List of References](https://comtrade.un.org/en/reference-tables) to view and download the relevant codes.
 
 Alternatively, you can:
 

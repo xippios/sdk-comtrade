@@ -3524,3 +3524,86 @@ def test_public_routes_end_to_end(replay_fixture: ReplayFixture) -> None:
             "/comtrade/get_world_share", json={**CH_WORLD_SHARE_2023, "period": "2023-01"}
         )
         assert refused.status_code == 422
+
+
+NOT_WRAPPED_YET: dict[int, tuple[str, ...]] = {
+    23: ("public/v1/preview", "public/v1/previewTariffline"),
+    24: ("data/v1/getTariffline", "data/v1/getDaTariffline"),
+    25: ("public/v1/getMetadata", "public/v1/getDA", "public/v1/getDATariffline"),
+    43: ("data/v1/getSUV", "data/v1/getTradeMatrix", "data/v1/getMBS", "public/v1/getMBS"),
+    44: (
+        "bulk/v1/get",
+        "bulk/v1/file",
+        "bulk/v1/getTariffline",
+        "bulk/v1/fileTariffline",
+        "bulk/v1/getClassic",
+        "bulk/v1/fileClassic",
+        "bulk/v1/fileTradeMatrix",
+        "async/v1/get",
+        "async/v1/getTariffline",
+        "async/v1/getDa",
+    ),
+}
+"""The operations of the five API products that no task wraps yet, by their public issue."""
+
+
+def _spec_operations() -> list[str]:
+    """Every operation of ``docs/upstream/apidocs/``, by its server's path and its own up to
+    its first path parameter: ``data/v1/get``, ``bulk/v1/file``."""
+    found = []
+    for spec in sorted((UPSTREAM / "apidocs").glob("*.json")):
+        document = json.loads(spec.read_text(encoding="utf-8"))
+        (server,) = document["servers"]
+        base = server["url"].removeprefix("https://comtradeapi.un.org/")
+        for path, operations in document["paths"].items():
+            found += [f"{base}{path.split('/{')[0]}" for method in operations if method == "get"]
+    return found
+
+
+def test_the_readme_scope_names_every_operation_once() -> None:
+    """The README's ``## Scope`` names each of the 29 operations of UN Comtrade's five API
+    products once, by its path: the eight that the package wraps, and each that it does not
+    wrap yet in a bullet with its public issue. Each documented choice of a wrapped operation
+    that a caller cannot make stands in a bullet of its own with its public issue,
+    ``maxRecords`` and ``format`` of the Help Center, and so does the two Tools tasks'
+    requirement of an area and a product code, which the package keeps until UN Comtrade
+    counts a Tools query first (https://github.com/xippios/sdk-faostat/issues/58, part 2;
+    https://github.com/xippios/sdk-comtrade/issues/72)."""
+    readme = (UPSTREAM.parents[1] / "README.md").read_text(encoding="utf-8")
+    assert "\n## Scope\n" in readme
+    scope = readme.split("\n## Scope\n", 1)[1].split("\n## ", 1)[0]
+    operations = _spec_operations()
+    wrapped = {
+        importlib.import_module(f"xippios.comtrade.api.{module}").ENDPOINT
+        for module in (
+            "get",
+            "get_da",
+            "get_metadata",
+            "get_live_update",
+            "get_comtrade_releases",
+            "get_world_share",
+            "get_trade_balance",
+            "get_bilateral_data",
+        )
+    }
+    not_wrapped = {operation for names in NOT_WRAPPED_YET.values() for operation in names}
+    assert len(operations) == len(set(operations)) == 29
+    assert set(operations) == wrapped | not_wrapped
+    assert len(wrapped) == 8
+    assert not wrapped & not_wrapped
+    spans = re.findall(r"`([^`\n]+)`", scope)
+    for operation in operations:
+        assert spans.count(operation) == 1, operation
+    bullets = [" ".join(item.split()) for item in scope.split("\n- ")[1:]]
+    issue = "https://github.com/xippios/sdk-comtrade/issues/"
+    for number, names in NOT_WRAPPED_YET.items():
+        (bullet,) = [item for item in bullets if f"`{names[0]}`" in item]
+        assert all(f"`{name}`" in bullet for name in names), number
+        assert f"{issue}{number})" in bullet, number
+    for name, number in (("`maxRecords`", 26), ("`format`", 45)):
+        (bullet,) = [item for item in bullets if name in item]
+        assert f"{issue}{number})" in bullet, name
+    (tools,) = [item for item in bullets if "`get_trade_balance`" in item]
+    for name in ("`get_bilateral_data`", "`reporter_code`", "`partner_code`", "`cmd_code`"):
+        assert name in tools, name
+    assert f"{issue}72)" in tools

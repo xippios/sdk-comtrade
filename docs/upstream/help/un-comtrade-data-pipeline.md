@@ -1,6 +1,6 @@
 # [UN Comtrade Data Pipeline](https://uncomtrade.org/docs/un-comtrade-data-pipeline/)
 
-Upstream modified: 2025-09-12T12:55:47
+Upstream modified: 2026-11-24T00:43:32
 
 The trade data collection process is highly structured and intricate, requiring careful planning and execution. The process is broken down into several stages, each with its own goals and objectives, to ensure that the data is accurate and reliable.
 
@@ -14,7 +14,7 @@ Once the data is received, processing involves several sub-steps, including data
 
 Before publication, the data undergoes a rigorous review and validation process. It is checked for errors, reviewed for completeness, and validated for accuracy. Any errors or discrepancies are flagged and addressed before the data is published on the UN Comtrade platform.
 
-The publication and dissemination stage involves making the data available to users on the [UN Comtrade](http://comtrade.un.org/) platform, which provides access to a wealth of trade data that can be used for research, analysis, and decision-making. Managing user feedback is also an essential part of the process to ensure that the data remains relevant and useful. Overall, trade data processing and dissemination are comprehensive procedures that ensure the accuracy and reliability of trade data for users worldwide.
+The publication and dissemination stage involves making the data available to users on the [UN Comtrade](https://comtrade.un.org/) platform, which provides access to a wealth of trade data that can be used for research, analysis, and decision-making. Managing user feedback is also an essential part of the process to ensure that the data remains relevant and useful. Overall, trade data processing and dissemination are comprehensive procedures that ensure the accuracy and reliability of trade data for users worldwide.
 
 See additional information about UN Comtrade collection and processing: [https://blogs.worldbank.org/en/opendata/the–essential–role-of-un-s-comtrade-in-trade-data](https://blogs.worldbank.org/en/opendata/the--essential--role-of-un-s-comtrade-in-trade-data)
 
@@ -22,6 +22,6 @@ See additional information about UN Comtrade collection and processing: [https:/
 
 Data is continuously submitted by reporting countries and released in UN Comtrade. In some cases, countries submit revised data, which means that updated information has been made available for data that was submitted and released previously. For example, the merchandise data for Barbados for January 2025 was first released on April 4, 2025, and revised data for that same data period was published on June 4, 2025. In the UN Comtrade system, the revised data will replace the initial submission, as the system retains the most recent version.
 
-For details on data availability and historical releases, please refer to the metadata page or API at <https://comtradeplus.un.org/DataAvailability.>
+For details on data availability and historical releases, please refer to the metadata page or API at [https://comtrade.un.org/en/data-availability.](https://comtrade.un.org/en/data-availability)
 
 To read more about data availability, please also see: <https://uncomtrade.org/docs/data-availability/>
