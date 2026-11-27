@@ -14,7 +14,7 @@ this file.
 | --- | --- |
 | Upstream | UN Comtrade, https://comtradeplus.un.org |
 | API base URL | `https://comtradeapi.un.org` |
-| Documentation | https://comtradeplus.un.org/ApiDocs, snapshotted in `docs/upstream/` |
+| Documentation | https://comtrade.un.org/en/api-docs and the five OpenAPI files it no longer names, under https://comtradeapi.un.org/files/v1/app/apim/, snapshotted in `docs/upstream/` |
 | Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header; never to the public operations or the reference files |
 | Rate limit | 40 requests per minute, burst 1, one call every 1.5 s; set under the limit upstream documents, 1 call per second (60 per minute), since calls spaced exactly 1.0 s apart drew HTTP 429 (sdk-core ADR-0033); 500 calls a day, which the client does not count: `policy`, a `QuotaPolicy`, holds keyed calls back once upstream answers that the quota is spent (`_client.py`, sdk-core ADR-0037) |
 | Write tools | no, this package is read-only |

@@ -47,8 +47,9 @@ tests/
   test_scripts.py  the reference script's declaration, offline: its lists, its provenance
                    rows against the committed ones, the spec's lists and that it sends no key
   test_refresh_upstream.py  the snapshot script's declaration and hooks, offline: its
-                   pages, the statements of the attribution against the kept articles, the
-                   bundle's products and an article's Markdown
+                   pages, the five OpenAPI files against the committed ones, the statements
+                   of the attribution against the kept articles and the documentation
+                   page's footer, each row's note and an article's Markdown
   test_observed.py docs/upstream/OBSERVED.md as committed: each note's probe, operation
                    and sample, the dates of its samples, and that the package's own text
                    dates no answer outside it
