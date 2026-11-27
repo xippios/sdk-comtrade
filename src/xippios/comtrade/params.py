@@ -161,7 +161,11 @@ _CMD_SHAPES: dict[str, tuple[re.Pattern[str], str]] = {
 Observed in the classification files ``ListofReferences.json`` links (fetched 2026-10-23):
 HS and BEC codes are digit strings, SITC codes digits with trailing ``X`` (``0011X``),
 EBOPS codes letters, digits and dots (``205X``, ``SC11z``, ``10.1.1.2``). Every family
-also takes ``TOTAL`` and the aggregation levels ``AG1`` to ``AG6``. A trailing ``*`` or
+also takes ``TOTAL``, which the spec's example answer holds, and the aggregation levels
+``AG1`` to ``AG6``, as 0.3.0 did: ``AG2`` and ``AG4`` stand in recorded HS queries that
+upstream answered, ``AG6`` in the example answer of the async ``getDa`` in
+``apidocs/comtradeAsync.json``, and ``AG1``, ``AG3`` and ``AG5`` in no page of the snapshot
+and no recording, though no page rules them out. A trailing ``*`` or
 ``?`` is a wildcard (``help/how-do-i-use-wildcards-to-query-data.md``;
 ``tests/fixtures/get/count_cmd_code_wildcard.json`` counts 113 records for ``27??``).
 """
