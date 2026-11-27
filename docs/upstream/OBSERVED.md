@@ -18,7 +18,9 @@ the documentation's own address names the addresses requested and, in place of a
 a sample, the page they lead to with its row in `FETCHED.md`. The notes moved here on
 2026-11-26 from `CLAUDE.md`, the docstrings of the wrappers and the modules, and the six tool
 descriptions that 0.4.0 trimmed, and the last from
-https://github.com/xippios/sdk-comtrade/issues/71; no request was sent to write this file.
+https://github.com/xippios/sdk-comtrade/issues/71; no request was sent to write them. The note
+on `Q` in `Frequency.json` records what the reference refresh and one request sent without the
+key answered on 2026-11-27.
 
 ## The key and the pace
 
@@ -455,7 +457,7 @@ Probe: 2026-10-28, `public/v1/getWorldShare`; sample
 area, but the tables differ: 0 World and 55 other areas are partners only, and 97 European
 Union and 975 ASEAN are reporters only.
 
-Probe: 2026-11-20, `files/v1/app/reference/Reporters.json` and
+Probe: 2026-11-20 and 2026-11-27, `files/v1/app/reference/Reporters.json` and
 `files/v1/app/reference/partnerAreas.json`; samples
 `src/xippios/comtrade/reference/Reporters.json` and
 `src/xippios/comtrade/reference/partnerAreas.json`.
@@ -466,10 +468,24 @@ Of the packaged lists `qtyUnitCode`, from `QuantityUnits.json`, is the longest, 
 3.4 KB of compact JSON, and the index of the files, `ListofReferences.json`, has 28 rows, about
 5.5 KB.
 
-Probe: 2026-11-20, `files/v1/app/reference/QuantityUnits.json` and
+Probe: 2026-11-20 and 2026-11-27, `files/v1/app/reference/QuantityUnits.json` and
 `files/v1/app/reference/ListofReferences.json`; samples
 `src/xippios/comtrade/reference/qtyUnitCode.json` and
 `src/xippios/comtrade/reference/ListofReferences.json`.
+
+### `Frequency.json` holds `Q`, which `getDA` refuses
+
+`Frequency.json`, which `ListofReferences.json` lists for the variable Frequency, holds three
+rows, `A` Annual, `Q` Quarterly and `M` Monthly, while the `freqCode` enum of each of the five
+API documents lists `A` and `M` alone. The documents name `Q Quarterly` once, among the values
+of `period_type` of `getMBS`, an operation that the package does not wrap.
+`public/v1/getDA/C/Q/HS`, sent without the key, answered HTTP 400 with `{"error": "Invalid
+parameter value", "details": [{"memberNames": ["freqCode"], "errorMessage": "The field freqCode
+is invalid"}]}`. No keyed data operation was asked for `Q`.
+
+Probe: 2026-11-27, `files/v1/app/reference/Frequency.json` and `public/v1/getDA/C/Q/HS`,
+without the key; sample `src/xippios/comtrade/reference/freqCode.json`, whose `note` names the
+row that the list leaves out. The request to `public/v1/getDA` kept no answer as a fixture.
 
 ### The shapes of the product codes
 

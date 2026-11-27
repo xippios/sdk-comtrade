@@ -25,10 +25,12 @@ URL a file was fetched from, or the `docs/upstream/` file it was rebuilt from; F
 that fetch's UTC time, the answer's `retrieved_at` (for a file the client's cache answered,
 the time its entry was stored), or the snapshot's `Fetched` time in
 `docs/upstream/FETCHED.md`. `scripts/refresh_reference.py` wrote every file again on
-2026-11-20, keyless. Against the files of 2026-10-28, `Reporters.json` gained one row, `238`
-Falkland Isds (Malvinas), and `partnerAreas.json`'s `756` lost the trailing space of its `text`
-and `PartnerDesc`; no other row or value changed, and the four lists read from the spec
-snapshot keep its time.
+2026-11-27, keyless. Against the files it replaced, `freqCode.json` comes from
+`Frequency.json`, whose words its `A` and `M` take, `Annual` and `Monthly`, where the spec's
+description had given `annual` and `monthly`, and it leaves out the file's third row, `Q`
+Quarterly, which its `note` names. `typeCode.json` holds `C` and `S` without words, and the
+`note` of `breakdownMode.json` is reworded; no record of any other list or table changed, and
+the three lists read from the spec snapshot keep its time.
 
 | File | Origin | Fetched |
 | --- | --- | --- |
