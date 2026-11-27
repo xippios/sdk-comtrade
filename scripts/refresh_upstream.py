@@ -22,10 +22,12 @@ are its pages, its attribution and its hooks:
   ``help/<slug>.md``, and ``note`` words its row from the answer.
 
 Each file in ``REFERENCE_FILES`` is kept byte for byte as ``reference/<name>``, and the
-Help Center's home page is read for its footer alone. The licence agreement, ``LICENCE_URL``,
-which the page's footer and the Policy on Comtrade Data Use link, is no page of the
-snapshot: ``NOT_FETCHED`` gives it its row under ``Not fetched``, and no capture requests
-it. Run from the repository root::
+Help Center's home page is read for its footer alone. Four pages are no pages of the
+snapshot: the licence agreement, ``LICENCE_URL``, which the page's footer and the Policy on
+Comtrade Data Use link, the document that the page's console loads, ``CONSOLE_SPEC_URL``,
+and the data availability API and My API Portal, which kept articles link,
+``DATA_AVAILABILITY_API_URL`` and ``API_PORTAL_URL``. ``NOT_FETCHED`` gives each its row
+under ``Not fetched``, and no capture requests one. Run from the repository root::
 
     uv run scripts/refresh_upstream.py            # fetch, then write the snapshot
     uv run scripts/refresh_upstream.py --check    # fetch and compare; write nothing
@@ -57,6 +59,13 @@ DOCS_URL = "https://comtrade.un.org/en/api-docs"
 """UN Comtrade's API documentation at the address that answers it, on a host of its own
 since the site was rebuilt (https://github.com/xippios/sdk-comtrade/issues/71)."""
 LICENCE_URL = "https://comtrade.un.org/en/license-agreement"
+CONSOLE_SPEC_URL = f"{DOCS_URL}?handler=Spec&product=public"
+"""The one document that the documentation page's console loads for a viewer without an
+account, named "Public API"."""
+DATA_AVAILABILITY_API_URL = "https://comtradedeveloper.un.org/"
+"""The "data availability API", as the Help Center's article on data availability links it."""
+API_PORTAL_URL = "https://comtrade.un.org/en/api-portal"
+"""My API Portal, where a registered user requests a subscription key."""
 APIM_BASE = "https://comtradeapi.un.org/files/v1/app/apim/"
 APIDOCS_FILES = (
     "public.json",
@@ -161,9 +170,32 @@ NOT_FETCHED = (
         "on Comtrade Data Use link: terms of the data and no API documentation, and the "
         "attribution records both links",
     ),
+    NotFetched(
+        CONSOLE_SPEC_URL,
+        "The document that the documentation page's console loads for a viewer without an "
+        'account, named "Public API": the snapshot keeps the Public product\'s OpenAPI file in '
+        f"its place, `apidocs/public.json` from {APIM_BASE}public.json, beside the files of the "
+        "four other products",
+    ),
+    NotFetched(
+        DATA_AVAILABILITY_API_URL,
+        'The "data availability API" that the Help Center\'s article on data availability '
+        "links, on a host of its own: the snapshot documents the availability operations by "
+        "the products' OpenAPI files, `data/v1/getDa` in `apidocs/comtrade.json` and "
+        "`public/v1/getDA` in `apidocs/public.json`",
+    ),
+    NotFetched(
+        API_PORTAL_URL,
+        "My API Portal, which three kept articles link, where a registered user requests a "
+        "subscription key, as `help/subscriptions.md` states: a page of the user's account and "
+        "no API documentation",
+    ),
 )
-"""Every page the documentation links that the snapshot deliberately does not request, which
-the frame lists under ``Not fetched`` and never requests (conventions §3)."""
+"""The pages that the documentation links and the snapshot deliberately does not request,
+which the frame lists under ``Not fetched`` and never requests (conventions §3): the licence
+agreement, the console's document, the data availability API and My API Portal. How far the
+rule reaches into the other links of the kept articles is
+https://github.com/xippios/sdk-core/issues/638."""
 
 _NONCE = re.compile(r"""<meta\s+name=["']csp-nonce["']\s+content=["'][^"']+["']""")
 """The documentation page's Content Security Policy nonce, which its scripts carry."""
@@ -322,8 +354,9 @@ CAPTURE = """The API documentation, https://comtrade.un.org/en/api-docs, is a se
 page that names none of the OpenAPI files and prints no table of the API products: its
 console loads one product's document in a browser. The script reads the page for its
 footer's link to the licence agreement and keeps no file of it, and its row has no size or
-sha256, since its scripts carry a nonce that is new on every response. The agreement itself
-is not requested and stands under `Not fetched`. The five OpenAPI
+sha256, since its scripts carry a nonce that is new on every response. The agreement itself,
+the document that the console loads and two pages that kept articles link are not requested
+and stand under `Not fetched`. The five OpenAPI
 files of the API products are fixed pages under
 https://comtradeapi.un.org/files/v1/app/apim/, each saved byte for byte as served under
 `apidocs/`, the premium products' files among them, by the maintainer's decision of
