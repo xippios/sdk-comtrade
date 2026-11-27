@@ -173,9 +173,10 @@ follows it so:
 - `mosCode` is no parameter of the tasks: it filters, but not by the codes of
   `ModeOfSupply.json` ("`mosCode` filters, though no spec lists it";
   https://github.com/xippios/sdk-comtrade/issues/26).
-- `H6` stays a valid `cl_code`, as the spec lists it ("The classification `H6` answers HTTP
-  500"), and a count of 0 proves no code: `get_data` answers it with an empty list and a note
-  ("A code that upstream does not have counts 0").
+- `H6` stays a valid `cl_code`, as `ListofReferences.json` lists it, though the spec's enum
+  on `data/v1/get` lacks it ("The classification `H6` answers HTTP 500"), and a count of 0
+  proves no code: `get_data` answers it with an empty list and a note ("A code that upstream
+  does not have counts 0").
 - `get_metadata` takes `reporter_code` and `period`, which the spec omits ("`getMetadata`
   honours `reporterCode` and `period`"), and `get_data_availability` more than 12 periods
   ("`getDa` answers one dataset for each reporter and period").

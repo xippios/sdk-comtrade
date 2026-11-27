@@ -148,10 +148,10 @@ and `tests/fixtures/get/count_services_eb10_mos_code_mode_1.json`.
 
 ### The classification `H6` answers HTTP 500
 
-`clCode=H6`, which the spec's enum lists, answered HTTP 500 with `{"error": "Something went
-wrong. Please try again.", "details": null}` to all five tries, Switzerland and the USA, the
-product codes `TOTAL` and `01`, while a row of Switzerland's 2023 asked for in `HS` carries
-`H6`.
+`clCode=H6`, which `ListofReferences.json` lists and the spec's enum for this operation lacks,
+answered HTTP 500 with `{"error": "Something went wrong. Please try again.", "details": null}`
+to all five tries, Switzerland and the USA, the product codes `TOTAL` and `01`, while a row of
+Switzerland's 2023 asked for in `HS` carries `H6`.
 
 Probe: 2026-10-23, `data/v1/get` with `countOnly`; samples
 `tests/fixtures/get/count_cl_code_h6.json`, `tests/fixtures/get/count_cl_code_h6_retried.json`,
@@ -219,7 +219,7 @@ Probe: 2026-10-23, `data/v1/get`; sample `tests/fixtures/get/over_limit_max_reco
 ### The size of a row
 
 A row of `data/v1/get` is about 900 bytes as sent, the envelope's share included: Switzerland's
-32 rows of 2023 are 28,843 bytes. One of `data/v1/getDa` is about 540, 169 rows in 91,027
+32 rows of 2023 are 28,843 bytes. One of `data/v1/getDa` is about 540, 169 rows in 91,029
 bytes, and one of `tools/v1/getBilateralData` about 1,400, 13 rows in 18,216 bytes.
 
 Probe: 2026-10-23 and 2026-10-28, `data/v1/get`, `data/v1/getDa` and
