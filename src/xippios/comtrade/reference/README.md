@@ -27,7 +27,7 @@ the time its entry was stored), or the snapshot's `Fetched` time in
 `docs/upstream/FETCHED.md`. `scripts/refresh_reference.py` wrote every file again on
 2026-11-27, keyless. Against the files it replaced, `freqCode.json` comes from
 `Frequency.json`, whose words its `A` and `M` take, `Annual` and `Monthly`, where the spec's
-description had given `annual` and `monthly`, and it leaves out the file's third row, `Q`
+description had given `annual` and `monthly`, and it leaves out the file's row `Q`
 Quarterly, which its `note` names. `typeCode.json` holds `C` and `S` without words, and the
 `note` of `breakdownMode.json` is reworded; no record of any other list or table changed, and
 the three lists read from the spec snapshot keep its time.

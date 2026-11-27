@@ -463,7 +463,7 @@ def from_file(name: str) -> PackagedList:
 
 
 def from_spec(name: str) -> PackagedList:
-    """The list ``name`` as the spec snapshot documents it, with the wording it gives."""
+    """The list ``name`` as the spec snapshot documents it, each value alone."""
     what, records = SPEC_LISTS[name](_spec())
     fetched = _snapshot_fetched()
     note = (

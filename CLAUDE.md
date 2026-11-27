@@ -134,7 +134,7 @@ The packaged lists carry upstream's words beside each value, under upstream's na
 `qtyDescription` from `QuantityUnits.json` (`qtyUnitCode`), which has no `text`; `variable`
 and `description` from the `cmd:<clCode>` entries of `ListofReferences.json` (`clCode`),
 which has no `id` or `text` either. `freqCode` keeps the rows of `Frequency.json` whose id the
-spec's enum lists, `A` and `M`, and its `note` names the file's third row, `Q`, which
+spec's enum lists, `A` and `M`, and its `note` names the file's row `Q`, which
 `freq_code` refuses before the call ("`Frequency.json` holds `Q`, which `getDA` refuses"), by
 the maintainer's decision of 2026-11-27. A value the package adds from
 the spec stands alone (`MIF`, `XIF`, `BE`, `TM`, accepted upstream: "`BE`, `TM`, `MIF` and

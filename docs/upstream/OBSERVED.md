@@ -476,9 +476,12 @@ Probe: 2026-11-20 and 2026-11-27, `files/v1/app/reference/QuantityUnits.json` an
 ### `Frequency.json` holds `Q`, which `getDA` refuses
 
 `Frequency.json`, which `ListofReferences.json` lists for the variable Frequency, holds three
-rows, `A` Annual, `Q` Quarterly and `M` Monthly, while the `freqCode` enum of each of the five
-API documents lists `A` and `M` alone. The documents name `Q Quarterly` once, among the values
-of `period_type` of `getMBS`, an operation that the package does not wrap.
+rows, `A` Annual, `Q` Quarterly and `M` Monthly, while no `freqCode` enum of the five API
+documents lists a value but `A` and `M`: nineteen of the twenty list both, and that of
+`getTradeMatrix` in `docs/upstream/apidocs/comtrade.json` lists `A` alone. Two of the
+documents name `Q Quarterly`, `docs/upstream/apidocs/comtrade.json` and
+`docs/upstream/apidocs/public.json`, each once, among the values of `period_type` of `getMBS`,
+the operations `data/v1/getMBS` and `public/v1/getMBS`, which the package does not wrap.
 `public/v1/getDA/C/Q/HS`, sent without the key, answered HTTP 400 with `{"error": "Invalid
 parameter value", "details": [{"memberNames": ["freqCode"], "errorMessage": "The field freqCode
 is invalid"}]}`. No keyed data operation was asked for `Q`.
