@@ -572,8 +572,8 @@ class FreqCodeValue(UpstreamModel):
     """One value of ``freqCode``, a row of ``Frequency.json`` under the parameter's name.
 
     Attributes:
-        freq_code: The frequency as ``freq_code`` takes it, e.g. ``"A"``; the file holds
-            ``A`` and ``M``, the values of the spec's enum.
+        freq_code: The frequency as ``freq_code`` takes it, ``"A"`` or ``"M"``, the values
+            of the spec's enum; the file's ``Q`` is left out.
         text: Upstream's label for it in ``Frequency.json``.
     """
 

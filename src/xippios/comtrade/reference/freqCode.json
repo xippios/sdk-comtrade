@@ -2,15 +2,11 @@
   "param": "freqCode",
   "endpoint": "files/v1/app/reference/Frequency.json",
   "fetched": "2026-11-27T12:01:42Z",
-  "note": "The ids of Frequency.json with their text, a row of each value of the freqCode enum of docs/upstream/apidocs/comtrade.json (operation get) among them.",
+  "note": "The ids of Frequency.json that the freqCode enum of docs/upstream/apidocs/comtrade.json (operation get) lists, with their text. Q (Quarterly) left out: a row of Frequency.json that the enum does not list.",
   "records": [
     {
       "freqCode": "A",
       "text": "Annual"
-    },
-    {
-      "freqCode": "Q",
-      "text": "Quarterly"
     },
     {
       "freqCode": "M",

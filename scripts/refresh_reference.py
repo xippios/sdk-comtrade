@@ -24,9 +24,7 @@ What the fetches declare is UN Comtrade's:
   ``QuantityUnits.json`` (the codes ``qtyUnitCode`` carries) with their ``qtyAbbr`` and
   ``qtyDescription``, and the ``clCode`` values as the ``cmd:<clCode>`` categories of
   ``ListofReferences.json`` with their ``variable`` and ``description``. A row the row
-  model does not read, or a key it does not know, stops the script, and so does a
-  ``Frequency.json`` without a row of each value of the spec's ``freqCode`` enum, ``A`` and
-  ``M``, since every task takes both.
+  model does not read, or a key it does not know, stops the script.
 - ``TABLES`` are reference files that are tables rather than value lists:
   ``Reporters.json``, ``partnerAreas.json``, ``TradeDataItems.json``,
   ``ListofReferences.json`` (the index of the reference files) and
@@ -42,6 +40,10 @@ What the fetches declare is UN Comtrade's:
   only when a recorded answer shows upstream accepting it, and any value a recorded
   answer shows refused is left out. ``EVIDENCE`` names those recordings, and the list's
   ``note`` names each exception, one sentence per value: the decision and the evidence.
+- ``WITHIN_ENUM`` cuts ``freqCode`` to the values of the spec's enum of the same name,
+  ``A`` and ``M``, which every task takes: a value that ``Frequency.json`` holds no row of
+  stops the script before it writes, and a row whose id the enum does not list, ``Q``, is
+  left out, the list's ``note`` naming it with its text, one sentence per row.
 - ``SPEC_LISTS`` have no reference file. They are read from the snapshot of the spec,
   ``docs/upstream/apidocs/comtrade.json``, operation ``get``: the ``typeCode`` and
   ``breakdownMode`` enums and the names ``aggregateBy``'s description lists, each value
@@ -135,23 +137,6 @@ async def _cl_codes() -> tuple[Records, datetime]:
     return records, retrieved_at
 
 
-async def _freq_codes() -> tuple[Records, datetime]:
-    """The ``id`` of each row of ``Frequency.json`` as ``freqCode``, with its ``text``.
-
-    A value of the spec's ``freqCode`` enum, ``A`` or ``M``, that no row holds stops the
-    script before it writes: the reading follows the file's rows before it runs again.
-    """
-    records, retrieved_at = await _coded("Frequency.json", "freqCode")
-    held = {record["freqCode"] for record in records}
-    missing = [value for value in _enum(_spec(), "freqCode") if value not in held]
-    if missing:
-        raise SystemExit(
-            f"Frequency.json: no row of {', '.join(missing)}, which the freqCode enum of "
-            f"{SPEC_NAME} lists; nothing was written"
-        )
-    return records, retrieved_at
-
-
 async def _qty_codes() -> tuple[Records, datetime]:
     units, retrieved_at = await _rows("QuantityUnits.json", QuantityUnit)
     records = [
@@ -204,9 +189,9 @@ LISTS_FROM_FILES: dict[str, tuple[str, str, Fetcher]] = {
     ),
     "freqCode": (
         "Frequency.json",
-        "The ids of Frequency.json with their text, a row of each value of the freqCode enum "
-        f"of docs/upstream/{SPEC_NAME} (operation get) among them",
-        _freq_codes,
+        "The ids of Frequency.json that the freqCode enum of "
+        f"docs/upstream/{SPEC_NAME} (operation get) lists, with their text",
+        lambda: _coded("Frequency.json", "freqCode"),
     ),
 }
 """Lists from reference files: name to (the file, what the list is, fetcher through ``api/``).
@@ -292,6 +277,40 @@ SUPPLEMENTS: dict[str, tuple[str, Callable[[dict[str, Any]], list[str]], bool]] 
     ),
 }
 """Spec values reconciled with a reference-file list: (origin, reader, add unexercised ones)."""
+
+WITHIN_ENUM: dict[str, str] = {
+    "freqCode": f"the freqCode enum of docs/upstream/{SPEC_NAME} (operation get)",
+}
+"""Reference-file lists cut to the values of the spec's enum of their name: name to the enum.
+
+``Frequency.json`` holds a row whose id the ``freqCode`` enum of no API document lists
+("`Frequency.json` holds `Q`, which `getDA` refuses" in ``docs/upstream/OBSERVED.md``), so
+the package offers ``A`` and ``M`` and the list's ``note`` names ``Q``, by the maintainer's
+decision of 2026-11-27 (https://github.com/xippios/sdk-comtrade/issues/68).
+"""
+
+
+def _within_enum(name: str, file: str, records: Records) -> tuple[Records, list[str]]:
+    """``records`` cut to the values of the spec's enum ``name``, and a sentence per row left out.
+
+    Raises:
+        SystemExit: A value of the enum has no row in ``file``, before anything is written:
+            the reading follows the file's rows before the script runs again.
+    """
+    values = _enum(_spec(), name)
+    held = {record[name] for record in records}
+    if missing := [value for value in values if value not in held]:
+        raise SystemExit(
+            f"{file}: no row of {', '.join(missing)}, which {WITHIN_ENUM[name]} lists; "
+            "nothing was written"
+        )
+    left_out = [
+        f"{record[name]} ({record['text']}) left out: a row of {file} that the enum does not list."
+        for record in records
+        if record[name] not in values
+    ]
+    return [record for record in records if record[name] in values], left_out
+
 
 _H6 = (
     "count_cl_code_h6.json",
@@ -425,12 +444,16 @@ def _value_list(
 def from_file(name: str) -> PackagedList:
     """The reference-file list ``name``, fetched now and reconciled with the spec.
 
-    ``fetched`` is the file's ``retrieved_at``. A value the reconciliation adds keeps its
-    value alone, since the spec gives it no text; one it removes takes its record with it.
+    ``fetched`` is the file's ``retrieved_at``. A list of ``WITHIN_ENUM`` keeps the rows of
+    its enum's values alone. A value the reconciliation adds keeps its value alone, since the
+    spec gives it no text; one it removes takes its record with it.
     """
     file, what, fetch = LISTS_FROM_FILES[name]
     records, fetched = sync(fetch)()
     note = f"{what}."
+    if name in WITHIN_ENUM:
+        records, left_out = _within_enum(name, file, records)
+        note = " ".join([note, *left_out])
     if name in SUPPLEMENTS:
         values, exceptions = _reconcile(name, [record[name] for record in records], _spec())
         by_value = {record[name]: record for record in records}
@@ -514,9 +537,9 @@ ORIGINS: dict[str, str | Callable[[PackagedList], str]] = {
     ),
     "freqCode": (
         "`id` and `text` of https://comtradeapi.un.org/files/v1/app/reference/Frequency.json, "
-        "which `ListofReferences.json` lists for the variable Frequency, a row of each value "
-        "of the `freqCode` enum of `docs/upstream/apidocs/comtrade.json` (operation `get`) "
-        "among them"
+        "which `ListofReferences.json` lists for the variable Frequency, the rows whose id the "
+        "`freqCode` enum of `docs/upstream/apidocs/comtrade.json` (operation `get`) lists; the "
+        "file's `Q` left out, as the file's `note` says"
     ),
     "mosCode": (
         "`id` and `text` of https://comtradeapi.un.org/files/v1/app/reference/ModeOfSupply.json. "

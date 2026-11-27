@@ -85,10 +85,10 @@ _SPEC = (
 NO_LIVE_LIST: dict[str, str] = {
     "typeCode": _SPEC,
     "freqCode": (
-        "The ids of Frequency.json, which scripts/refresh_reference.py writes only where a row "
-        "holds each value of the spec snapshot's freqCode enum, A and M, whose --check "
-        "compares that enum with upstream's; the reference refresh before each release "
-        "fetches the file's words again."
+        "The rows of Frequency.json cut to the values of the spec snapshot's freqCode enum, A "
+        "and M, the file's Q left out, so no file of upstream's holds it; "
+        "scripts/refresh_reference.py rebuilds it from both and stops where the file lacks A "
+        "or M."
     ),
     "breakdownMode": _SPEC,
     "aggregateBy": _SPEC,

@@ -80,7 +80,7 @@ QTY_UNIT_CODES = _codes("qtyUnitCode", "qtyUnitCode", "qtyDescription")
 """The quantity units of ``QuantityUnits.json``, each named by its ``qtyDescription``."""
 
 FREQ_CODES = _codes("freqCode", "freqCode", "text")
-"""The frequencies of ``Frequency.json``, ``A`` and ``M`` among them, each named by its ``text``."""
+"""The frequencies of the spec's enum, ``A`` and ``M``, named by their ``Frequency.json`` text."""
 
 TYPE_CODES = _codes("typeCode", "typeCode")
 """The types of trade of the spec, ``C`` and ``S``, each named by its own code."""
