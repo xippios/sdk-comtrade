@@ -46,7 +46,8 @@ tests/
                    reference/ for the reference files, never hand-written
   test_scripts.py  the reference script's declaration, offline: its lists, its provenance
                    rows against the committed ones, the spec's lists, the reading of
-                   Frequency.json and its stop before a write, and that it sends no key
+                   Frequency.json, its cut to the spec's frequencies and its stop before a
+                   write, and that it sends no key
   test_refresh_upstream.py  the snapshot script's declaration and hooks, offline: its
                    pages, the five OpenAPI files against the committed ones, the statements
                    of the attribution against the kept articles and the documentation

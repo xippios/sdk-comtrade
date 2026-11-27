@@ -15,7 +15,7 @@ reference files, each fetched without the key by the fetch that
 ``scripts/refresh_reference.py`` declares, so the comparison holds the records a refresh
 would write. The six others stand in ``NO_LIVE_LIST``, each with its reason: the three lists
 read from the spec snapshot, the two reconciled with it and ``freqCode``, which the refresh
-checks against it. Core's family check imports this module offline and holds every packaged
+cuts to it. Core's family check imports this module offline and holds every packaged
 list in one of the two.
 """
 
