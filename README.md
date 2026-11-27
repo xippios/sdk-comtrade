@@ -8,7 +8,7 @@ retrieved_at, request).
 
 ## Scope
 
-Of UN Comtrade's API the package wraps eight of the 28 operations that its five API products
+Of UN Comtrade's API the package wraps eight of the 29 operations that its five API products
 document (`docs/upstream/apidocs/`). Of Comtrade it wraps the final data, `data/v1/get`, which
 `count_data` asks with `countOnly` and `get_data` asks for the rows, the availability of the
 datasets, `data/v1/getDa`, their publication notes, `data/v1/getMetadata`, and the release
@@ -16,7 +16,7 @@ pipeline, `data/v1/getLiveUpdate`. Of Public it wraps the recent releases,
 `public/v1/getComtradeReleases`, and the shares of world trade, `public/v1/getWorldShare`, and
 of Comtrade Tools both operations, `tools/v1/getTradeBalance` and `tools/v1/getBilateralData`.
 Beside them the list tasks answer from UN Comtrade's public reference files, packaged with
-this version or fetched without the key. The twenty operations that no task wraps yet stand
+this version or fetched without the key. The twenty-one operations that no task wraps yet stand
 here with their public issues:
 
 - The two previews of Public, `public/v1/preview` and `public/v1/previewTariffline`
@@ -29,10 +29,11 @@ here with their public issues:
 - The unit values, the trade matrix and the two MBS series, `data/v1/getSUV`,
   `data/v1/getTradeMatrix`, `data/v1/getMBS` and `public/v1/getMBS`
   (https://github.com/xippios/sdk-comtrade/issues/43).
-- The nine operations of the premium Bulk and Async products, which a free key does not
+- The ten operations of the premium Bulk and Async products, which a free key does not
   reach: `bulk/v1/get`, `bulk/v1/file`, `bulk/v1/getTariffline`, `bulk/v1/fileTariffline`,
-  `bulk/v1/getClassic`, `bulk/v1/fileClassic`, `async/v1/get`, `async/v1/getTariffline` and
-  `async/v1/getDa` (https://github.com/xippios/sdk-comtrade/issues/44).
+  `bulk/v1/getClassic`, `bulk/v1/fileClassic`, the trade matrix's file
+  `bulk/v1/fileTradeMatrix`, `async/v1/get`, `async/v1/getTariffline` and `async/v1/getDa`
+  (https://github.com/xippios/sdk-comtrade/issues/44).
 
 A documented choice of a wrapped operation that a caller cannot make stands here with its
 public issue:
