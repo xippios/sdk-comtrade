@@ -3538,6 +3538,7 @@ NOT_WRAPPED_YET: dict[int, tuple[str, ...]] = {
         "bulk/v1/fileTariffline",
         "bulk/v1/getClassic",
         "bulk/v1/fileClassic",
+        "bulk/v1/fileTradeMatrix",
         "async/v1/get",
         "async/v1/getTariffline",
         "async/v1/getDa",
@@ -3560,7 +3561,7 @@ def _spec_operations() -> list[str]:
 
 
 def test_the_readme_scope_names_every_operation_once() -> None:
-    """The README's ``## Scope`` names each of the 28 operations of UN Comtrade's five API
+    """The README's ``## Scope`` names each of the 29 operations of UN Comtrade's five API
     products once, by its path: the eight that the package wraps, and each that it does not
     wrap yet in a bullet with its public issue. Each documented choice of a wrapped operation
     that a caller cannot make stands in a bullet of its own with its public issue,
@@ -3586,7 +3587,7 @@ def test_the_readme_scope_names_every_operation_once() -> None:
         )
     }
     not_wrapped = {operation for names in NOT_WRAPPED_YET.values() for operation in names}
-    assert len(operations) == len(set(operations)) == 28
+    assert len(operations) == len(set(operations)) == 29
     assert set(operations) == wrapped | not_wrapped
     assert len(wrapped) == 8
     assert not wrapped & not_wrapped
