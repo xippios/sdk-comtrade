@@ -228,7 +228,7 @@ def test_count_data_sends_the_recorded_count_request(replay_fixture: ReplayFixtu
     result = tasks.count_data(**CH_EXPORTS_2023)
     assert result.data == 32
     assert result.meta.names == {
-        "freq_code": {"A": "annual"},
+        "freq_code": {"A": "Annual"},
         "reporter_code": {"757": "Switzerland"},
         "partner_code": {"0": "World"},
         "flow_code": {"X": "Export"},
@@ -308,7 +308,7 @@ def test_get_data_returns_empty_after_one_call_when_nothing_matches(
     ]
     assert result.meta.notes == [tasks.COUNTED_NONE]
     assert result.meta.names == {
-        "freq_code": {"A": "annual"},
+        "freq_code": {"A": "Annual"},
         "reporter_code": {"757": "Switzerland"},
         "partner_code": {"0": "World"},
         "flow_code": {"X": "Export"},
@@ -338,7 +338,7 @@ def test_several_codes_are_one_list_joined_as_upstream_takes_them(
     assert result.data == []
     assert result.meta.request["reporter_code"] == [757, 842]
     assert result.meta.names == {
-        "freq_code": {"A": "annual"},
+        "freq_code": {"A": "Annual"},
         "reporter_code": {"757": "Switzerland", "842": "USA"},
     }
     assert result.meta.notes == [tasks.COUNTED_NONE]
@@ -564,7 +564,7 @@ def test_every_answer_names_the_codes_of_its_rows(replay_fixture: ReplayFixture)
     names = answer.meta.names
     assert names["reporter_code"] == {"757": "Switzerland"}
     assert names["partner_code"] == names["partner2_code"] == {"0": "World"}
-    assert names["freq_code"] == {"A": "annual"}
+    assert names["freq_code"] == {"A": "Annual"}
     assert names["flow_code"] == {"X": "Export"}
     assert names["customs_code"]["C00"] == "TOTAL customs procedure codes"
     assert names["mot_code"]["9100"] == "Pipelines and cables"
@@ -1232,7 +1232,7 @@ async def test_an_unknown_customs_code_over_mcp() -> None:
 
 
 TEXT_FIELDS: dict[str, tuple[str, ...]] = {
-    "typeCode": ("text",),
+    "typeCode": (),
     "freqCode": ("text",),
     "clCode": ("variable", "description"),
     "flowCode": ("text",),
@@ -1245,11 +1245,11 @@ TEXT_FIELDS: dict[str, tuple[str, ...]] = {
 }
 """The fields upstream words a list's values in, beside the value under the parameter's name.
 
-``text`` in ``tradeRegimes.json``, ``CustomsCodes.json``, ``ModeOfTransportCodes.json``
-and ``ModeOfSupply.json``; ``qtyAbbr`` and ``qtyDescription`` in ``QuantityUnits.json``;
-``variable`` and ``description`` in ``ListofReferences.json``; ``text`` cut from the
-spec's descriptions of ``typeCode`` and ``freqCode``, which word every value, where those
-of ``breakdownMode`` and ``aggregateBy`` word none.
+``text`` in ``tradeRegimes.json``, ``CustomsCodes.json``, ``ModeOfTransportCodes.json``,
+``ModeOfSupply.json`` and ``Frequency.json`` (``freqCode``); ``qtyAbbr`` and
+``qtyDescription`` in ``QuantityUnits.json``; ``variable`` and ``description`` in
+``ListofReferences.json``. The lists read from the spec, ``typeCode``, ``breakdownMode``
+and ``aggregateBy``, carry none, since UN Comtrade lists no reference file of them.
 """
 
 
@@ -1294,7 +1294,7 @@ def test_the_spec_lists_name_the_operation_they_were_read_from() -> None:
         re.MULTILINE,
     )
     assert row is not None
-    for name in ["typeCode", "freqCode", "breakdownMode", "aggregateBy"]:
+    for name in ["typeCode", "breakdownMode", "aggregateBy"]:
         packaged = PackagedList.load(PACKAGE, name)
         assert packaged.endpoint == "files/v1/app/apim/comtrade.json", name
         assert packaged.fetched == datetime.fromisoformat(row.group(1)), name
@@ -1304,6 +1304,60 @@ def test_the_spec_lists_name_the_operation_they_were_read_from() -> None:
             f"files/v1/app/apim/comtrade.json fetched {packaged.fetched:%Y-%m-%d}: operation "
             "get, the "
         ), name
+
+
+def test_the_frequencies_are_upstreams_frequency_json() -> None:
+    """``freqCode`` names its codes in the words of UN Comtrade's own ``Frequency.json``.
+
+    ``ListofReferences.json`` lists the file as the list of the variable ``Frequency``. The
+    list keeps its rows of ``A`` and ``M``, the values of the spec's ``freqCode`` enum, each
+    with its ``text``, and its ``note`` names the file's row ``Q``, which it leaves out, by
+    the maintainer's decision of 2026-11-27 (https://github.com/xippios/sdk-comtrade/issues/68).
+    """
+    frequency = PackagedList.load(PACKAGE, "freqCode")
+    [listed] = [
+        record["fileuri"]
+        for record in PackagedList.load(PACKAGE, "ListofReferences").records
+        if record["category"] == "freq"
+    ]
+    assert listed == "https://comtradeapi.un.org/files/v1/app/reference/Frequency.json"
+    assert frequency.endpoint == "files/v1/app/reference/Frequency.json"
+    assert frequency.note is not None
+    assert frequency.note.startswith(
+        "The ids of Frequency.json that the freqCode enum of docs/upstream/apidocs/comtrade.json"
+    )
+    assert "Q (Quarterly) left out: a row of Frequency.json" in frequency.note
+    assert [record["freqCode"] for record in frequency.records] == ["A", "M"]
+    assert all(record.get("text") for record in frequency.records)
+
+
+@pytest.mark.parametrize(
+    ("task", "arguments"),
+    [
+        (tasks.count_data, {"type_code": "C", "cl_code": "HS", "reporter_code": "757"}),
+        (tasks.get_world_share, {"type_code": "C", "reporter_code": "757"}),
+    ],
+    ids=["keyed", "keyless"],
+)
+def test_a_quarterly_frequency_is_refused_before_any_request(
+    respx_mock: respx.MockRouter, task: Callable[..., object], arguments: dict[str, Any]
+) -> None:
+    """``Q``, a row of ``Frequency.json``, is no value of the spec's ``freqCode`` enum.
+
+    UN Comtrade refused it with HTTP 400 ("`Frequency.json` holds `Q`, which `getDA`
+    refuses" in ``docs/upstream/OBSERVED.md``), so ``freq_code="Q"`` is refused as the
+    other values that the spec does not list are, and nothing is sent.
+    """
+    with pytest.raises(UnknownCode) as info:
+        task(freq_code="Q", period="2023", **arguments)
+    assert (info.value.param, info.value.value, info.value.list_name) == (
+        "freq_code",
+        "Q",
+        "freqCode",
+    )
+    assert "Nothing was sent." in str(info.value)
+    assert _reason_text("freqCode") in str(info.value)
+    assert not respx_mock.calls
 
 
 def test_no_generated_module_repeats_the_packaged_lists() -> None:
@@ -2164,8 +2218,8 @@ def test_list_codes_carries_upstreams_words(respx_mock: respx.MockRouter) -> Non
     }
     assert by_value("clCode")["H6"]["variable"] == "Product [HS 2022]"
     assert by_value("clCode")["BE"] == {"variable": None, "description": None}
-    assert by_value("typeCode") == {"C": {"text": "commodities"}, "S": {"text": "service"}}
-    assert by_value("freqCode") == {"A": {"text": "annual"}, "M": {"text": "monthly"}}
+    assert by_value("typeCode") == {"C": {}, "S": {}}, "no file of upstream's words them"
+    assert by_value("freqCode") == {"A": {"text": "Annual"}, "M": {"text": "Monthly"}}
     assert by_value("breakdownMode") == {"classic": {}, "plus": {}}
     assert list(by_value("aggregateBy"))[:2] == ["cmdCode", "period"]
     assert not respx_mock.calls
@@ -2318,7 +2372,7 @@ def test_get_data_availability_for_every_reporter(replay_fixture: ReplayFixture)
 def test_a_period_nobody_reported_has_no_datasets(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get_da", "nobody_1900")
     nobody = tasks.get_data_availability("C", "A", "HS", period="1900")
-    assert (nobody.data, nobody.meta.names) == ([], {"freq_code": {"A": "annual"}})
+    assert (nobody.data, nobody.meta.names) == ([], {"freq_code": {"A": "Annual"}})
 
 
 def test_get_data_availability_by_publication_date(

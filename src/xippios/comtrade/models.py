@@ -556,31 +556,29 @@ class QuantityUnit(UpstreamModel):
 
 
 class TypeCodeValue(UpstreamModel):
-    """One value of ``typeCode``, packaged from the spec with the wording it gives the value.
+    """One value of ``typeCode``, a member of the spec's enum for the parameter, without words.
+
+    UN Comtrade lists no reference file of ``typeCode``, so no value carries upstream's
+    words, as no value of ``breakdownMode`` or ``aggregateBy`` does.
 
     Attributes:
-        type_code: The value as ``type_code`` takes it, e.g. ``"C"``.
-        text: The spec's wording for it, cut from the parameter's description "Type of
-            trade: C for commodities and S for service", e.g. ``"commodities"``; ``None``
-            where the description gives none.
+        type_code: The value as ``type_code`` takes it, ``"C"`` or ``"S"``.
     """
 
     type_code: str = Field(validation_alias="typeCode")
-    text: str | None = None
 
 
 class FreqCodeValue(UpstreamModel):
-    """One value of ``freqCode``, packaged from the spec with the wording it gives the value.
+    """One value of ``freqCode``, a row of ``Frequency.json`` under the parameter's name.
 
     Attributes:
-        freq_code: The value as ``freq_code`` takes it, e.g. ``"A"``.
-        text: The spec's wording for it, cut from the parameter's description "Trade
-            frequency: A for annual and M for monthly", e.g. ``"annual"``; ``None`` where
-            the description gives none.
+        freq_code: The frequency as ``freq_code`` takes it, ``"A"`` or ``"M"``, the values
+            of the spec's enum; the file's ``Q`` is left out.
+        text: Upstream's label for it in ``Frequency.json``.
     """
 
     freq_code: str = Field(validation_alias="freqCode")
-    text: str | None = None
+    text: str
 
 
 class ClCodeValue(UpstreamModel):
