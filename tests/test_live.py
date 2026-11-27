@@ -10,12 +10,13 @@ the count a release cites (``/release-prep``), so this header states none.
 
 The star import collects core's nightly comparison of each packaged list with the list
 upstream serves now, ``test_packaged_list_is_current``, once per entry of ``LIVE_LISTS``
-(sdk-core ADR-0055): the nine lists and tables that UN Comtrade serves as public reference
-files, each fetched without the key by the fetch that ``scripts/refresh_reference.py``
-declares, so the comparison holds the records a refresh would write. The six lists read from
-the spec snapshot or reconciled with it stand in ``NO_LIVE_LIST``, each with its reason.
-Core's family check imports this module offline and holds every packaged list in one of the
-two.
+(sdk-core ADR-0055): nine of the ten lists and tables that UN Comtrade serves as public
+reference files, each fetched without the key by the fetch that
+``scripts/refresh_reference.py`` declares, so the comparison holds the records a refresh
+would write. The six others stand in ``NO_LIVE_LIST``, each with its reason: the three lists
+read from the spec snapshot, the two reconciled with it and ``freqCode``, which the refresh
+checks against it. Core's family check imports this module offline and holds every packaged
+list in one of the two.
 """
 
 import importlib.util
@@ -83,7 +84,12 @@ _SPEC = (
 
 NO_LIVE_LIST: dict[str, str] = {
     "typeCode": _SPEC,
-    "freqCode": _SPEC,
+    "freqCode": (
+        "The ids of Frequency.json, which scripts/refresh_reference.py writes only where a row "
+        "holds each value of the spec snapshot's freqCode enum, A and M, whose --check "
+        "compares that enum with upstream's; the reference refresh before each release "
+        "fetches the file's words again."
+    ),
     "breakdownMode": _SPEC,
     "aggregateBy": _SPEC,
     "clCode": (

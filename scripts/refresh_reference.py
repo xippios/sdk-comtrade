@@ -19,12 +19,14 @@ What the fetches declare is UN Comtrade's:
 
 - ``LISTS_FROM_FILES`` come from UN Comtrade's public reference files, fetched through the
   layer-1 wrapper ``api.reference_rows`` (no key needed or sent): the ``id`` and ``text`` of
-  ``tradeRegimes.json``, ``ModeOfTransportCodes.json``, ``CustomsCodes.json`` and
-  ``ModeOfSupply.json``, the ``qtyCode`` values of ``QuantityUnits.json`` (the codes
-  ``qtyUnitCode`` carries) with their ``qtyAbbr`` and ``qtyDescription``, and the
-  ``clCode`` values as the ``cmd:<clCode>`` categories of ``ListofReferences.json`` with
-  their ``variable`` and ``description``. A key the row model does not know stops the
-  script.
+  ``tradeRegimes.json``, ``ModeOfTransportCodes.json``, ``CustomsCodes.json``,
+  ``ModeOfSupply.json`` and ``Frequency.json``, the ``qtyCode`` values of
+  ``QuantityUnits.json`` (the codes ``qtyUnitCode`` carries) with their ``qtyAbbr`` and
+  ``qtyDescription``, and the ``clCode`` values as the ``cmd:<clCode>`` categories of
+  ``ListofReferences.json`` with their ``variable`` and ``description``. A row the row
+  model does not read, or a key it does not know, stops the script, and so does a
+  ``Frequency.json`` without a row of each value of the spec's ``freqCode`` enum, ``A`` and
+  ``M``, since every task takes both.
 - ``TABLES`` are reference files that are tables rather than value lists:
   ``Reporters.json``, ``partnerAreas.json``, ``TradeDataItems.json``,
   ``ListofReferences.json`` (the index of the reference files) and
@@ -41,12 +43,13 @@ What the fetches declare is UN Comtrade's:
   answer shows refused is left out. ``EVIDENCE`` names those recordings, and the list's
   ``note`` names each exception, one sentence per value: the decision and the evidence.
 - ``SPEC_LISTS`` have no reference file. They are read from the snapshot of the spec,
-  ``docs/upstream/apidocs/comtrade.json``, operation ``get``: the ``typeCode``,
-  ``freqCode`` and ``breakdownMode`` enums, each value with the wording the parameter's
-  description gives it as ``text`` ("C for commodities" gives ``C`` the text
-  ``commodities``; ``breakdownMode``'s gives none), and the names ``aggregateBy``'s
-  description lists, without wording. Their ``endpoint`` is the URL path upstream serves
-  the spec at, their ``fetched`` the snapshot's, from ``docs/upstream/FETCHED.md``.
+  ``docs/upstream/apidocs/comtrade.json``, operation ``get``: the ``typeCode`` and
+  ``breakdownMode`` enums and the names ``aggregateBy``'s description lists, each value
+  alone. A label names a code in upstream's own words, from upstream's own list (sdk-core
+  ``docs/conventions.md``, §14, sentence 3), and a parameter's description is none, so no
+  value of these lists carries words, though ``typeCode``'s description words its two.
+  Their ``endpoint`` is the URL path upstream serves the spec at, their ``fetched`` the
+  snapshot's, from ``docs/upstream/FETCHED.md``.
 
 UN Comtrade reports no quota in a header: its ``x-ratelimit-*`` headers describe the
 per-second pace, not the daily 500, so ``quota_header`` is ``None``. Run from the
@@ -56,8 +59,9 @@ repository root; no API key is needed or sent::
     uv run python scripts/refresh_reference.py --only motCode   # one list, the rest kept
     uv run python scripts/refresh_reference.py --render-only    # no request
 
-A run sends ten requests, one per reference file, the client's cache answering the
-``ListofReferences`` table from the ``clCode`` list's fetch; the four spec lists send none.
+A run sends eleven requests, one per reference file, ``Frequency.json`` among them, the
+client's cache answering the ``ListofReferences`` table from the ``clCode`` list's fetch;
+the three spec lists send none.
 """
 
 import functools
@@ -131,6 +135,23 @@ async def _cl_codes() -> tuple[Records, datetime]:
     return records, retrieved_at
 
 
+async def _freq_codes() -> tuple[Records, datetime]:
+    """The ``id`` of each row of ``Frequency.json`` as ``freqCode``, with its ``text``.
+
+    A value of the spec's ``freqCode`` enum, ``A`` or ``M``, that no row holds stops the
+    script before it writes: the reading follows the file's rows before it runs again.
+    """
+    records, retrieved_at = await _coded("Frequency.json", "freqCode")
+    held = {record["freqCode"] for record in records}
+    missing = [value for value in _enum(_spec(), "freqCode") if value not in held]
+    if missing:
+        raise SystemExit(
+            f"Frequency.json: no row of {', '.join(missing)}, which the freqCode enum of "
+            f"{SPEC_NAME} lists; nothing was written"
+        )
+    return records, retrieved_at
+
+
 async def _qty_codes() -> tuple[Records, datetime]:
     units, retrieved_at = await _rows("QuantityUnits.json", QuantityUnit)
     records = [
@@ -181,6 +202,12 @@ LISTS_FROM_FILES: dict[str, tuple[str, str, Fetcher]] = {
         "codes qtyUnitCode and altQtyUnitCode carry on trade rows",
         _qty_codes,
     ),
+    "freqCode": (
+        "Frequency.json",
+        "The ids of Frequency.json with their text, a row of each value of the freqCode enum "
+        f"of docs/upstream/{SPEC_NAME} (operation get) among them",
+        _freq_codes,
+    ),
 }
 """Lists from reference files: name to (the file, what the list is, fetcher through ``api/``).
 
@@ -216,34 +243,14 @@ def _enum(spec: dict[str, Any], name: str) -> list[str]:
     return [str(value) for value in _parameter(spec, name)["schema"]["enum"]]
 
 
-_WORDING = re.compile(r"(\S+) for (.+?)(?= and |, |$)")
-"""One value's wording in a parameter's description: ``C for commodities``."""
+def _enum_values(spec: dict[str, Any], name: str) -> tuple[str, Records]:
+    """The enum of parameter ``name``, each value a record of one field, without words.
 
-
-def _enum_records(spec: dict[str, Any], name: str) -> tuple[str, Records]:
-    """The enum of parameter ``name``, each value with the wording its description gives it.
-
-    The description lists the wording after a colon ("Type of trade: C for commodities and
-    S for service"); a value it does not word is a record of one field. A worded value the
-    enum lacks stops the script.
+    No reference file of UN Comtrade's lists the parameter, and the wording of its
+    description is no list of upstream's, so a value takes none.
     """
-    values = _enum(spec, name)
-    description = str(_parameter(spec, name)["description"])
-    _, colon, listing = description.partition(":")
-    wording = dict(_WORDING.findall(listing.strip())) if colon else {}
-    unknown = sorted(set(wording) - set(values))
-    if unknown:
-        raise SystemExit(f"{SPEC_NAME}: {name}'s description words {unknown}, not in its enum")
-    records = [
-        {name: value, "text": wording[value]} if value in wording else {name: value}
-        for value in values
-    ]
-    said = (
-        f'with the wording its description, "{description}", gives each value as text'
-        if wording
-        else f'whose description, "{description}", words no value'
-    )
-    return f"the {name} enum, {said}", records
+    records = [{name: value} for value in _enum(spec, name)]
+    return f"the {name} enum, values alone: no reference file of UN Comtrade's lists them", records
 
 
 def _aggregate_by(spec: dict[str, Any]) -> tuple[str, Records]:
@@ -256,9 +263,8 @@ def _aggregate_by(spec: dict[str, Any]) -> tuple[str, Records]:
 
 
 SPEC_LISTS: dict[str, Callable[[dict[str, Any]], tuple[str, Records]]] = {
-    "typeCode": lambda spec: _enum_records(spec, "typeCode"),
-    "freqCode": lambda spec: _enum_records(spec, "freqCode"),
-    "breakdownMode": lambda spec: _enum_records(spec, "breakdownMode"),
+    "typeCode": lambda spec: _enum_values(spec, "typeCode"),
+    "breakdownMode": lambda spec: _enum_values(spec, "breakdownMode"),
     "aggregateBy": _aggregate_by,
 }
 """Lists from the spec snapshot, operation ``get``: name to its reader, which returns what
@@ -507,9 +513,10 @@ ORIGINS: dict[str, str | Callable[[PackagedList], str]] = {
         "`note`"
     ),
     "freqCode": (
-        "`docs/upstream/apidocs/comtrade.json`, operation `get`, the `freqCode` enum, each "
-        "value's `text` the wording of the description (\"Trade frequency: A for annual and M "
-        'for monthly"; same snapshot)'
+        "`id` and `text` of https://comtradeapi.un.org/files/v1/app/reference/Frequency.json, "
+        "which `ListofReferences.json` lists for the variable Frequency, a row of each value "
+        "of the `freqCode` enum of `docs/upstream/apidocs/comtrade.json` (operation `get`) "
+        "among them"
     ),
     "mosCode": (
         "`id` and `text` of https://comtradeapi.un.org/files/v1/app/reference/ModeOfSupply.json. "
@@ -528,9 +535,8 @@ ORIGINS: dict[str, str | Callable[[PackagedList], str]] = {
         "`qtyUnitCode` and `altQtyUnitCode` carry on trade rows"
     ),
     "typeCode": (
-        "`docs/upstream/apidocs/comtrade.json`, operation `get`, the `typeCode` enum, each "
-        "value's `text` the wording the parameter's description gives it (\"Type of trade: C "
-        'for commodities and S for service"; snapshot of '
+        "`docs/upstream/apidocs/comtrade.json`, operation `get`, the `typeCode` enum, values "
+        "alone: no reference file of UN Comtrade's lists them (snapshot of "
         "https://comtradeapi.un.org/files/v1/app/apim/comtrade.json)"
     ),
     "Reporters": _rows_of(

@@ -917,14 +917,14 @@ async def list_codes_async(param: str) -> Result[list[CodeValue]]:
             ``"motCode"``, ``"clCode"``, ``"typeCode"``, ``"freqCode"``,
             ``"breakdownMode"``, ``"aggregateBy"``, ``"qtyUnitCode"`` or ``"mosCode"``.
             The words are ``text`` from the reference files for ``flowCode``
-            (``tradeRegimes.json``), ``customsCode``, ``motCode`` and ``mosCode``;
-            ``qty_abbr`` and ``qty_description`` for ``qtyUnitCode``; ``variable`` and
-            ``description`` from ``ListofReferences.json`` for ``clCode``; for
-            ``typeCode`` and ``freqCode`` ``text`` is the spec's wording (``"C"``
-            commodities, ``"A"`` annual). ``"MIF"`` and ``"XIF"`` (``flowCode``), ``"BE"``
-            and ``"TM"`` (``clCode``), ``breakdownMode`` and ``aggregateBy`` carry no
-            words. ``mosCode`` lists ``ModeOfSupply.json``'s ids, not proven parameter
-            values (``data/v1/get`` refused ``"Mode 1"`` and accepted ``"0"`` and ``"1"``).
+            (``tradeRegimes.json``), ``freqCode`` (``Frequency.json``), ``customsCode``,
+            ``motCode`` and ``mosCode``; ``qty_abbr`` and ``qty_description`` for
+            ``qtyUnitCode``; ``variable`` and ``description`` from
+            ``ListofReferences.json`` for ``clCode``. ``"MIF"`` and ``"XIF"``
+            (``flowCode``), ``"BE"`` and ``"TM"`` (``clCode``), ``typeCode``,
+            ``breakdownMode`` and ``aggregateBy`` carry no words. ``mosCode`` lists
+            ``ModeOfSupply.json``'s ids, not proven parameter values (``data/v1/get``
+            refused ``"Mode 1"`` and accepted ``"0"`` and ``"1"``).
     """
     request = validate_code_list(param)
     packaged = PackagedList.load(PACKAGE, param)
