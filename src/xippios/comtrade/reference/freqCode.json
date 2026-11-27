@@ -1,16 +1,20 @@
 {
   "param": "freqCode",
-  "endpoint": "files/v1/app/apim/comtrade.json",
-  "fetched": "2026-11-27T07:09:18Z",
-  "note": "Read from docs/upstream/apidocs/comtrade.json, the snapshot of files/v1/app/apim/comtrade.json fetched 2026-11-27: operation get, the freqCode enum, with the wording its description, \"Trade frequency: A for annual and M for monthly\", gives each value as text.",
+  "endpoint": "files/v1/app/reference/Frequency.json",
+  "fetched": "2026-11-27T12:01:42Z",
+  "note": "The ids of Frequency.json with their text, a row of each value of the freqCode enum of docs/upstream/apidocs/comtrade.json (operation get) among them.",
   "records": [
     {
       "freqCode": "A",
-      "text": "annual"
+      "text": "Annual"
+    },
+    {
+      "freqCode": "Q",
+      "text": "Quarterly"
     },
     {
       "freqCode": "M",
-      "text": "monthly"
+      "text": "Monthly"
     }
   ]
 }

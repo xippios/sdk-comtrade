@@ -1,7 +1,7 @@
 {
   "param": "qtyUnitCode",
   "endpoint": "files/v1/app/reference/QuantityUnits.json",
-  "fetched": "2026-11-20T18:35:42Z",
+  "fetched": "2026-11-27T12:01:40Z",
   "note": "The qtyCode values of QuantityUnits.json with their qtyAbbr and qtyDescription, the codes qtyUnitCode and altQtyUnitCode carry on trade rows.",
   "records": [
     {

@@ -1,7 +1,7 @@
 {
   "param": "ListofReferences",
   "endpoint": "files/v1/app/reference/ListofReferences.json",
-  "fetched": "2026-11-20T18:35:36Z",
+  "fetched": "2026-11-27T12:01:30Z",
   "records": [
     {
       "category": "dataitem",
