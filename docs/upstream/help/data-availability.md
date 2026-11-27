@@ -1,18 +1,18 @@
 # [Menu: Data Availability](https://uncomtrade.org/docs/data-availability/)
 
-Upstream modified: 2026-10-01T16:05:23
+Upstream modified: 2026-11-24T01:25:36
 
-![](https://uncomtrade.org/wp-content/uploads/2024/02/data-availability-menu.png)
+![](https://uncomtrade.org/wp-content/uploads/2024/02/damenu-2.png)
 
 ## **How do you view data availability?**
 
 There are several ways to view data availability in UN Comtrade:
 
-1. You can browse detailed data availability at <https://comtradeplus.un.org/DataAvailability>.
-2. You can view the dashboard:  [https://comtradeplus.un.org/Visualization/DADashboard.](https://comtradeplus.un.org/Visualization/DADashboard)
-3. You can view recent releases: <https://comtradeplus.un.org/RecentReleases>
-4. You can view the time series <https://comtradeplus.un.org/DATimeSeries>.
-5. You can also obtain this information through the [My API Portal](https://comtradeplus.un.org/MyComtrade/APIPortal).   You will need an API subscription key to place API calls.
+1. You can browse detailed data availability at <https://comtrade.un.org/en/data-availability>.
+2. You can view the dashboard:  [https://comtrade.un.org/en/data-availability/dashboard.](https://comtrade.un.org/en/data-availability/dashboard)
+3. You can view recent releases: [https://comtrade.un.org/en/data-availability/recent-releases.](https://comtrade.un.org/en/data-availability/recent-releases)
+4. You can view the time series [https://comtrade.un.org/en/data-availability/time-series.](https://comtrade.un.org/en/data-availability/time-series).
+5. You can also obtain this information through the [My API Portal](https://comtrade.un.org/en/api-portal).   You will need an API subscription key to place API calls.
 
 ### **Dashboard**
 
@@ -28,9 +28,9 @@ This page displays the data availability in a series format, and includes the re
 
 ### **Detailed**
 
-The detailed data availability page returns a catalog of datasets in New Comtrade. It provides summary information of published file types available by dataset. <https://comtradeplus.un.org/DataAvailability>
+The detailed data availability page returns a catalog of datasets in UN Comtrade. It provides summary information of published file types available by dataset. <https://comtrade.un.org/en/data-availability>
 
-![](https://uncomtrade.org/wp-content/uploads/2024/03/image-3-1024x638.png)
+![](https://uncomtrade.org/wp-content/uploads/2024/02/dadetailed-1.png)
 
 Similar to the trade data query page, a user can retrieve this catalog information by selecting the appropriate criteria as follows:
 
@@ -41,43 +41,31 @@ Similar to the trade data query page, a user can retrieve this catalog informati
 - **Reporter** – All or Individual Reporters
 - **Publication Date** – Publication date range
 
-For example, a user wants to know all available USA annual merchandise datasets published from January 1, 2019, to December 31, 2023. The parameter values would be the following:
+For example, a user wants to know all available USA annual merchandise datasets published from January 1, 2019, to December 31, 2025. The parameter values would be the following:
 
 - **Type of Product** – Goods
 - **Frequency** – Annual
 - **Classification Code** – HS, As Reported
 - **Period** – Recent periods
 - **Reporter** – USA
-- **Publication Date** – 01/01/2019 – 12/31/2023
+- **Publication Date** – 01/01/2019 – 12/31/2025
 
-![](https://uncomtrade.org/wp-content/uploads/2024/03/image-4-1024x227.png)
+![](https://uncomtrade.org/wp-content/uploads/2024/02/dadetailedexample-1024x483.png)
 
 The user can choose to view the results on screen by
 
-1. clicking **Preview** to view the results on screen, or
+1. clicking **Show availability** to view the results on screen, or
 2. clicking on **Download** to save the results into a file.
 
 A snapshot of the results screen is returned below.
 
-![](https://uncomtrade.org/wp-content/uploads/2024/03/image-5-1024x601.png)
-
-From the result screen, the user can do the following:
-
-![](https://uncomtrade.org/wp-content/uploads/2024/03/image-6-1024x378.png)
-
-Click on ‘Extended Columns’ and see item ‘A’ in the figure above. Expand the results table to include Reporter Code and Type Code as part of the results table.
-
-![](https://uncomtrade.org/wp-content/uploads/2024/03/image-7-1024x374.png)
-
-Click on the download icon; see item ‘B’ in the figure above. The results file will be downloaded immediately.
-
-User can also click more information on the tip right information icon, toggle between the list or cube viewing format and the eye icon to see metadata.
+![](https://uncomtrade.org/wp-content/uploads/2026/11/dadetailedexampleresults-edited-1024x481.png)
 
 ### **Data Availability via API**
 
 Users can query the data availability through APIs through these endpoints:
 
-1. <https://comtradeapi.un.org/public/v1/getComtradeReleases>: return the list of the recent releases, the same with [the UI live update](https://comtradeplus.un.org/RecentReleases) page.
+1. <https://comtradeapi.un.org/public/v1/getComtradeReleases>: return the list of the recent releases, the same with [the UI live update](https://comtrade.un.org/en/data-availability/recent-releases) page.
 2. <https://comtradeapi.un.org/data/v1/getDa> and <https://comtradeapi.un.org/data/v1/getDaTariffline>: return the data availability for trade and tariffline data respectively.
 3. <https://comtradeapi.un.org/bulk/v1/get> and <https://comtradeapi.un.org/bulk/v1/getTariffline>: return the data availability for the bulk trade and tariffline files respectively. Note that these APIs are only accessible to premium users.
 
@@ -101,7 +89,7 @@ Examples of Python data availability classes are available at [comtradeapicall](
 
 **A:** There is no expected date or time when a specific country’s data will become available. We request the annual and monthly merchandise and services data in February and June. However, we receive data from various countries at different times. When our office receives the data, we harmonize, validate, and upload it into the UN Comtrade database.
 
-You can use [data availability API](https://comtradedeveloper.un.org/) to monitor newly released data or visit our [data availability page](https://comtradeplus.un.org/DataAvailability).
+You can use [data availability API](https://comtradedeveloper.un.org/) to monitor newly released data or visit our [data availability page](https://comtrade.un.org/en/data-availability).
 
 ##### **Q: What is the frequency of data refresh?**
 
@@ -134,10 +122,10 @@ To ensure you always have the latest version of the trade data, it would be a go
 
 To stay informed about revisions and updates:
 
-1. Check Publication Notes – Visit the [UN Comtrade Publication Notes](https://comtradeplus.un.org/PublicationNotes) for the latest release dates and update information.
-2. Browse the Data Availability Page – Explore data availability and updates directly via the [Data Availability Page](https://comtradeplus.un.org/DataAvailability).
+1. Check Publication Notes – Visit the [UN Comtrade Publication Notes](https://comtrade.un.org/en/publication-notes) for the latest release dates and update information.
+2. Browse the Data Availability Page – Explore data availability and updates directly via the [Data Availability Page](https://comtrade.un.org/en/data-availability).
 3. Use the Data Availability API – Monitor newly released or revised datasets programmatically through the [Data Availability API](https://comtradeplus.un.org/ApiDocs).
 
-For details on data updates, please visit and monitor the [Data Availability section](https://comtradeplus.un.org/DataAvailability) on the UN Comtrade website.
+For details on data updates, please visit and monitor the [Data Availability section](https://comtrade.un.org/en/data-availability) on the UN Comtrade website.
 
 ---

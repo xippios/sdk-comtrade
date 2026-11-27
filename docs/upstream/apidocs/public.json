@@ -2,7 +2,7 @@
     "openapi": "3.0.1",
     "info": {
         "title": "public",
-        "description": "Free API to preview trade data. No subscription key required. See examples at https://bit.ly/42JNSaZ",
+        "description": "Free API to preview trade data. Results are limited to 500 records. No subscription key required. See examples at https://unstats.un.org/go/498d8e",
         "version": "v1"
     },
     "servers": [

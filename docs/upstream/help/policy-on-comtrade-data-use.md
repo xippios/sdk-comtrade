@@ -1,10 +1,10 @@
 # [Policy on Comtrade Data Use](https://uncomtrade.org/docs/policy-on-comtrade-data-use/)
 
-Upstream modified: 2026-10-05T19:05:45
+Upstream modified: 2026-11-24T00:46:07
 
 ## About UN Comtrade
 
-The UN Comtrade platform provides comprehensive annual and monthly trade statistics for global trade by product and trading partner. These statistics are useful for governments, academic institutions, research organizations, and businesses. It covers approximately 200 countries, representing over 99% of the world’s merchandise and services trade. You can access the data and metadata by visiting the URL: <http://comtrade.un.org>.
+The UN Comtrade platform provides comprehensive annual and monthly trade statistics for global trade by product and trading partner. These statistics are useful for governments, academic institutions, research organizations, and businesses. It covers approximately 200 countries, representing over 99% of the world’s merchandise and services trade. You can access the data and metadata by visiting the URL: <https://comtrade.un.org>.
 
 UN Comtrade is maintained by the UN Statistics Division (UNSD) of the Department of Economic and Social Affairs (UNDESA). Contact: [comtrade@un.org](mailto:comtrade@un.org).
 
@@ -50,7 +50,7 @@ UNSD allows the sharing of UN Comtrade data beyond the internal definition only 
 
 ## License Agreement
 
-Use of UN Comtrade data is subject to a license agreement found at  <https://comtrade.un.org/licenseagreement.html>, regardless of whether the data is accessed via free or premium access.
+Use of UN Comtrade data is subject to a license agreement found at  <https://comtrade.un.org/en/license-agreement>, regardless of whether the data is accessed via free or premium access.
 
 ## Disclaimer
 

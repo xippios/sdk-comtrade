@@ -1,6 +1,6 @@
 # [UN Comtrade API](https://uncomtrade.org/docs/un-comtrade-api/)
 
-Upstream modified: 2026-10-01T15:35:19
+Upstream modified: 2026-11-24T00:41:55
 
 UN Comtrade offers APIs with or without an API subscription key. However, to access a full set of APIs, you will need a UN Comtrade account and a valid API subscription key. Note that a premium subscription allow access to all APIs, whereas free subscription allow access to some APIs. The API without subscription key is called a “preview” and it has a very limited API end points, and it is intended to have a quick view of the data.
 
@@ -26,7 +26,7 @@ https://comtradeapi.un.org/public/v1/preview/C/A/HS?flowCode=X&reporterCode=156&
 
 ### My API Portal
 
-The My API Portal, <https://comtradeplus.un.org/MyComtrade/APIPortal> and API Explorer <https://comtradeplus.un.org/ApiDocs>, allow users to generate API key and explore API end points, respectively.
+The My API Portal, <https://comtrade.un.org/en/api-portal> and API Explorer <https://comtrade.un.org/en/api-docs>, allow users to generate API key and explore API end points, respectively.
 
 Some of API endpoints are described below — but the complete set is available at API Explorer
 

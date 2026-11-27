@@ -46,7 +46,7 @@
                     {
                         "name": "clCode",
                         "in": "path",
-                        "description": "Product classifications: HS, SITC, BEC (for goods) or EBOPS (for services).",
+                        "description": "Product classifications: HS, SITC, BEC (for goods) or EBOPS (for services). TM for trade matrix",
                         "required": true,
                         "schema": {
                             "enum": [
@@ -67,7 +67,8 @@
                                 "EB",
                                 "EB02",
                                 "EB10",
-                                "EB10S"
+                                "EB10S",
+                                "TM"
                             ],
                             "type": "string"
                         }
@@ -199,6 +200,87 @@
                 "summary": "getBulkFile",
                 "description": "Download the bulk file by providing the fileHash obtained from /get",
                 "operationId": "get-getbulkfile",
+                "parameters": [
+                    {
+                        "name": "reporterCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d+$"
+                        },
+                        "description": "Reporter code"
+                    },
+                    {
+                        "name": "fileHash",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "File hash, from the rowKey of the catalogue (get / getClassic / getTariffline) response"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The bulk file (gzip-compressed text). Content-Type is the stored blob's type; Content-Disposition carries the file name.",
+                        "headers": {
+                            "Content-Disposition": {
+                                "schema": {
+                                    "type": "string"
+                                },
+                                "description": "attachment; filename*=..."
+                            },
+                            "Content-Length": {
+                                "schema": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid subscription key (API Management).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "No requester email, the file is not available to a trial subscription, the download failed, or APIM quota / access denial. No body from the backend."
+                    },
+                    "404": {
+                        "description": "No file with this reporterCode / fileHash. No body."
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (API Management). See the Retry-After header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GatewayError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/fileTradeMatrix/{reporterCode}/{fileHash}": {
+            "get": {
+                "summary": "getBulkFileTradeMatrix",
+                "description": "Download the bulk file by providing the fileHash obtained from /get",
+                "operationId": "get-getbulkfiletradematrix",
                 "parameters": [
                     {
                         "name": "reporterCode",

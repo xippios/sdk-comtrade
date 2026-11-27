@@ -1,10 +1,10 @@
 # [What is data preview?](https://uncomtrade.org/docs/what-is-data-preview/)
 
-Upstream modified: 2025-03-05T15:33:46
+Upstream modified: 2026-11-24T01:40:46
 
 **Q: What is data preview?**
 
-![](https://uncomtrade.org/wp-content/uploads/2024/02/data-preview-1024x572.png)
+![](https://uncomtrade.org/wp-content/uploads/2024/02/previewbutton-1024x853.png)
 
 **A:** The **Data Preview** feature offers a glimpse of your query results by displaying up to 500 records, regardless of the actual outcome. It provides a quick snapshot but may not reflect the entire results of your query.
 
