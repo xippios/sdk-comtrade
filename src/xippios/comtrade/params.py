@@ -189,8 +189,14 @@ def _members(argument: str, value: Codes) -> list[str | int]:
 
     Raises:
         InvalidRequestError: ``value`` is a text with a comma, which names the list to pass,
-            or a list without a code.
+            a list without a code, or no sequence, such as a set, which ``joined`` would send
+            as given.
     """
+    held: object = value  # a caller outside the types, a set among them, reaches this check
+    if not isinstance(held, str | int | Sequence):
+        raise _refused(
+            f"{argument} takes one code or a list of codes, not a {type(held).__name__}, {held!r}"
+        )
     given: list[str | int] = [value] if isinstance(value, str | int) else list(value)
     if any(isinstance(code, str) and "," in code for code in given):
         listed = [part.strip() for code in given for part in str(code).split(",") if part.strip()]
