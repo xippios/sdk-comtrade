@@ -15,13 +15,13 @@ reference tables, from the public files under ``files/v1/app/reference/``. Trade
 quantities are ``Decimal`` (sdk-core ADR-0031) and travel as JSON numbers through the
 adapters.
 
-A record's reporter, partner, customs, transport, supply, quantity unit and frequency codes
-declare the packaged list that names them, ``NamedBy`` of a declaration in ``codes.py``
-(sdk-core ADR-0067, decision 6), so every answer that holds the record names each code of
-its rows in ``meta.names``, and a code the list lacks is said in ``meta.notes`` rather
-than refused. A list's own code, whose name stands on its record beside it, takes no mark.
-``flow_code`` and ``classification_code`` take none yet, since ``codes.py`` declares no
-list for them, and ``type_code`` and ``cmd_code`` have no list with words.
+A record's reporter, partner, flow, customs, transport, supply, quantity unit and frequency
+codes declare the packaged list that names them, ``NamedBy`` of a declaration in
+``codes.py`` (sdk-core ADR-0067, decision 6), so every answer that holds the record names
+each code of its rows in ``meta.names``, and a code the list lacks is said in
+``meta.notes`` rather than refused. A list's own code, whose name stands on its record
+beside it, takes no mark. ``classification_code``, ``type_code`` and ``cmd_code`` take
+none: their lists hold no words, and ``cmdCode`` has no packaged list.
 """
 
 import re
@@ -34,14 +34,12 @@ from pydantic import (
     AliasChoices,
     BeforeValidator,
     Field,
-    ValidatorFunctionWrapHandler,
-    WrapValidator,
 )
-from pydantic import ValidationError as PydanticValidationError
 from xippios.core import NamedBy, UpstreamModel
 
 from xippios.comtrade.codes import (
     CUSTOMS_CODES,
+    FLOW_CODES,
     FREQ_CODES,
     MOS_CODES,
     MOT_CODES,
@@ -125,7 +123,7 @@ class TradeDataRecord(UpstreamModel):
     reporter_code: Annotated[int, NamedBy(REPORTERS)] = Field(validation_alias="reporterCode")
     reporter_iso: str | None = Field(validation_alias="reporterISO")
     reporter_desc: str | None = Field(validation_alias="reporterDesc")
-    flow_code: str | None = Field(validation_alias="flowCode")
+    flow_code: Annotated[str, NamedBy(FLOW_CODES)] | None = Field(validation_alias="flowCode")
     flow_desc: str | None = Field(validation_alias="flowDesc")
     partner_code: Annotated[int, NamedBy(PARTNERS)] = Field(validation_alias="partnerCode")
     partner_iso: str | None = Field(validation_alias="partnerISO")
@@ -362,7 +360,7 @@ class BilateralDataRecord(UpstreamModel):
     reporter_code: Annotated[int, NamedBy(REPORTERS)] = Field(validation_alias="reporterCode")
     reporter_iso: str | None = Field(validation_alias="reporterISO")
     reporter_desc: str | None = Field(validation_alias="reporterDesc")
-    flow_code: str | None = Field(validation_alias="flowCode")
+    flow_code: Annotated[str, NamedBy(FLOW_CODES)] | None = Field(validation_alias="flowCode")
     flow_desc: str | None = Field(validation_alias="flowDesc")
     partner_code: Annotated[int, NamedBy(PARTNERS)] = Field(validation_alias="partnerCode")
     partner_iso: str | None = Field(validation_alias="partnerISO")
@@ -977,51 +975,41 @@ _US_DATETIME = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4}) (\d{1,2}):(\d{2}):(\d{2}
 def _long_date(value: Any) -> Any:
     """``"Thursday, October 22, 2026"``, getLiveUpdate's ``lastUpdated``, as a date.
 
-    English names from fixed tables, so the process locale plays no part; a string that
-    is not such a date, or whose weekday does not fit it, gives ``None``.
+    English names from fixed tables, so the process locale plays no part. A text that is
+    no such date, or whose weekday does not fit it, fails the read, so no time that
+    upstream sent turns into ``None``.
+
+    Raises:
+        ValueError: The text names no day, or a weekday that is not the day's.
     """
     if not isinstance(value, str):
         return value
     match = _LONG_DATE.fullmatch(value.strip())
     if match is None or match[2] not in _MONTHS:
-        return None
-    try:
-        day = date(int(match[4]), _MONTHS[match[2]], int(match[3]))
-    except ValueError:
-        return None
-    return day if _WEEKDAYS[day.weekday()] == match[1] else None
+        raise ValueError(f"{value!r} is no date as 'Thursday, October 22, 2026'")
+    day = date(int(match[4]), _MONTHS[match[2]], int(match[3]))
+    if _WEEKDAYS[day.weekday()] != match[1]:
+        raise ValueError(f"{value!r} names {match[1]}, and the day is a {_WEEKDAYS[day.weekday()]}")
+    return day
 
 
 def _us_datetime(value: Any) -> Any:
     """``"10/22/2026 11:18:33 PM"``, getLiveUpdate's ``queuedAt``, as a naive datetime.
 
     Month first, 12-hour clock with ``AM``/``PM`` read by hand, so the process locale
-    plays no part; a string that is not such a time gives ``None``.
+    plays no part. A text that is no such time fails the read.
+
+    Raises:
+        ValueError: The text is no time as ``"10/22/2026 11:18:33 PM"``.
     """
     if not isinstance(value, str):
         return value
     match = _US_DATETIME.fullmatch(value.strip())
-    if match is None:
-        return None
+    if match is None or not 1 <= int(match[4]) <= 12:
+        raise ValueError(f"{value!r} is no time as '10/22/2026 11:18:33 PM'")
     month, day, year, hour, minute, second = (int(part) for part in match.groups()[:6])
-    if not 1 <= hour <= 12:
-        return None
     hour = hour % 12 + (12 if match[7] == "PM" else 0)
-    try:
-        return datetime(year, month, day, hour, minute, second)
-    except ValueError:
-        return None
-
-
-def _none_if_unparsed(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
-    """The parsed value, or ``None`` when it does not parse: one odd time keeps its row."""
-    try:
-        return handler(value)
-    except PydanticValidationError:
-        return None
-
-
-_Tolerant = WrapValidator(_none_if_unparsed)
+    return datetime(year, month, day, hour, minute, second)
 
 
 class LiveUpdateRecord(UpstreamModel):
@@ -1030,9 +1018,10 @@ class LiveUpdateRecord(UpstreamModel):
     Every field of the schema under its upstream name in snake_case, typed from the
     recorded answer (``tests/fixtures/get_live_update/latest.json``); there is no
     ``publishedDate``. That answer holds only ``"Released"``/``"Success"`` rows, so the
-    shapes of the other release states are unseen: a time that does not parse becomes
-    ``None`` for that field rather than failing the call. The four times come in four
-    formats, read without the process locale:
+    shapes of the other release states are unseen. The four times come in four formats,
+    read without the process locale and strictly: a time that none of them reads fails the
+    call with core's ``ValidationError``, which names the operation, so no time that
+    upstream sent turns into ``None``:
 
     - ``started_at``, ``completed_at``: ``"2026-10-22 21:27:39Z"``, UTC, timezone-aware.
       Upstream's ``completed_at`` is often earlier than ``started_at`` (it equals the next
@@ -1052,13 +1041,13 @@ class LiveUpdateRecord(UpstreamModel):
     """
 
     size: int
-    started_at: Annotated[datetime | None, _Tolerant] = Field(validation_alias="startedAt")
-    completed_at: Annotated[datetime | None, _Tolerant] = Field(validation_alias="completedAt")
+    started_at: datetime | None = Field(validation_alias="startedAt")
+    completed_at: datetime | None = Field(validation_alias="completedAt")
     status: str | None
-    last_updated: Annotated[date | None, _Tolerant, BeforeValidator(_long_date)] = Field(
+    last_updated: Annotated[date | None, BeforeValidator(_long_date)] = Field(
         validation_alias="lastUpdated"
     )
-    queued_at: Annotated[datetime | None, _Tolerant, BeforeValidator(_us_datetime)] = Field(
+    queued_at: Annotated[datetime | None, BeforeValidator(_us_datetime)] = Field(
         validation_alias="queuedAt"
     )
     release_status: str | None = Field(validation_alias="releaseStatus")

@@ -5,9 +5,9 @@ Upstream: UN Comtrade.
 
 from xippios.comtrade._version import __version__
 from xippios.comtrade.tasks import (
+    count_data,
     get_bilateral_data,
     get_comtrade_releases,
-    get_counts,
     get_data,
     get_data_availability,
     get_live_update,
@@ -23,9 +23,9 @@ from xippios.comtrade.tasks import (
 
 __all__ = [
     "__version__",
+    "count_data",
     "get_bilateral_data",
     "get_comtrade_releases",
-    "get_counts",
     "get_data",
     "get_data_availability",
     "get_live_update",

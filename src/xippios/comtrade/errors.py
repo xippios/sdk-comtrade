@@ -18,7 +18,7 @@ def over_mcp(task: str) -> str:
     ``list_reporters (over MCP, the tool comtrade_list_reporters)``.
 
     Args:
-        task: The task's name in ``tasks.__all__``, e.g. ``"get_counts"``.
+        task: The task's name in ``tasks.__all__``, e.g. ``"count_data"``.
     """
     return f"(over MCP, the tool {SOURCE}_{task})"
 
@@ -46,7 +46,7 @@ NARROW = (
     "The count was sent and no data fetched. "
     f"Split by period (max {MAX_PERIODS} per call), then by reporter, then raise the "
     "aggregation level (for example cmd_code 'AG2' instead of 'AG6'), and check each part "
-    f"with get_counts {over_mcp('get_counts')}."
+    f"with count_data {over_mcp('count_data')}."
 )
 """What closes ``QueryTooLarge`` after ``get_data``'s count: core's ``narrow``.
 

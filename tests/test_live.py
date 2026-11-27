@@ -114,8 +114,8 @@ CH_EXPORTS_2023: dict[str, Any] = {
 }
 
 
-async def test_get_counts_live() -> None:
-    result = await tasks.get_counts_async(**CH_EXPORTS_2023)
+async def test_count_data_live() -> None:
+    result = await tasks.count_data_async(**CH_EXPORTS_2023)
     assert result.data > 0
     assert result.meta.endpoint == "data/v1/get"
 

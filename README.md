@@ -21,17 +21,17 @@ key and send none.
 ## 30-second example
 
 ```python
-from xippios.comtrade import get_counts, get_data
+from xippios.comtrade import count_data, get_data
 
 # Switzerland (reporter 757) exports to the World (partner 0) in 2023, all products.
 query = {
     "reporter_code": "757",
-    "partner_code": "0",
     "period": "2023",
+    "partner_code": "0",
     "cmd_code": "TOTAL",
     "flow_code": "X",
 }
-get_counts("C", "A", "HS", **query).data  # 32: every customs procedure and mode of transport
+count_data("C", "A", "HS", **query).data  # 32: every customs procedure and mode of transport
 result = get_data("C", "A", "HS", **query)
 total = next(r for r in result.data if (r.customs_code, r.mot_code) == ("C00", 0))
 total.primary_value  # Decimal('419922543423.509'); JSON: a number
@@ -39,21 +39,23 @@ result.meta.endpoint, result.meta.request  # 'data/v1/get', the arguments above
 ```
 
 Parameters are upstream's (`typeCode`, `reporterCode`, ...) in snake_case and take
-upstream's codes, several of them comma-separated as upstream takes them (`"757,842"`).
-Reporter and partner codes are UN Comtrade's, not ISO numeric: Switzerland is 757.
-Every argument is checked before the call: coded ones (`type_code`, `cl_code`,
-`flow_code`, `customs_code`, `mot_code`, `aggregate_by`, `breakdown_mode`) against
-the lists packaged from upstream's reference files and spec (`list_codes` gives each value
-with upstream's words for it),
-`reporter_code` against the packaged copy of upstream's `Reporters.json`
-(`reference/Reporters.json`) and `partner_code` and `partner2_code` against that of
-`partnerAreas.json`, the others by shape. An unknown area, customs or transport code
-raises `UnknownCode`, an `InvalidRequestError` naming the packaged list, its fetch date
-and the closest code (`756` names `757`, Switzerland; `C16` names `C15`, Relief
-consignments); any other mistake raises `InvalidRequestError` naming the closest valid
-value. Each refusal before a request says that nothing was sent. Every answer names the
-reporter, partner, customs, transport, supply, unit and frequency codes of its rows in
-`meta.names`, by the packaged lists.
+upstream's codes. Several values of one filter are a list, `["757", "842"]` or
+`[757, 842]`, which the package sends as upstream takes them, `757,842`; a comma-separated
+text is refused before any request. Reporter and partner codes are UN Comtrade's, not ISO
+numeric: Switzerland is 757. Every argument is checked before the call, in the order of
+the arguments, and the first problem is the refusal: coded ones (`type_code`, `cl_code`,
+`flow_code`, `customs_code`, `mot_code`, `aggregate_by`, `breakdown_mode`) against the
+lists packaged from upstream's reference files and spec (`list_codes` gives each value
+with upstream's words for it), `reporter_code` against the packaged copy of upstream's
+`Reporters.json` (`reference/Reporters.json`) and `partner_code` and `partner2_code`
+against that of `partnerAreas.json`, the others by shape. A code that its packaged list
+lacks raises `UnknownCode`, an `InvalidRequestError` naming the list, its fetch date and
+the closest codes (`756` names `757`, Switzerland; `C16` names `C15`, Relief
+consignments); any other problem raises `InvalidRequestError`. Each refusal before a
+request says that nothing was sent. Every answer names the codes it was called with and
+the reporter, partner, flow, customs, transport, supply, unit and frequency codes of its
+rows in `meta.names`, by the packaged lists, so an answer without rows names what the
+call asked for.
 
 ```python
 from xippios.comtrade import (
@@ -69,7 +71,7 @@ list_reporters(search="switz").data  # code, ISO alpha-3 or name, any case: 757
 list_partners().data  # 310 partner areas, 0 World among them
 list_commodities("HS", search="coffee").data  # from 8,262 HS codes, fetched keyless once
 list_codes("motCode").data[3]  # MotCodeValue(mot_code='2100', text='Sea'): packaged
-list_classifications("cmd:H6").data[0].variable  # 'Product [HS 2022]': upstream's index
+list_classifications(category="cmd:H6").data[0].variable  # 'Product [HS 2022]': the index
 ```
 
 Release dates are per dataset, so they sit on the rows, not in `meta.published_at`.
@@ -91,7 +93,7 @@ notes = get_metadata("C", "A", "HS", reporter_code="757", period="2023").data[0]
 [note.publication_date for note in notes]  # "New Data", then each "Revised Data"
 get_live_update().data  # the 50 most recent releases, newest first
 get_comtrade_releases().data  # upstream's recent releases (newest first when recorded); keyless
-[share] = get_world_share("C", "A", period="2023", reporter_code="757").data  # keyless
+[share] = get_world_share("C", "A", reporter_code="757", period="2023").data  # keyless
 share.world_share, share.last_released  # Decimal('0.01651852126450239'), its release
 ```
 
@@ -112,13 +114,15 @@ row.primary_value, row.mirror_primary_value  # exports to the USA; the USA's imp
 ```
 
 Both need `reporter_code` or `partner_code`, and `cmd_code`, since upstream offers no
-count to check a query's size first. A mirror of 0 is no sign of no trade: the mirror
+count to check a query's size first, and refuse a query without them before it is sent,
+saying that nothing was sent. A mirror of 0 is no sign of no trade: the mirror
 depends on whether the partner reported. So `get_bilateral_data` returns upstream's
 `note`, which counts the partners with a data gap without naming them, and its
 `timestamp_requested`, with the rows: its `data` is one `BilateralData`, not a list.
 
-`get_data` counts first with upstream's `countOnly`: a count of zero returns an empty
-result without a second call, and a count above 100,000 raises core's `QueryTooLarge`
+`get_data` counts first with upstream's `countOnly`, so one call sends two requests, each
+tried at most 4 times: a count of zero returns an empty result with a note that UN
+Comtrade counted no record, without a second request, and a count above 100,000 raises core's `QueryTooLarge`
 (`xippios.core.QueryTooLarge`) with the count before any data is fetched, because upstream
 would cut the answer at 100,000 rows without saying so; `meta.total` is the count. The
 client keeps the reference files for the life of the process and the keyed answers for
@@ -151,27 +155,29 @@ tables reach the agent. `comtrade_list_commodities` has the same cap, but a
 classification is larger (8,262 HS codes), so its note says to search. All three take
 `search`: `{"search": "switz"}` returns 757 Switzerland. `comtrade_get_world_share` has the
 same cap too, so one period for every reporter (214 rows for 2023) reaches the agent
-whole; its note says to narrow by `reporter_code` or `period`. `--http` serves streamable
-HTTP instead of stdio.
+whole; its note says to narrow by `reporter_code` or `period`. A filter of several values
+takes a JSON array, `{"reporter_code": [757, 842]}`. `--http` serves streamable HTTP
+instead of stdio. The FastAPI router serves each task at `/comtrade/<task>`, as a `GET`
+with query parameters, or as a `POST` with a JSON body where the task takes a list.
 
 ## Status
 
 | Upstream operation | Task function | MCP tool | Status |
 | --- | --- | --- | --- |
-| `data/v1/get/{typeCode}/{freqCode}/{clCode}` with `countOnly=true` | `get_counts(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, ...)` | `comtrade_get_counts` | alpha |
-| `data/v1/get/{typeCode}/{freqCode}/{clCode}` | `get_data(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, ...)` | `comtrade_get_data` | alpha |
+| `data/v1/get/{typeCode}/{freqCode}/{clCode}` with `countOnly=true` | `count_data(type_code, freq_code, cl_code, *, reporter_code=, period=, partner_code=, ...)` | `comtrade_count_data` | alpha |
+| `data/v1/get/{typeCode}/{freqCode}/{clCode}` | `get_data(type_code, freq_code, cl_code, *, reporter_code=, period=, partner_code=, ...)` | `comtrade_get_data` | alpha |
 | `data/v1/getDa/{typeCode}/{freqCode}/{clCode}` | `get_data_availability(type_code, freq_code, cl_code, *, reporter_code=, period=, published_date_from=, published_date_to=)` | `comtrade_get_data_availability` | alpha |
 | `data/v1/getMetadata/{typeCode}/{freqCode}/{clCode}` | `get_metadata(type_code, freq_code, cl_code, *, reporter_code=, period=)` | `comtrade_get_metadata` | alpha |
 | `data/v1/getLiveUpdate` | `get_live_update()` | `comtrade_get_live_update` | alpha |
 | `public/v1/getComtradeReleases`, keyless | `get_comtrade_releases()` | `comtrade_get_comtrade_releases` | alpha |
-| `public/v1/getWorldShare/{typeCode}/{freqCode}`, keyless | `get_world_share(type_code, freq_code, *, period=None, reporter_code=None)` | `comtrade_get_world_share` | alpha |
-| `tools/v1/getTradeBalance/{typeCode}/{freqCode}/{clCode}` | `get_trade_balance(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, cmd_code=, ...)` | `comtrade_get_trade_balance` | alpha; experimental upstream |
-| `tools/v1/getBilateralData/{typeCode}/{freqCode}/{clCode}` | `get_bilateral_data(type_code, freq_code, cl_code, *, reporter_code=, partner_code=, cmd_code=, flow_code=, ...)`, returns `BilateralData` (`note`, `timestamp_requested`, the rows as `data`) | `comtrade_get_bilateral_data` | alpha; experimental upstream |
-| `files/v1/app/reference/Reporters.json`, packaged | `list_reporters(search=None)` | `comtrade_list_reporters` | alpha |
-| `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(search=None)` | `comtrade_list_partners` | alpha |
-| `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, search=None)` | `comtrade_list_commodities` | alpha |
+| `public/v1/getWorldShare/{typeCode}/{freqCode}`, keyless | `get_world_share(type_code, freq_code, *, reporter_code=None, period=None)` | `comtrade_get_world_share` | alpha |
+| `tools/v1/getTradeBalance/{typeCode}/{freqCode}/{clCode}` | `get_trade_balance(type_code, freq_code, cl_code, *, reporter_code=, period=, partner_code=, ...)` | `comtrade_get_trade_balance` | alpha; experimental upstream |
+| `tools/v1/getBilateralData/{typeCode}/{freqCode}/{clCode}` | `get_bilateral_data(type_code, freq_code, cl_code, *, reporter_code=, period=, partner_code=, cmd_code=, flow_code=, ...)`, returns `BilateralData` (`note`, `timestamp_requested`, the rows as `data`) | `comtrade_get_bilateral_data` | alpha; experimental upstream |
+| `files/v1/app/reference/Reporters.json`, packaged | `list_reporters(*, search=None)` | `comtrade_list_reporters` | alpha |
+| `files/v1/app/reference/partnerAreas.json`, packaged | `list_partners(*, search=None)` | `comtrade_list_partners` | alpha |
+| `files/v1/app/reference/{clCode}.json`, keyless | `list_commodities(cl_code, *, search=None)` | `comtrade_list_commodities` | alpha |
 | `files/v1/app/reference/` code lists and the spec's enums, packaged | `list_codes(param)` | `comtrade_list_codes` | alpha |
-| `files/v1/app/reference/ListofReferences.json`, packaged | `list_classifications(category=None)` | `comtrade_list_classifications` | alpha |
+| `files/v1/app/reference/ListofReferences.json`, packaged | `list_classifications(*, category=None)` | `comtrade_list_classifications` | alpha |
 
 The package covers these fourteen tasks and requires xippios-core 0.5.x (`~=0.5.0`); 0.3.0
 does not work with core 0.5.0. The slices `get_bilateral_flows`, `get_world_trade` and

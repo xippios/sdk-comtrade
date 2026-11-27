@@ -28,12 +28,14 @@ from datetime import datetime
 from typing import Any
 
 from xippios.core import (
+    PackagedCodes,
     PackagedList,
     Result,
     ResultCap,
     ResultMeta,
     fetch_counted,
     matches,
+    names_codes,
     sync,
 )
 
@@ -47,6 +49,14 @@ from xippios.comtrade.api.get_live_update import ENDPOINT as GET_LIVE_UPDATE
 from xippios.comtrade.api.get_metadata import ENDPOINT as GET_METADATA
 from xippios.comtrade.api.get_trade_balance import ENDPOINT as GET_TRADE_BALANCE
 from xippios.comtrade.api.get_world_share import ENDPOINT as GET_WORLD_SHARE
+from xippios.comtrade.codes import (
+    CUSTOMS_CODES,
+    FLOW_CODES,
+    FREQ_CODES,
+    MOT_CODES,
+    PARTNERS,
+    REPORTERS,
+)
 from xippios.comtrade.errors import NARROW, RECORD_LIMIT
 from xippios.comtrade.models import (
     BilateralData,
@@ -66,6 +76,9 @@ from xippios.comtrade.models import (
 from xippios.comtrade.params import (
     PACKAGE,
     PACKAGED_LISTS,
+    Codes,
+    TextCodes,
+    joined,
     validate_bilateral_data,
     validate_classification_file,
     validate_code_list,
@@ -77,9 +90,9 @@ from xippios.comtrade.params import (
 )
 
 __all__ = [
+    "count_data",
     "get_bilateral_data",
     "get_comtrade_releases",
-    "get_counts",
     "get_data",
     "get_data_availability",
     "get_live_update",
@@ -111,8 +124,8 @@ BULK_TASKS: frozenset[str] = frozenset()
 # sends the available rows first, by reporter code, then the unavailable ones in an order
 # the recording does not explain. No cap is paged: an answer of get_data can pass the
 # cache's bound of 8 MiB, core's cache_max_bytes, which the client keeps, and a
-# continuation past it would send its count and its data again (conventions §8, sdk-core
-# ADR-0061, decision 9).
+# continuation past it would send its data request again, a keyed call, while the cache
+# keeps its count for 300 s (conventions §8, sdk-core ADR-0061, decision 9).
 MCP_CAPS: Mapping[str, ResultCap] = {
     "list_reporters": ResultCap(max_rows=400, max_bytes=100_000),
     "list_partners": ResultCap(max_rows=400, max_bytes=100_000),
@@ -132,28 +145,61 @@ REFERENCE = "files/v1/app/reference"
 """Where upstream serves the reference files; ``meta.endpoint`` of the list tasks."""
 
 
+DATA_CODES: Mapping[str, PackagedCodes] = {
+    "freq_code": FREQ_CODES,
+    "reporter_code": REPORTERS,
+    "partner_code": PARTNERS,
+    "partner2_code": PARTNERS,
+    "flow_code": FLOW_CODES,
+    "customs_code": CUSTOMS_CODES,
+    "mot_code": MOT_CODES,
+}
+"""The code arguments of ``data/v1/get`` that a packaged list names, for ``names_codes``.
+
+Every answer names the codes it was called with in ``meta.names``, so an answer without
+rows names what the call asked for (sdk-core ADR-0067, decision 3).
+"""
+
+COUNTED_NONE = "UN Comtrade counted no record for the query, so no data request was sent."
+"""``get_data``'s note after a count of 0: a code UN Comtrade does not have counts 0 too.
+
+https://github.com/xippios/sdk-comtrade/issues/32; the empty list and its note answer no
+data (https://github.com/xippios/sdk-usda-esr/issues/88).
+"""
+
+
 def _meta(
-    request: dict[str, Any], retrieved_at: datetime, *, total: int | None = None
+    request: dict[str, Any],
+    retrieved_at: datetime,
+    *,
+    total: int | None = None,
+    notes: list[str] | None = None,
 ) -> ResultMeta:
     return ResultMeta(
-        source=SOURCE, endpoint=ENDPOINT, request=request, retrieved_at=retrieved_at, total=total
+        source=SOURCE,
+        endpoint=ENDPOINT,
+        request=request,
+        retrieved_at=retrieved_at,
+        total=total,
+        notes=notes or [],
     )
 
 
-async def get_counts_async(
+@names_codes(**DATA_CODES)
+async def count_data_async(
     type_code: str,
     freq_code: str,
     cl_code: str,
     *,
-    reporter_code: str | None = None,
-    partner_code: str | None = None,
-    partner2_code: str | None = None,
-    period: str | None = None,
-    cmd_code: str | None = None,
-    flow_code: str | None = None,
-    mot_code: str | None = None,
-    customs_code: str | None = None,
-    aggregate_by: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
+    partner_code: Codes | None = None,
+    partner2_code: Codes | None = None,
+    cmd_code: TextCodes | None = None,
+    flow_code: TextCodes | None = None,
+    customs_code: TextCodes | None = None,
+    mot_code: TextCodes | None = None,
+    aggregate_by: TextCodes | None = None,
     breakdown_mode: str | None = None,
     include_desc: bool | None = None,
 ) -> Result[int]:
@@ -163,11 +209,10 @@ async def get_counts_async(
     most 100,000 records, so count first and split a larger query. A count of 0 means no
     data matches: an unreported period, a code that is not a reporter, a flow the
     reporter does not record. Every count costs one call of the key's daily quota (500
-    on a free key). Arguments are checked before the call, reporter, partner, customs and
-    transport codes against the packaged lists: an unknown one raises ``UnknownCode``, an
-    ``InvalidRequestError`` naming the packaged list, its fetch date and the closest code
-    (756 names 757, Switzerland); another mistake raises ``InvalidRequestError`` naming
-    the closest valid value.
+    on a free key). Arguments are checked before the call, and the first problem is
+    refused: an unknown reporter, partner, customs or transport code raises
+    ``UnknownCode``, an ``InvalidRequestError`` naming the packaged list, its fetch date
+    and the closest code (756 names 757, Switzerland).
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
@@ -179,18 +224,18 @@ async def get_counts_async(
             accepts. ``"H6"`` is valid but upstream answered HTTP 500 to all five tries on
             2026-10-23 (two reporters, two product codes); ``"HS"`` rows carry the edition
             the reporter used, e.g. ``classification_code`` ``"H6"`` for Switzerland 2023.
-        reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
-            e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
-            ``"757,842"``, as ``list_reporters`` lists them. Some differ from ISO numeric
+        reporter_code: Reporting areas as UN Comtrade's numeric codes, one or a list, e.g.
+            ``"757"`` Switzerland, ``842`` USA, ``"276"`` Germany, ``"156"`` China,
+            ``[757, 842]``, as ``list_reporters`` lists them. Some differ from ISO numeric
             codes: Switzerland is 757, not 756. Omit for every reporter.
-        partner_code: Partner areas, comma-separated, as ``list_partners`` lists them:
+        period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), one or a list
+            of at most 12, e.g. ``["2021", "2022", "2023"]``.
+        partner_code: Partner areas, one or a list, as ``list_partners`` lists them:
             ``"0"`` World (the total over all partners), ``"276"`` Germany. Omit for every
             partner, one row each.
-        partner2_code: Second partner (consignment) areas, comma-separated, codes of
+        partner2_code: Second partner (consignment) areas, one or a list, codes of
             ``list_partners``; ``"0"`` is the total.
-        period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), at most 12
-            comma-separated, e.g. ``"2021,2022,2023"``.
-        cmd_code: Product codes of ``cl_code``, comma-separated, as
+        cmd_code: Product codes of ``cl_code``, one or a list, as
             ``list_commodities(cl_code)`` lists them: ``"TOTAL"`` for all goods,
             ``"AG2"``, ``"AG4"``, ``"AG6"`` for every code at that level, codes such as
             ``"0901"`` or ``"090111"``, wildcards such as ``"27??"`` (every four-digit code
@@ -198,16 +243,16 @@ async def get_counts_async(
             (EB, EB02, EB10) or ``"S"`` (EB10S) as the total; recorded counts confirm
             ``"200"`` on EB10 and EB02, where ``"TOTAL"`` counted 0 (EB10). A code
             upstream does not have counts 0 too, so a 0 does not prove that a code exists.
-        flow_code: Trade flows, comma-separated: ``"X"`` exports, ``"M"`` imports,
+        flow_code: Trade flows, one or a list: ``"X"`` exports, ``"M"`` imports,
             ``"RX"`` re-exports, ``"RM"`` re-imports, also ``"DX"``, ``"FM"``, ``"MIP"``,
-            ``"MOP"``, ``"XIP"``, ``"XOP"``, ``"MIF"``, ``"XIF"``; e.g. ``"M,X"``.
-        mot_code: Modes of transport, comma-separated: ``"0"`` the total, ``"1000"`` air,
-            ``"2100"`` sea, ``"3100"`` railway, ``"3200"`` road, ``"9100"`` pipelines and
-            cables. Omit for every mode, one row each.
-        customs_code: Customs procedures, comma-separated: ``"C00"`` the total, ``"C01"``
+            ``"MOP"``, ``"XIP"``, ``"XOP"``, ``"MIF"``, ``"XIF"``; e.g. ``["M", "X"]``.
+        customs_code: Customs procedures, one or a list: ``"C00"`` the total, ``"C01"``
             clearance for home use, ``"C03"`` outright exportation. Omit for every
             procedure, one row each.
-        aggregate_by: Upstream parameters to aggregate the results over, comma-separated
+        mot_code: Modes of transport, one or a list: ``"0"`` the total, ``"1000"`` air,
+            ``"2100"`` sea, ``"3100"`` railway, ``"3200"`` road, ``"9100"`` pipelines and
+            cables. Omit for every mode, one row each.
+        aggregate_by: Upstream parameters to aggregate the results over, one or a list
             from ``cmdCode``, ``period``, ``partnerCode``, ``partner2Code``,
             ``reporterCode``, ``customsCode``, ``motCode``; e.g. ``"cmdCode"`` sums the
             products of ``"AG2"`` into one row per remaining breakdown. The aggregated
@@ -226,51 +271,53 @@ async def get_counts_async(
         freq_code,
         cl_code,
         reporter_code=reporter_code,
+        period=period,
         partner_code=partner_code,
         partner2_code=partner2_code,
-        period=period,
         cmd_code=cmd_code,
         flow_code=flow_code,
-        mot_code=mot_code,
         customs_code=customs_code,
+        mot_code=mot_code,
         aggregate_by=aggregate_by,
         breakdown_mode=breakdown_mode,
         include_desc=include_desc,
     )
-    answer = await api.get_count_only(**request)
+    sent = joined(request)
+    answer = await api.get_count_only(**sent)
     return Result(data=answer.payload.count, meta=_meta(request, answer.retrieved_at))
 
 
+@names_codes(**DATA_CODES)
 async def get_data_async(
     type_code: str,
     freq_code: str,
     cl_code: str,
     *,
-    reporter_code: str | None = None,
-    partner_code: str | None = None,
-    partner2_code: str | None = None,
-    period: str | None = None,
-    cmd_code: str | None = None,
-    flow_code: str | None = None,
-    mot_code: str | None = None,
-    customs_code: str | None = None,
-    aggregate_by: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
+    partner_code: Codes | None = None,
+    partner2_code: Codes | None = None,
+    cmd_code: TextCodes | None = None,
+    flow_code: TextCodes | None = None,
+    customs_code: TextCodes | None = None,
+    mot_code: TextCodes | None = None,
+    aggregate_by: TextCodes | None = None,
     breakdown_mode: str | None = None,
     include_desc: bool | None = None,
 ) -> Result[list[TradeDataRecord]]:
     """Fetch UN Comtrade final trade data for one query, up to 100,000 records.
 
-    Counts first, one call more, as ``get_counts``: a count of 0 returns an empty list
-    without fetching, and a count above 100,000 raises ``QueryTooLarge`` with the count
-    before any data is fetched, since upstream would cut the answer at 100,000 rows
-    without saying so. ``meta.total`` is the count. Each row carries every field of
-    upstream's ``TradeDataRecord`` under its snake_case name. Leaving out
-    ``partner2_code``, ``customs_code`` and ``mot_code`` returns every breakdown upstream
-    holds; the row with ``partner2_code`` 0, ``customs_code`` ``"C00"`` and ``mot_code`` 0
-    is the total. Arguments are checked before any call: an unknown reporter, partner,
-    customs or transport code raises ``UnknownCode``, an ``InvalidRequestError`` naming
-    the packaged list and the closest code, another mistake ``InvalidRequestError`` naming
-    the closest valid value.
+    One call sends two requests, the count, as ``count_data``, then the data, each tried at
+    most 4 times, so at most 8: a count of 0 returns an empty list and a note without the
+    data request, and a count above 100,000 raises ``QueryTooLarge`` with the count before
+    any data is fetched, since upstream would cut the answer at 100,000 rows without saying
+    so. ``meta.total`` is the count. Each row carries every field of upstream's
+    ``TradeDataRecord`` under its snake_case name. Leaving out ``partner2_code``,
+    ``customs_code`` and ``mot_code`` returns every breakdown; the row with
+    ``partner2_code`` 0, ``customs_code`` ``"C00"`` and ``mot_code`` 0 is the total.
+    Arguments are checked before any call, and the first problem is refused: an unknown
+    reporter, partner, customs or transport code raises ``UnknownCode``, naming the
+    packaged list and the closest code.
 
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
@@ -282,18 +329,18 @@ async def get_data_async(
             accepts. ``"H6"`` is valid but upstream answered HTTP 500 to all five tries on
             2026-10-23 (two reporters, two product codes); ``"HS"`` rows carry the edition
             the reporter used, e.g. ``classification_code`` ``"H6"`` for Switzerland 2023.
-        reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
-            e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
-            ``"757,842"``, as ``list_reporters`` lists them. Some differ from ISO numeric
+        reporter_code: Reporting areas as UN Comtrade's numeric codes, one or a list, e.g.
+            ``"757"`` Switzerland, ``842`` USA, ``"276"`` Germany, ``"156"`` China,
+            ``[757, 842]``, as ``list_reporters`` lists them. Some differ from ISO numeric
             codes: Switzerland is 757, not 756. Omit for every reporter.
-        partner_code: Partner areas, comma-separated, as ``list_partners`` lists them:
+        period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), one or a list
+            of at most 12, e.g. ``["2021", "2022", "2023"]``.
+        partner_code: Partner areas, one or a list, as ``list_partners`` lists them:
             ``"0"`` World (the total over all partners), ``"276"`` Germany. Omit for every
             partner, one row each.
-        partner2_code: Second partner (consignment) areas, comma-separated, codes of
+        partner2_code: Second partner (consignment) areas, one or a list, codes of
             ``list_partners``; ``"0"`` is the total.
-        period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), at most 12
-            comma-separated, e.g. ``"2021,2022,2023"``.
-        cmd_code: Product codes of ``cl_code``, comma-separated, as
+        cmd_code: Product codes of ``cl_code``, one or a list, as
             ``list_commodities(cl_code)`` lists them: ``"TOTAL"`` for all goods,
             ``"AG2"``, ``"AG4"``, ``"AG6"`` for every code at that level, codes such as
             ``"0901"`` or ``"090111"``, wildcards such as ``"27??"`` (every four-digit code
@@ -301,16 +348,16 @@ async def get_data_async(
             (EB, EB02, EB10) or ``"S"`` (EB10S) as the total; recorded counts confirm
             ``"200"`` on EB10 and EB02, where ``"TOTAL"`` counted 0 (EB10). A code
             upstream does not have counts 0 too, so a 0 does not prove that a code exists.
-        flow_code: Trade flows, comma-separated: ``"X"`` exports, ``"M"`` imports,
+        flow_code: Trade flows, one or a list: ``"X"`` exports, ``"M"`` imports,
             ``"RX"`` re-exports, ``"RM"`` re-imports, also ``"DX"``, ``"FM"``, ``"MIP"``,
-            ``"MOP"``, ``"XIP"``, ``"XOP"``, ``"MIF"``, ``"XIF"``; e.g. ``"M,X"``.
-        mot_code: Modes of transport, comma-separated: ``"0"`` the total, ``"1000"`` air,
-            ``"2100"`` sea, ``"3100"`` railway, ``"3200"`` road, ``"9100"`` pipelines and
-            cables. Omit for every mode, one row each.
-        customs_code: Customs procedures, comma-separated: ``"C00"`` the total, ``"C01"``
+            ``"MOP"``, ``"XIP"``, ``"XOP"``, ``"MIF"``, ``"XIF"``; e.g. ``["M", "X"]``.
+        customs_code: Customs procedures, one or a list: ``"C00"`` the total, ``"C01"``
             clearance for home use, ``"C03"`` outright exportation. Omit for every
             procedure, one row each.
-        aggregate_by: Upstream parameters to aggregate the results over, comma-separated
+        mot_code: Modes of transport, one or a list: ``"0"`` the total, ``"1000"`` air,
+            ``"2100"`` sea, ``"3100"`` railway, ``"3200"`` road, ``"9100"`` pipelines and
+            cables. Omit for every mode, one row each.
+        aggregate_by: Upstream parameters to aggregate the results over, one or a list
             from ``cmdCode``, ``period``, ``partnerCode``, ``partner2Code``,
             ``reporterCode``, ``customsCode``, ``motCode``; e.g. ``"cmdCode"`` sums the
             products of ``"AG2"`` into one row per remaining breakdown. The aggregated
@@ -331,42 +378,45 @@ async def get_data_async(
         freq_code,
         cl_code,
         reporter_code=reporter_code,
+        period=period,
         partner_code=partner_code,
         partner2_code=partner2_code,
-        period=period,
         cmd_code=cmd_code,
         flow_code=flow_code,
-        mot_code=mot_code,
         customs_code=customs_code,
+        mot_code=mot_code,
         aggregate_by=aggregate_by,
         breakdown_mode=breakdown_mode,
         include_desc=include_desc,
     )
+    sent = joined(request)
     reads: list[datetime] = []
 
     async def count() -> int:
-        answer = await api.get_count_only(**request)
+        answer = await api.get_count_only(**sent)
         reads.append(answer.retrieved_at)
         return answer.payload.count
 
     async def fetch() -> list[TradeDataRecord]:
-        answer = await api.get(**request)
+        answer = await api.get(**sent)
         reads.append(answer.retrieved_at)
         return answer.payload.data
 
     rows, total = await fetch_counted(
         count, fetch, limit=RECORD_LIMIT, empty=[], narrow=NARROW, source=SOURCE
     )
-    return Result(data=rows, meta=_meta(request, min(reads), total=total))
+    notes = [COUNTED_NONE] if total == 0 else []
+    return Result(data=rows, meta=_meta(request, min(reads), total=total, notes=notes))
 
 
+@names_codes(freq_code=FREQ_CODES, reporter_code=REPORTERS)
 async def get_data_availability_async(
     type_code: str,
     freq_code: str,
     cl_code: str,
     *,
-    reporter_code: str | None = None,
-    period: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
     published_date_from: str | None = None,
     published_date_to: str | None = None,
 ) -> Result[list[DataAvailability]]:
@@ -386,11 +436,11 @@ async def get_data_availability_async(
         cl_code: Classification: ``"HS"`` for the data as reported (Switzerland 2023 is
             an ``"H6"`` dataset), an HS edition ``"H0"`` to ``"H6"``, SITC ``"S1"`` to
             ``"S4"``, ``"BE"``, for services ``"EB"``, ``"EB02"``, ``"EB10"``.
-        reporter_code: Reporters, comma-separated, as ``list_reporters`` lists them:
+        reporter_code: Reporters, one or a list, as ``list_reporters`` lists them:
             ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
-            ``"757,842"``. Omit for every reporter (169 datasets for 2023, annual HS).
-        period: Years ``"2023"`` or months ``"202305"``, comma-separated, e.g.
-            ``"2021,2022,2023"``; unlike ``get_data``, more than 12 are accepted.
+            ``[757, 842]``. Omit for every reporter (169 datasets for 2023, annual HS).
+        period: Years ``"2023"`` or months ``"202305"``, one or a list, e.g.
+            ``["2021", "2022", "2023"]``; unlike ``get_data``, more than 12 are accepted.
         published_date_from: Upstream's ``publishedDateFrom``, a day ``"2024-01-01"``:
             datasets published from then on. A dataset revised in the range counts
             (Switzerland 2022, first released 2023-02-01, revised 2024-04-29, is in 2024).
@@ -405,20 +455,21 @@ async def get_data_availability_async(
         published_date_from=published_date_from,
         published_date_to=published_date_to,
     )
-    answer = await api.get_da(**request)
+    answer = await api.get_da(**joined(request))
     meta = ResultMeta(
         source=SOURCE, endpoint=GET_DA, request=request, retrieved_at=answer.retrieved_at
     )
     return Result(data=answer.payload.data, meta=meta)
 
 
+@names_codes(freq_code=FREQ_CODES, reporter_code=REPORTERS)
 async def get_metadata_async(
     type_code: str,
     freq_code: str,
     cl_code: str,
     *,
-    reporter_code: str | None = None,
-    period: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
 ) -> Result[list[MetadataDataset]]:
     """List UN Comtrade's publication notes for a reporter's datasets, one per publication.
 
@@ -437,16 +488,16 @@ async def get_metadata_async(
         cl_code: Classification: ``"HS"`` (``"H6"`` is answered the same), SITC
             ``"SS"`` or ``"S1"`` to ``"S4"``, ``"BE"``, ``"TM"``, for services ``"EB"``,
             ``"EB02"``, ``"EB10"``.
-        reporter_code: Reporters, comma-separated, as ``list_reporters`` lists them:
+        reporter_code: Reporters, one or a list, as ``list_reporters`` lists them:
             ``"757"`` Switzerland (38 annual datasets, 1988 onwards), ``"842"`` USA,
             ``"276"`` Germany, ``"156"`` China.
-        period: Years ``"2023"`` or months ``"202305"``, comma-separated. Omit for every
+        period: Years ``"2023"`` or months ``"202305"``, one or a list. Omit for every
             period.
     """
     request = validate_datasets(
         type_code, freq_code, cl_code, reporter_code=reporter_code, period=period
     )
-    answer = await api.get_metadata(**request)
+    answer = await api.get_metadata(**joined(request))
     meta = ResultMeta(
         source=SOURCE, endpoint=GET_METADATA, request=request, retrieved_at=answer.retrieved_at
     )
@@ -470,19 +521,27 @@ async def get_live_update_async() -> Result[list[LiveUpdateRecord]]:
     return Result(data=answer.payload.data, meta=meta)
 
 
+@names_codes(
+    freq_code=FREQ_CODES,
+    reporter_code=REPORTERS,
+    partner_code=PARTNERS,
+    partner2_code=PARTNERS,
+    customs_code=CUSTOMS_CODES,
+    mot_code=MOT_CODES,
+)
 async def get_trade_balance_async(
     type_code: str,
     freq_code: str,
     cl_code: str,
     *,
-    reporter_code: str | None = None,
-    period: str | None = None,
-    partner_code: str | None = None,
-    partner2_code: str | None = None,
-    cmd_code: str | None = None,
-    customs_code: str | None = None,
-    mot_code: str | None = None,
-    aggregate_by: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
+    partner_code: Codes | None = None,
+    partner2_code: Codes | None = None,
+    cmd_code: TextCodes | None = None,
+    customs_code: TextCodes | None = None,
+    mot_code: TextCodes | None = None,
+    aggregate_by: TextCodes | None = None,
     breakdown_mode: str | None = None,
     include_desc: bool | None = None,
 ) -> Result[list[TradeBalanceRecord]]:
@@ -511,29 +570,29 @@ async def get_trade_balance_async(
             ``EB02``, ``EB10`` and ``EBSDMX``; ``BE4``, ``BE5`` and ``EBSDMX`` are not in
             the package's list (upstream refused ``BE5`` on ``data/v1/get`` and
             ``EBSDMX`` on ``getDa``) and are refused before the call.
-        reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
-            e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
-            ``"757,842"``, as ``list_reporters`` lists them. Some differ from ISO numeric
+        reporter_code: Reporting areas as UN Comtrade's numeric codes, one or a list,
+            e.g. ``"757"`` Switzerland, ``842`` USA, ``"276"`` Germany, ``"156"`` China,
+            ``[757, 842]``, as ``list_reporters`` lists them. Some differ from ISO numeric
             codes: Switzerland is 757, not 756. Required unless ``partner_code`` is given.
-        period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), at most 12
-            comma-separated, e.g. ``"2021,2022,2023"``.
-        partner_code: Partner areas, comma-separated, as ``list_partners`` lists them:
+        period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), one or a list
+            of at most 12, e.g. ``["2021", "2022", "2023"]``.
+        partner_code: Partner areas, one or a list, as ``list_partners`` lists them:
             ``"0"`` World (the total over all partners), ``"276"`` Germany. Required
             unless ``reporter_code`` is given; omitted, upstream's default applies, which
             on ``get_data`` is every partner, one row each.
-        partner2_code: Second partner (consignment) areas, comma-separated, codes of
+        partner2_code: Second partner (consignment) areas, one or a list, codes of
             ``list_partners``; ``"0"`` is the total.
-        cmd_code: Product codes of ``cl_code``, comma-separated, as
+        cmd_code: Product codes of ``cl_code``, one or a list, as
             ``list_commodities(cl_code)`` lists them: ``"TOTAL"`` for all goods,
             ``"AG2"`` for every chapter, codes such as ``"27"``, ``"0901"`` or
             ``"090111"``, wildcards such as ``"27??"``.
-        customs_code: Customs procedures, comma-separated: ``"C00"`` the total, ``"C01"``
+        customs_code: Customs procedures, one or a list: ``"C00"`` the total, ``"C01"``
             clearance for home use, ``"C03"`` outright exportation. Omit for every
             procedure, one row each.
-        mot_code: Modes of transport, comma-separated: ``"0"`` the total, ``"1000"`` air,
+        mot_code: Modes of transport, one or a list: ``"0"`` the total, ``"1000"`` air,
             ``"2100"`` sea, ``"3100"`` railway, ``"3200"`` road, ``"9100"`` pipelines and
             cables. Omit for every mode, one row each.
-        aggregate_by: Upstream parameters to aggregate the results over, comma-separated
+        aggregate_by: Upstream parameters to aggregate the results over, one or a list
             from ``cmdCode``, ``period``, ``partnerCode``, ``partner2Code``,
             ``reporterCode``, ``customsCode``, ``motCode``, e.g. ``"cmdCode"``; sent on as
             given (not recorded on this operation; on ``get_data`` the aggregated
@@ -563,7 +622,7 @@ async def get_trade_balance_async(
         breakdown_mode=breakdown_mode,
         include_desc=include_desc,
     )
-    answer = await api.get_trade_balance(**request)
+    answer = await api.get_trade_balance(**joined(request))
     meta = ResultMeta(
         source=SOURCE,
         endpoint=GET_TRADE_BALANCE,
@@ -574,15 +633,21 @@ async def get_trade_balance_async(
     return Result(data=answer.payload.data, meta=meta)
 
 
+@names_codes(
+    freq_code=FREQ_CODES,
+    reporter_code=REPORTERS,
+    partner_code=PARTNERS,
+    flow_code=FLOW_CODES,
+)
 async def get_bilateral_data_async(
     type_code: str,
     freq_code: str,
     cl_code: str,
     *,
-    reporter_code: str | None = None,
-    period: str | None = None,
-    partner_code: str | None = None,
-    cmd_code: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
+    partner_code: Codes | None = None,
+    cmd_code: TextCodes | None = None,
     flow_code: str | None = None,
     include_desc: bool | None = None,
 ) -> Result[BilateralData]:
@@ -611,22 +676,22 @@ async def get_bilateral_data_async(
             ``EB02``, ``EB10`` and ``EBSDMX``; ``BE4``, ``BE5`` and ``EBSDMX`` are not in
             the package's list (upstream refused ``BE5`` on ``data/v1/get`` and
             ``EBSDMX`` on ``getDa``) and are refused before the call.
-        reporter_code: Reporting areas as UN Comtrade's numeric codes, comma-separated,
-            e.g. ``"757"`` Switzerland, ``"842"`` USA, ``"276"`` Germany, ``"156"`` China,
-            ``"757,842"``, as ``list_reporters`` lists them. Some differ from ISO numeric
+        reporter_code: Reporting areas as UN Comtrade's numeric codes, one or a list,
+            e.g. ``"757"`` Switzerland, ``842`` USA, ``"276"`` Germany, ``"156"`` China,
+            ``[757, 842]``, as ``list_reporters`` lists them. Some differ from ISO numeric
             codes: Switzerland is 757, not 756. Required unless ``partner_code`` is given.
-        period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly),
-            comma-separated, e.g. ``"2021,2022,2023"``; unlike ``get_data``, more than 12
+        period: Years ``"2023"`` (annual) or months ``"202305"`` (monthly), one or a
+            list, e.g. ``["2021", "2022", "2023"]``; unlike ``get_data``, more than 12
             are accepted (13 answered 13 rows).
-        partner_code: Partner areas, comma-separated, as ``list_partners`` lists them:
-            ``"842"`` USA, ``"276"`` Germany, ``"842,276"``, one row each. Required
+        partner_code: Partner areas, one or a list, as ``list_partners`` lists them:
+            ``"842"`` USA, ``"276"`` Germany, ``[842, 276]``, one row each. Required
             unless ``reporter_code`` is given.
-        cmd_code: Product codes of ``cl_code``, comma-separated, as
+        cmd_code: Product codes of ``cl_code``, one or a list, as
             ``list_commodities(cl_code)`` lists them: ``"TOTAL"`` for all goods,
             ``"AG2"`` for every chapter, codes such as ``"27"``, ``"0901"`` or
             ``"090111"``, wildcards such as ``"27??"``.
-        flow_code: One trade flow: ``"X"`` exports or ``"M"`` imports; upstream refuses
-            both in one call (``"M,X"``), so call once per flow.
+        flow_code: One trade flow, never a list: ``"X"`` exports or ``"M"`` imports;
+            upstream refuses both in one call (``"M,X"``), so call once per flow.
         include_desc: Upstream's ``includeDesc``, sent on as given: the recorded answers
             carry no descriptions with or without it (the ``*_iso`` and ``*_desc`` fields
             stay ``None``); ``list_reporters`` and ``list_partners`` name the codes.
@@ -642,7 +707,7 @@ async def get_bilateral_data_async(
         flow_code=flow_code,
         include_desc=include_desc,
     )
-    answer = await api.get_bilateral_data(**request)
+    answer = await api.get_bilateral_data(**joined(request))
     meta = ResultMeta(
         source=SOURCE,
         endpoint=GET_BILATERAL_DATA,
@@ -677,12 +742,13 @@ async def get_comtrade_releases_async() -> Result[list[ComtradeRelease]]:
     return Result(data=answer.payload.data, meta=meta)
 
 
+@names_codes(freq_code=FREQ_CODES, reporter_code=REPORTERS)
 async def get_world_share_async(
     type_code: str,
     freq_code: str,
     *,
-    period: str | None = None,
-    reporter_code: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
 ) -> Result[list[WorldShare]]:
     """List each reporter's share of world trade per period, with its release dates.
 
@@ -701,20 +767,20 @@ async def get_world_share_async(
     Args:
         type_code: ``"C"`` goods or ``"S"`` services.
         freq_code: ``"A"`` annual or ``"M"`` monthly.
-        period: Years ``"2023"`` (annual) or months ``"202301"`` (monthly),
-            comma-separated, e.g. ``"2022,2023"``. The spec also lists ``"recent"``, which
-            is accepted, but upstream answered it with HTTP 500 on all three tries on
+        reporter_code: Reporters, one or a list, as ``list_reporters`` lists them:
+            ``"757"`` Switzerland, ``"842"`` USA, ``"156"`` China, ``[757, 842]``. Omit for
+            every reporter (214 rows for 2023, annual goods).
+        period: Years ``"2023"`` (annual) or months ``"202301"`` (monthly), one or a
+            list, e.g. ``["2022", "2023"]``. The spec also lists ``"recent"``, which is
+            accepted alone, but upstream answered it with HTTP 500 on all three tries on
             2026-10-28, with and without a reporter (``ch_recent.json``,
             ``all_reporters_recent.json``): the client makes 4 attempts (3 retries) on a
             5xx and then raises ``UpstreamError``, and what ``"recent"`` selects is
             unknown, so name the periods. Omit for every period (64 annual rows for
             Switzerland, 1962 to 2025).
-        reporter_code: Reporters, comma-separated, as ``list_reporters`` lists them:
-            ``"757"`` Switzerland, ``"842"`` USA, ``"156"`` China, ``"757,842"``. Omit for
-            every reporter (214 rows for 2023, annual goods).
     """
-    request = validate_world_share(type_code, freq_code, period=period, reporter_code=reporter_code)
-    answer = await api.get_world_share(**request)
+    request = validate_world_share(type_code, freq_code, reporter_code=reporter_code, period=period)
+    answer = await api.get_world_share(**joined(request))
     meta = ResultMeta(
         source=SOURCE,
         endpoint=GET_WORLD_SHARE,
@@ -725,7 +791,7 @@ async def get_world_share_async(
     return Result(data=answer.payload.data, meta=meta)
 
 
-async def list_reporters_async(search: str | None = None) -> Result[list[Reporter]]:
+async def list_reporters_async(*, search: str | None = None) -> Result[list[Reporter]]:
     """List the reporters UN Comtrade has trade data from, with the codes reporter_code takes.
 
     Answered from upstream's ``Reporters.json`` as packaged with this version
@@ -760,7 +826,7 @@ async def list_reporters_async(search: str | None = None) -> Result[list[Reporte
     return Result(data=rows, meta=packaged.meta(SOURCE, request={"search": search}))
 
 
-async def list_partners_async(search: str | None = None) -> Result[list[PartnerArea]]:
+async def list_partners_async(*, search: str | None = None) -> Result[list[PartnerArea]]:
     """List the partner areas UN Comtrade records trade with, for partner_code and partner2_code.
 
     Answered from upstream's ``partnerAreas.json`` as packaged with this version
@@ -794,7 +860,7 @@ async def list_partners_async(search: str | None = None) -> Result[list[PartnerA
 
 
 async def list_commodities_async(
-    cl_code: str, search: str | None = None
+    cl_code: str, *, search: str | None = None
 ) -> Result[list[Commodity]]:
     """List the product codes of one UN Comtrade classification, the values cmd_code takes.
 
@@ -866,7 +932,7 @@ async def list_codes_async(param: str) -> Result[list[CodeValue]]:
     return Result(data=rows, meta=packaged.meta(SOURCE, request=request))
 
 
-async def list_classifications_async(category: str | None = None) -> Result[list[Reference]]:
+async def list_classifications_async(*, category: str | None = None) -> Result[list[Reference]]:
     """List UN Comtrade's reference files, the product classifications among them, by category.
 
     Answered from upstream's index of the files, ``ListofReferences.json``, as packaged
@@ -895,7 +961,7 @@ async def list_classifications_async(category: str | None = None) -> Result[list
 
 get_bilateral_data = sync(get_bilateral_data_async)
 get_comtrade_releases = sync(get_comtrade_releases_async)
-get_counts = sync(get_counts_async)
+count_data = sync(count_data_async)
 get_data = sync(get_data_async)
 get_data_availability = sync(get_data_availability_async)
 get_live_update = sync(get_live_update_async)

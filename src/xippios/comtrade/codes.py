@@ -8,11 +8,13 @@ which of them the list lacks (sdk-core ADR-0067). ``params.py`` checks an argume
 against the same declaration with ``check``, before any request (conventions §5). The
 module sits below both, since ``params.py`` imports the models.
 
-``typeCode`` has no list here: its words stand in the spec alone. ``cmdCode`` has no
-packaged list: its codes come with the classification files that ``list_commodities``
-fetches. ``flowCode`` and ``clCode`` have none yet: their lists hold values that the
-package adds from the spec without upstream's words (``MIF`` and ``XIF``, ``BE`` and
-``TM``), and core declares a list's names only where every record holds one.
+The lists read from the spec, ``typeCode``, ``aggregateBy`` and ``breakdownMode``, and
+``clCode``, whose ``BE`` and ``TM`` the package adds from the spec without upstream's words,
+name each code by its own text: they are declared for ``check`` alone. ``flowCode``'s
+``MIF`` and ``XIF``, which the package adds from the spec too, hold no ``text``, so each is
+named by its own code, as core names a code whose record holds no name, and the other
+flows by upstream's words. ``cmdCode`` has no packaged list: its codes come with the
+classification files that ``list_commodities`` fetches.
 """
 
 from xippios.core import PackagedCodes, PackagedList
@@ -20,7 +22,12 @@ from xippios.core import PackagedCodes, PackagedList
 from xippios.comtrade._client import SOURCE
 
 __all__ = [
+    "AGGREGATE_BY",
+    "BREAKDOWN_MODES",
+    "CATEGORIES",
+    "CL_CODES",
     "CUSTOMS_CODES",
+    "FLOW_CODES",
     "FREQ_CODES",
     "MOS_CODES",
     "MOT_CODES",
@@ -28,14 +35,30 @@ __all__ = [
     "PARTNERS",
     "QTY_UNIT_CODES",
     "REPORTERS",
+    "TYPE_CODES",
 ]
 
 PACKAGE = "xippios.comtrade"
 """The package whose ``reference/`` holds the lists."""
 
 
-def _codes(name: str, code: str, label: str, *, fold_case: bool = False) -> PackagedCodes:
+def _codes(
+    name: str, code: str, label: str | None = None, *, fold_case: bool = False
+) -> PackagedCodes:
     return PackagedList.load(PACKAGE, name).codes(code, label, fold_case=fold_case, source=SOURCE)
+
+
+def _partly_worded(name: str, code: str, label: str, *, fold_case: bool = False) -> PackagedCodes:
+    """A list whose records the package added from the spec hold no ``label``.
+
+    Core declares a list's names from a field that every record holds and names a code
+    whose record holds no name by its own text, so each record without ``label`` is read
+    with an empty one; the packaged file stays as the refresh script wrote it.
+    """
+    packaged = PackagedList.load(PACKAGE, name)
+    records = [{label: None, **record} for record in packaged.records]
+    worded = packaged.model_copy(update={"records": records})
+    return worded.codes(code, label, fold_case=fold_case, source=SOURCE)
 
 
 REPORTERS = _codes("Reporters", "reporterCode", "reporterDesc")
@@ -58,3 +81,21 @@ QTY_UNIT_CODES = _codes("qtyUnitCode", "qtyUnitCode", "qtyDescription")
 
 FREQ_CODES = _codes("freqCode", "freqCode", "text")
 """The frequencies of the spec, ``A`` and ``M``, with the spec's words for them."""
+
+TYPE_CODES = _codes("typeCode", "typeCode")
+"""The types of trade of the spec, ``C`` and ``S``, each named by its own code."""
+
+CL_CODES = _codes("clCode", "clCode")
+"""The classifications of ``ListofReferences.json`` and the spec, each named by its code."""
+
+FLOW_CODES = _partly_worded("flowCode", "flowCode", "text", fold_case=True)
+"""The flows of ``tradeRegimes.json`` and the spec; the spec allows them case-insensitive."""
+
+AGGREGATE_BY = _codes("aggregateBy", "aggregateBy")
+"""The parameters of the spec that ``aggregateBy`` aggregates over, ``cmdCode`` among them."""
+
+BREAKDOWN_MODES = _codes("breakdownMode", "breakdownMode")
+"""The two breakdown modes of the spec, ``classic`` and ``plus``."""
+
+CATEGORIES = _codes("ListofReferences", "category")
+"""The categories of ``ListofReferences.json``, each named by its own text, as written."""

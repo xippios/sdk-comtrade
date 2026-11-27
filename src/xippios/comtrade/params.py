@@ -13,23 +13,48 @@ against them, and the free-form ones by shape, before anything is sent (sdk-core
 ``validate_datasets`` does the same for ``data/v1/getDa`` and ``data/v1/getMetadata``,
 ``validate_trade_balance`` and ``validate_bilateral_data`` for the Tools operations
 ``tools/v1/getTradeBalance`` and ``tools/v1/getBilateralData``, ``validate_world_share``
-for ``public/v1/getWorldShare``. Each refusal says that nothing was sent, after its first
-sentence (conventions §5): an area, customs or transport code is checked by core's
-``check`` of its declaration in ``codes.py``, once for the codes given, and the other
-problems are gathered into one refusal.
+for ``public/v1/getWorldShare``.
+
+Several values of one filter are one argument, one code or a list of codes, and a text with
+a comma is refused; ``joined`` writes a list as the comma-separated text UN Comtrade takes
+(conventions §2, sdk-core ADR-0061, decision 1). Each check refuses the first problem that it
+finds and says that nothing was sent after its first sentence (conventions §5, sdk-core
+ADR-0061, decision 7): a code of a packaged list or table by core's ``check`` of its
+declaration in ``codes.py``, in core's words, and a period, a product code and a day by their
+shape, in the package's.
 """
 
-import difflib
 import functools
+import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 from typing import Any
 
-from xippios.core import InvalidRequestError, PackagedCodes, PackagedList, UpstreamModel, closest
+from xippios.core import (
+    InvalidRequestError,
+    PackagedCodes,
+    PackagedList,
+    UpstreamModel,
+    closest,
+    nearest,
+)
 
 from xippios.comtrade._client import SOURCE
-from xippios.comtrade.codes import CUSTOMS_CODES, MOT_CODES, PACKAGE, PARTNERS, REPORTERS
+from xippios.comtrade.codes import (
+    AGGREGATE_BY,
+    BREAKDOWN_MODES,
+    CATEGORIES,
+    CL_CODES,
+    CUSTOMS_CODES,
+    FLOW_CODES,
+    FREQ_CODES,
+    MOT_CODES,
+    PACKAGE,
+    PARTNERS,
+    REPORTERS,
+    TYPE_CODES,
+)
 from xippios.comtrade.errors import MAX_PERIODS, over_mcp
 from xippios.comtrade.models import (
     AggregateByValue,
@@ -57,7 +82,10 @@ __all__ = [
     "PACKAGED_TABLES",
     "RECENT",
     "TOOLS_FLOW_CODES",
+    "Codes",
+    "TextCodes",
     "classification_files",
+    "joined",
     "validate_bilateral_data",
     "validate_classification_file",
     "validate_code_list",
@@ -67,6 +95,12 @@ __all__ = [
     "validate_trade_balance",
     "validate_world_share",
 ]
+
+Codes = str | int | Sequence[str | int]
+"""One area code or period, or a list of them: ``"757"``, ``757``, ``[757, 842]``, ``"2023"``."""
+
+TextCodes = str | Sequence[str]
+"""One text code, or a list of them: ``"X"``, ``["M", "X"]``, ``["C00", "C01"]``."""
 
 PACKAGED_LISTS: Mapping[str, type[CodeValue]] = {
     "typeCode": TypeCodeValue,
@@ -109,13 +143,8 @@ def _rows[M: UpstreamModel](name: str, model: type[M]) -> list[M]:
     return PackagedList.load(PACKAGE, name).parse(model, source=SOURCE)
 
 
-@functools.cache
-def _allowed(name: str) -> tuple[str, ...]:
-    """The values of the packaged list ``name``, in upstream order."""
-    return tuple(str(record[name]) for record in PackagedList.load(PACKAGE, name).records)
-
-
-_AREA = re.compile(r"\d+")
+_DIGITS = re.compile(r"\d+")
+"""A text of digits, which ``int`` reads, those outside ASCII among them."""
 _PERIOD = re.compile(r"\d{4}(0[1-9]|1[0-2])?")
 _KEYWORD = re.compile(r"TOTAL|AG[1-6]", re.IGNORECASE)
 _WILDCARD = r"(\*|\?+)?"
@@ -132,7 +161,11 @@ _CMD_SHAPES: dict[str, tuple[re.Pattern[str], str]] = {
 Observed in the classification files ``ListofReferences.json`` links (fetched 2026-10-23):
 HS and BEC codes are digit strings, SITC codes digits with trailing ``X`` (``0011X``),
 EBOPS codes letters, digits and dots (``205X``, ``SC11z``, ``10.1.1.2``). Every family
-also takes ``TOTAL`` and the aggregation levels ``AG1`` to ``AG6``. A trailing ``*`` or
+also takes ``TOTAL``, which the spec's example answer holds, and the aggregation levels
+``AG1`` to ``AG6``, as 0.3.0 did: ``AG2`` and ``AG4`` stand in recorded HS queries that
+upstream answered, ``AG6`` in the example answer of the async ``getDa`` in
+``apidocs/comtradeAsync.json``, and ``AG1``, ``AG3`` and ``AG5`` in no page of the snapshot
+and no recording, though no page rules them out. A trailing ``*`` or
 ``?`` is a wildcard (``help/how-do-i-use-wildcards-to-query-data.md``;
 ``tests/fixtures/get/count_cmd_code_wildcard.json`` counts 113 records for ``27??``).
 """
@@ -146,102 +179,108 @@ def _family(cl_code: str) -> str:
     return "goods"
 
 
-def _closest(value: str, allowed: Sequence[str]) -> str | None:
-    folded = {option.upper(): option for option in allowed}
-    match = difflib.get_close_matches(value.upper(), list(folded), n=1, cutoff=0.3)
-    return folded[match[0]] if match else None
-
-
 _UNSENT = "Nothing was sent."
 """The sentence after the first of each refusal before a request (conventions §5)."""
 
 
-def _refused(problems: Sequence[str]) -> InvalidRequestError:
-    """The one refusal of the problems gathered, each a clause of its first sentence."""
-    return InvalidRequestError(f"{'; '.join(problems)}. {_UNSENT}", source=SOURCE)
+def _refused(first: str, rest: str = "") -> InvalidRequestError:
+    """A refusal of the package's own: its first sentence, that nothing was sent, the rest."""
+    return InvalidRequestError(f"{first}. {_UNSENT}{' ' + rest if rest else ''}", source=SOURCE)
 
 
-def _members(argument: str, value: str, problems: list[str]) -> list[str]:
-    members = value.split(",")
-    if any(not member or member != member.strip() for member in members):
-        problems.append(
-            f"{argument} {value!r} must be values separated by commas, without spaces or "
-            "empty entries"
+def _members(argument: str, value: Codes) -> list[str | int]:
+    """The codes of ``value``, one code or a list of them, in the caller's order and form.
+
+    Raises:
+        InvalidRequestError: ``value`` is a text with a comma, which names the list to pass,
+            a list without a code, or no sequence, such as a set, which ``joined`` would send
+            as given.
+    """
+    held: object = value  # a caller outside the types, a set among them, reaches this check
+    if not isinstance(held, str | int | Sequence):
+        raise _refused(
+            f"{argument} takes one code or a list of codes, not a {type(held).__name__}, {held!r}"
         )
-        return []
-    return members
+    given: list[str | int] = [value] if isinstance(value, str | int) else list(value)
+    if any(isinstance(code, str) and "," in code for code in given):
+        listed = [part.strip() for code in given for part in str(code).split(",") if part.strip()]
+        if listed:
+            raise _refused(
+                f"{argument} takes several codes as a list, {json.dumps(listed)}, not a text "
+                f"with commas, {value!r}"
+            )
+        given = []
+    if not given:
+        raise _refused(
+            f"{argument} lists no code: give one code or a list of codes, or leave {argument} out"
+        )
+    return given
 
 
-_DIMENSIONS: Mapping[str, PackagedCodes] = {
-    "customsCode": CUSTOMS_CODES,
-    "motCode": MOT_CODES,
-}
-"""Packaged lists whose unknown member raises ``UnknownCode`` (conventions §5).
+def joined(request: Mapping[str, Any]) -> dict[str, Any]:
+    """The arguments as a wrapper sends them: a list of codes as UN Comtrade's text.
 
-Dimension codes of the data rows, like the areas; upstream's answer to a code it does not
-have is not recorded for them. The other lists stay gathered problems: upstream answers
-an unknown ``clCode`` and ``flowCode`` with HTTP 400 (``count_cl_code_be5.json``,
-``count_flow_code_unknown.json``), and the spec's enums are its own.
+    UN Comtrade takes several values of one parameter separated by commas ("Multi value
+    input should be in the form of csv", ``docs/upstream/apidocs/comtrade.json``), so a
+    list ``[757, 842]`` is sent as ``757,842``; every other value is passed on as given.
+    """
+    return {
+        name: (
+            ",".join(str(code) for code in value)
+            if isinstance(value, Sequence) and not isinstance(value, str)
+            else value
+        )
+        for name, value in request.items()
+    }
+
+
+_SPEC_LIST = (
+    "UN Comtrade's spec lists every value of {param}, so the package refuses another before "
+    "the call. list_codes({param!r}) lists them {tool}."
+)
+"""``UnknownCode``'s reason for a value of a list read from the spec."""
+
+_REFUSED_UPSTREAM = (
+    "UN Comtrade refuses a {param} it does not have with HTTP 400, so the package refuses it "
+    "before the call. list_codes({param!r}) lists every code {tool}."
+)
+"""``UnknownCode``'s reason for a ``clCode`` or ``flowCode`` value: upstream's HTTP 400.
+
+``tests/fixtures/get/count_cl_code_be5.json`` and ``count_flow_code_unknown.json``.
 """
 
 _UNKNOWN_DIMENSION = (
     "UN Comtrade's answer to a customs or transport code it does not have is not recorded, "
-    "so the package refuses it before the call, as it does an unknown area."
+    "so the package refuses it before the call, as it does an unknown area. "
+    "list_codes({param!r}) lists every code {tool}."
 )
-"""``UnknownCode``'s reason for a member of a ``_DIMENSIONS`` list."""
+"""``UnknownCode``'s reason for a customs or transport code, whose upstream answer is unseen."""
 
 
-def _closest_texts(member: Any, texts: Mapping[Any, str]) -> list[tuple[str, str]]:
-    """The codes close to ``member``, with upstream's text, best first: ``check``'s strategy.
-
-    Core's ``closest``, by code and then by text (``"air"`` finds ``1000`` Air); where it
-    finds none, the one most similar code, as for an unknown area (``"9"`` finds
-    ``9900``).
-    """
-    shown = {str(code): text for code, text in texts.items()}
-    near = closest(str(member), shown)
-    if near:
-        return list(near)
-    code = _closest(str(member), list(shown))
-    return [(code, shown[code])] if code else []
+def _reason_of(reason: str, param: str) -> str:
+    return reason.format(param=param, tool=over_mcp("list_codes"))
 
 
-def _check_list(
-    argument: str,
-    value: str | None,
-    upstream: str,
-    problems: list[str],
-    *,
-    multi: bool = False,
-    case_insensitive: bool = False,
-) -> None:
+_LISTS: Mapping[str, tuple[PackagedCodes, str]] = {
+    "typeCode": (TYPE_CODES, _reason_of(_SPEC_LIST, "typeCode")),
+    "freqCode": (FREQ_CODES, _reason_of(_SPEC_LIST, "freqCode")),
+    "clCode": (CL_CODES, _reason_of(_REFUSED_UPSTREAM, "clCode")),
+    "flowCode": (FLOW_CODES, _reason_of(_REFUSED_UPSTREAM, "flowCode")),
+    "customsCode": (CUSTOMS_CODES, _reason_of(_UNKNOWN_DIMENSION, "customsCode")),
+    "motCode": (MOT_CODES, _reason_of(_UNKNOWN_DIMENSION, "motCode")),
+    "aggregateBy": (AGGREGATE_BY, _reason_of(_SPEC_LIST, "aggregateBy")),
+    "breakdownMode": (BREAKDOWN_MODES, _reason_of(_SPEC_LIST, "breakdownMode")),
+}
+"""Each packaged list an argument is checked against, by upstream's parameter, and the reason
+its refusal gives."""
+
+
+def _check_list(argument: str, value: TextCodes | None, upstream: str) -> None:
+    """Refuse the first code of ``value`` that the packaged list ``upstream`` lacks."""
     if value is None:
         return
-    members = _members(argument, value, problems) if multi else [value]
-    listed = _DIMENSIONS.get(upstream)
-    if listed is not None:
-        if members:
-            listed.check(
-                argument,
-                members,
-                closest=_closest_texts,
-                reason=(
-                    f"{_UNKNOWN_DIMENSION} list_codes({upstream!r}) lists every code "
-                    f"{over_mcp('list_codes')}."
-                ),
-            )
-        return
-    allowed = _allowed(upstream)
-    known = {option.upper() for option in allowed} if case_insensitive else set(allowed)
-    for member in members:
-        if (member.upper() if case_insensitive else member) in known:
-            continue
-        near = _closest(member, allowed)
-        hint = f"; closest: {near!r}" if near else ""
-        problems.append(
-            f"{argument} {member!r} is not a UN Comtrade {upstream} value{hint}; "
-            f"valid values: {', '.join(allowed)}"
-        )
+    listed, reason = _LISTS[upstream]
+    listed.check(argument, _members(argument, value), reason=reason)
 
 
 _AREA_TABLES: dict[str, tuple[PackagedCodes, str]] = {
@@ -304,17 +343,17 @@ def _same_area(member: str, kind: str) -> str | None:
 def _closest_area(kind: str) -> Callable[[Any, Mapping[Any, str]], list[tuple[int, str]]]:
     """Comtrade's own strategy for the closest code of ``kind``: ``check``'s ``closest``.
 
-    The code of the same area by its ISO alpha-3 (conventions §5), else the most similar
-    code of the table.
+    The code of the same area by its ISO alpha-3 (conventions §5), else core's ``nearest``
+    codes by number; none for a text, which core then names by name.
     """
 
     def strategy(member: Any, names: Mapping[Any, str]) -> list[tuple[int, str]]:
-        areas = _areas(kind)
+        if isinstance(member, bool) or not isinstance(member, int):
+            return []
         same = _same_area(str(member), kind)
         if same is not None:
-            return [(int(same), areas[same][0])]
-        near = _closest(str(member), list(areas))
-        return [(int(near), areas[near][0])] if near else []
+            return [(int(same), _areas(kind)[same][0])]
+        return list(nearest(member, names))
 
     return strategy
 
@@ -334,80 +373,78 @@ def _other_table(kind: str) -> dict[str, str]:
     }
 
 
-def _check_areas(argument: str, value: str | None, kind: str, problems: list[str]) -> None:
-    """Gather a malformed area code; raise ``UnknownCode`` for the first one the table lacks.
+def _check_areas(argument: str, value: Codes | None, kind: str) -> None:
+    """Refuse the first area code of ``value`` that the reporter or partner table lacks.
 
-    The table's codes are integers, so the numeric codes are checked as integers by one
-    call of core's ``check`` (sdk-core ADR-0045), and the value is sent as given. A member
-    whose digits are not its integer's own text, ``0757`` or digits outside ASCII, which
-    ``int`` reads as 757, is checked as its text, which the table lacks, with a hint that
-    names the code as UN Comtrade writes it.
+    The table's codes are integers, so a text of digits that is its integer's own text,
+    ``"757"``, is checked as that integer, by one call of core's ``check`` (sdk-core
+    ADR-0045), and the value is sent as given. A text whose digits are not its integer's
+    own, ``"0757"`` or digits outside ASCII, which ``int`` reads as 757, is checked as its
+    text, which the table lacks, with a hint that names the code as UN Comtrade writes it,
+    and core's check refuses any other text in its own words.
     """
     if value is None:
         return
-    numeric: list[int | str] = []
+    codes: list[str | int] = []
     written: dict[str, str] = {}
-    for member in _members(argument, value, problems):
-        if _AREA.fullmatch(member):
-            code = int(member)
-            if str(code) == member:
-                numeric.append(code)
-            else:
-                numeric.append(member)
-                written[member] = (
-                    f"UN Comtrade writes this code {code}, in the digits 0 to 9 without a "
-                    "leading zero."
-                )
-        else:
-            problems.append(
-                f"{argument} {member!r} is not a numeric UN Comtrade area code; use codes "
-                "such as '757' (Switzerland) or '0' (World), separated by commas"
+    for code in _members(argument, value):
+        if isinstance(code, str) and _DIGITS.fullmatch(code):
+            number = int(code)
+            if str(number) == code:
+                codes.append(number)
+                continue
+            written[code] = (
+                f"UN Comtrade writes this code {number}, in the digits 0 to 9 without a "
+                "leading zero."
             )
-    if numeric:
-        listed, _ = _AREA_TABLES[kind]
-        listed.check(
-            argument,
-            numeric,
-            hints={**_other_table(kind), **written},
-            closest=_closest_area(kind),
-            reason=_reason(kind),
-        )
+        codes.append(code)
+    listed, _ = _AREA_TABLES[kind]
+    listed.check(
+        argument,
+        codes,
+        hints={**_other_table(kind), **written},
+        closest=_closest_area(kind),
+        reason=_reason(kind),
+    )
 
 
 def _check_period(
-    value: str | None,
-    problems: list[str],
-    *,
-    max_periods: int | None = MAX_PERIODS,
-    keyword: str | None = None,
+    value: Codes | None, *, max_periods: int | None = MAX_PERIODS, keyword: str | None = None
 ) -> None:
-    if value is None or value == keyword:
+    if value is None or (keyword is not None and value == keyword):
         return
     alone = f", nor {keyword!r} alone" if keyword else ""
-    members = _members("period", value, problems)
+    members = _members("period", value)
     for member in members:
-        if not _PERIOD.fullmatch(member):
-            problems.append(
+        if isinstance(member, bool) or not _PERIOD.fullmatch(str(member)):
+            raise _refused(
                 f"period {member!r} is neither a year (YYYY, e.g. '2023') nor a month "
                 f"(YYYYMM, e.g. '202305'){alone}"
             )
     if max_periods is not None and len(members) > max_periods:
-        problems.append(
-            f"period has {len(members)} values; UN Comtrade takes at most {MAX_PERIODS} per "
+        raise _refused(
+            f"period lists {len(members)} periods; UN Comtrade takes at most {MAX_PERIODS} per "
             "call, so split the query by period"
         )
 
 
-def _check_cmd_code(value: str | None, cl_code: str, problems: list[str]) -> None:
+def _check_cmd_code(value: TextCodes | None, cl_code: str) -> None:
     if value is None:
         return
     shape, example = _CMD_SHAPES[_family(cl_code)]
-    for member in _members("cmd_code", value, problems):
-        if not (_KEYWORD.fullmatch(member) or shape.fullmatch(member)):
-            problems.append(
+    for member in _members("cmd_code", value):
+        if not isinstance(member, str) or not (
+            _KEYWORD.fullmatch(member) or shape.fullmatch(member)
+        ):
+            raise _refused(
                 f"cmd_code {member!r} is not a {cl_code} product code: use 'TOTAL', 'AG2', "
                 f"'AG4', 'AG6' or codes made of {example}"
             )
+
+
+def _set(**arguments: Any) -> dict[str, Any]:
+    """The arguments that are set, as the caller gave them, in the order given."""
+    return {name: value for name, value in arguments.items() if value is not None}
 
 
 def validate_get(
@@ -415,74 +452,64 @@ def validate_get(
     freq_code: str,
     cl_code: str,
     *,
-    reporter_code: str | None = None,
-    partner_code: str | None = None,
-    partner2_code: str | None = None,
-    period: str | None = None,
-    cmd_code: str | None = None,
-    flow_code: str | None = None,
-    mot_code: str | None = None,
-    customs_code: str | None = None,
-    aggregate_by: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
+    partner_code: Codes | None = None,
+    partner2_code: Codes | None = None,
+    cmd_code: TextCodes | None = None,
+    flow_code: TextCodes | None = None,
+    customs_code: TextCodes | None = None,
+    mot_code: TextCodes | None = None,
+    aggregate_by: TextCodes | None = None,
     breakdown_mode: str | None = None,
     include_desc: bool | None = None,
 ) -> dict[str, Any]:
     """Check the arguments of a ``data/v1/get`` call before anything is sent.
 
     Coded parameters are checked against the packaged lists, reporter codes against
-    ``Reporters.json`` and partner and second-partner codes against ``partnerAreas.json``
-    (each member of a comma-separated list); periods and product codes by shape only.
-    Values are never rewritten.
+    ``Reporters.json`` and partner and second-partner codes against ``partnerAreas.json``,
+    each code of a list; periods and product codes by shape only. Values are never
+    rewritten. The checks run in the order of the arguments and the first problem ends them.
 
     Returns:
-        The arguments that are set, under the task's parameter names, in signature order.
+        The arguments that are set, under the task's parameter names, in signature order,
+        as given: ``joined`` writes them as upstream takes them.
 
     Raises:
-        UnknownCode: A reporter, partner or second-partner code the packaged table lacks,
-            or a ``customs_code`` or ``mot_code`` the packaged list lacks, naming the
-            packaged list, its fetch date and the closest code (conventions §5); an
-            ``InvalidRequestError``. The first one found ends the checks: other problems
-            are reported once it is fixed.
-        InvalidRequestError: Naming every problem found, with the closest valid value
-            where there is one, and that nothing was sent.
+        UnknownCode: A code that its packaged list or table lacks, naming the list, its
+            fetch date and the closest codes (conventions §5); an ``InvalidRequestError``.
+        InvalidRequestError: Any other first problem, a text with a comma among them, and
+            that nothing was sent.
     """
-    problems: list[str] = []
-    _check_list("type_code", type_code, "typeCode", problems)
-    _check_list("freq_code", freq_code, "freqCode", problems)
-    _check_list("cl_code", cl_code, "clCode", problems)
-    _check_areas("reporter_code", reporter_code, "reporter", problems)
-    _check_areas("partner_code", partner_code, "partner", problems)
-    _check_areas("partner2_code", partner2_code, "partner", problems)
-    _check_period(period, problems)
-    if cl_code in _allowed("clCode"):
-        _check_cmd_code(cmd_code, cl_code, problems)
-    # flowCode is case-insensitive per the spec; customsCode's pattern accepts c and C.
-    _check_list("flow_code", flow_code, "flowCode", problems, multi=True, case_insensitive=True)
-    _check_list("mot_code", mot_code, "motCode", problems, multi=True)
-    _check_list(
-        "customs_code", customs_code, "customsCode", problems, multi=True, case_insensitive=True
+    _check_list("type_code", type_code, "typeCode")
+    _check_list("freq_code", freq_code, "freqCode")
+    _check_list("cl_code", cl_code, "clCode")
+    _check_areas("reporter_code", reporter_code, "reporter")
+    _check_period(period)
+    _check_areas("partner_code", partner_code, "partner")
+    _check_areas("partner2_code", partner2_code, "partner")
+    _check_cmd_code(cmd_code, cl_code)
+    _check_list("flow_code", flow_code, "flowCode")
+    _check_list("customs_code", customs_code, "customsCode")
+    _check_list("mot_code", mot_code, "motCode")
+    _check_list("aggregate_by", aggregate_by, "aggregateBy")
+    _check_list("breakdown_mode", breakdown_mode, "breakdownMode")
+    return _set(
+        type_code=type_code,
+        freq_code=freq_code,
+        cl_code=cl_code,
+        reporter_code=reporter_code,
+        period=period,
+        partner_code=partner_code,
+        partner2_code=partner2_code,
+        cmd_code=cmd_code,
+        flow_code=flow_code,
+        customs_code=customs_code,
+        mot_code=mot_code,
+        aggregate_by=aggregate_by,
+        breakdown_mode=breakdown_mode,
+        include_desc=include_desc,
     )
-    _check_list("aggregate_by", aggregate_by, "aggregateBy", problems, multi=True)
-    _check_list("breakdown_mode", breakdown_mode, "breakdownMode", problems)
-    if problems:
-        raise _refused(problems)
-    arguments: dict[str, Any] = {
-        "type_code": type_code,
-        "freq_code": freq_code,
-        "cl_code": cl_code,
-        "reporter_code": reporter_code,
-        "partner_code": partner_code,
-        "partner2_code": partner2_code,
-        "period": period,
-        "cmd_code": cmd_code,
-        "flow_code": flow_code,
-        "mot_code": mot_code,
-        "customs_code": customs_code,
-        "aggregate_by": aggregate_by,
-        "breakdown_mode": breakdown_mode,
-        "include_desc": include_desc,
-    }
-    return {name: value for name, value in arguments.items() if value is not None}
 
 
 TOOLS_FLOW_CODES: tuple[str, ...] = ("M", "X")
@@ -510,31 +537,25 @@ _UNBOUNDED = (
 
 
 def _check_bounded(
-    task: str,
-    reporter_code: str | None,
-    partner_code: str | None,
-    cmd_code: str | None,
-    problems: list[str],
+    task: str, reporter_code: object, partner_code: object, cmd_code: object
 ) -> None:
     if (reporter_code is None and partner_code is None) or cmd_code is None:
-        problems.append(_UNBOUNDED.format(task=task))
+        raise _refused(_UNBOUNDED.format(task=task))
 
 
-def _check_tools_flow(value: str | None, problems: list[str]) -> None:
-    if value is None or value in TOOLS_FLOW_CODES:
+def _check_tools_flow(value: str | None) -> None:
+    if value is None:
         return
-    if "," in value:
-        problems.append(
+    if not isinstance(value, str) or "," in value:
+        raise _refused(
             f"flow_code {value!r} must be one flow, 'M' or 'X': getBilateralData refuses "
             "several in one call (HTTP 400), so call it once per flow"
         )
-        return
-    closest = _closest(value, TOOLS_FLOW_CODES)
-    hint = f"; closest: {closest!r}" if closest else ""
-    problems.append(
-        f"flow_code {value!r} is not a flowCode getBilateralData takes{hint}; "
-        f"valid values: {', '.join(TOOLS_FLOW_CODES)}"
-    )
+    if value not in TOOLS_FLOW_CODES:
+        raise _refused(
+            f"flow_code {value!r} is not a flowCode getBilateralData takes: it takes "
+            f"{' or '.join(repr(code) for code in TOOLS_FLOW_CODES)}"
+        )
 
 
 def validate_trade_balance(
@@ -542,14 +563,14 @@ def validate_trade_balance(
     freq_code: str,
     cl_code: str,
     *,
-    reporter_code: str | None = None,
-    period: str | None = None,
-    partner_code: str | None = None,
-    partner2_code: str | None = None,
-    cmd_code: str | None = None,
-    customs_code: str | None = None,
-    mot_code: str | None = None,
-    aggregate_by: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
+    partner_code: Codes | None = None,
+    partner2_code: Codes | None = None,
+    cmd_code: TextCodes | None = None,
+    customs_code: TextCodes | None = None,
+    mot_code: TextCodes | None = None,
+    aggregate_by: TextCodes | None = None,
     breakdown_mode: str | None = None,
     include_desc: bool | None = None,
 ) -> dict[str, Any]:
@@ -562,54 +583,44 @@ def validate_trade_balance(
     Tools spec's enum. At most 12 periods: upstream refused 13 with HTTP 400
     (``tests/fixtures/get_trade_balance/ch_world_13_periods.json``). The query must name
     ``reporter_code`` or ``partner_code``, and ``cmd_code``, since upstream gives no count
-    to check its size first (``_UNBOUNDED``). Values are never rewritten.
+    to check its size first (``_UNBOUNDED``), and that is checked first. Values are never
+    rewritten, and the first problem ends the checks.
 
     Returns:
         The arguments that are set, under the task's parameter names, in signature order.
 
     Raises:
-        UnknownCode: A reporter, partner or second-partner code the packaged table lacks,
-            or a ``customs_code`` or ``mot_code`` the packaged list lacks (conventions
-            §5); the first one found ends the checks.
-        InvalidRequestError: Naming every problem found, with the closest valid value
-            where there is one, and that nothing was sent.
+        UnknownCode: A code that its packaged list or table lacks (conventions §5).
+        InvalidRequestError: Any other first problem, and that nothing was sent.
     """
-    problems: list[str] = []
-    _check_bounded("get_trade_balance", reporter_code, partner_code, cmd_code, problems)
-    _check_list("type_code", type_code, "typeCode", problems)
-    _check_list("freq_code", freq_code, "freqCode", problems)
-    _check_list("cl_code", cl_code, "clCode", problems)
-    _check_areas("reporter_code", reporter_code, "reporter", problems)
-    _check_areas("partner_code", partner_code, "partner", problems)
-    _check_areas("partner2_code", partner2_code, "partner", problems)
-    _check_period(period, problems)
-    if cl_code in _allowed("clCode"):
-        _check_cmd_code(cmd_code, cl_code, problems)
-    # customsCode's pattern in the Tools spec, as in comtrade.json, accepts c and C.
-    _check_list(
-        "customs_code", customs_code, "customsCode", problems, multi=True, case_insensitive=True
+    _check_bounded("get_trade_balance", reporter_code, partner_code, cmd_code)
+    _check_list("type_code", type_code, "typeCode")
+    _check_list("freq_code", freq_code, "freqCode")
+    _check_list("cl_code", cl_code, "clCode")
+    _check_areas("reporter_code", reporter_code, "reporter")
+    _check_period(period)
+    _check_areas("partner_code", partner_code, "partner")
+    _check_areas("partner2_code", partner2_code, "partner")
+    _check_cmd_code(cmd_code, cl_code)
+    _check_list("customs_code", customs_code, "customsCode")
+    _check_list("mot_code", mot_code, "motCode")
+    _check_list("aggregate_by", aggregate_by, "aggregateBy")
+    _check_list("breakdown_mode", breakdown_mode, "breakdownMode")
+    return _set(
+        type_code=type_code,
+        freq_code=freq_code,
+        cl_code=cl_code,
+        reporter_code=reporter_code,
+        period=period,
+        partner_code=partner_code,
+        partner2_code=partner2_code,
+        cmd_code=cmd_code,
+        customs_code=customs_code,
+        mot_code=mot_code,
+        aggregate_by=aggregate_by,
+        breakdown_mode=breakdown_mode,
+        include_desc=include_desc,
     )
-    _check_list("mot_code", mot_code, "motCode", problems, multi=True)
-    _check_list("aggregate_by", aggregate_by, "aggregateBy", problems, multi=True)
-    _check_list("breakdown_mode", breakdown_mode, "breakdownMode", problems)
-    if problems:
-        raise _refused(problems)
-    arguments: dict[str, Any] = {
-        "type_code": type_code,
-        "freq_code": freq_code,
-        "cl_code": cl_code,
-        "reporter_code": reporter_code,
-        "period": period,
-        "partner_code": partner_code,
-        "partner2_code": partner2_code,
-        "cmd_code": cmd_code,
-        "customs_code": customs_code,
-        "mot_code": mot_code,
-        "aggregate_by": aggregate_by,
-        "breakdown_mode": breakdown_mode,
-        "include_desc": include_desc,
-    }
-    return {name: value for name, value in arguments.items() if value is not None}
 
 
 def validate_bilateral_data(
@@ -617,10 +628,10 @@ def validate_bilateral_data(
     freq_code: str,
     cl_code: str,
     *,
-    reporter_code: str | None = None,
-    period: str | None = None,
-    partner_code: str | None = None,
-    cmd_code: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
+    partner_code: Codes | None = None,
+    cmd_code: TextCodes | None = None,
     flow_code: str | None = None,
     include_desc: bool | None = None,
 ) -> dict[str, Any]:
@@ -631,48 +642,42 @@ def validate_bilateral_data(
     ``tests/fixtures/get_bilateral_data/ch_us_exports_13_periods.json``) and
     ``flow_code`` is one of ``TOOLS_FLOW_CODES``. The query must name ``reporter_code`` or
     ``partner_code``, and ``cmd_code``, since upstream gives no count to check its size
-    first (``_UNBOUNDED``). Values are never rewritten.
+    first (``_UNBOUNDED``), and that is checked first. Values are never rewritten, and the
+    first problem ends the checks.
 
     Returns:
         The arguments that are set, under the task's parameter names, in signature order.
 
     Raises:
-        UnknownCode: A reporter or partner code the packaged table lacks (conventions
-            §5); the first one found ends the checks.
-        InvalidRequestError: Naming every problem found, with the closest valid value
-            where there is one, and that nothing was sent.
+        UnknownCode: A reporter or partner code the packaged table lacks (conventions §5).
+        InvalidRequestError: Any other first problem, and that nothing was sent.
     """
-    problems: list[str] = []
-    _check_bounded("get_bilateral_data", reporter_code, partner_code, cmd_code, problems)
-    _check_list("type_code", type_code, "typeCode", problems)
-    _check_list("freq_code", freq_code, "freqCode", problems)
-    _check_list("cl_code", cl_code, "clCode", problems)
-    _check_areas("reporter_code", reporter_code, "reporter", problems)
-    _check_areas("partner_code", partner_code, "partner", problems)
-    _check_period(period, problems, max_periods=None)
-    if cl_code in _allowed("clCode"):
-        _check_cmd_code(cmd_code, cl_code, problems)
-    _check_tools_flow(flow_code, problems)
-    if problems:
-        raise _refused(problems)
-    arguments: dict[str, Any] = {
-        "type_code": type_code,
-        "freq_code": freq_code,
-        "cl_code": cl_code,
-        "reporter_code": reporter_code,
-        "period": period,
-        "partner_code": partner_code,
-        "cmd_code": cmd_code,
-        "flow_code": flow_code,
-        "include_desc": include_desc,
-    }
-    return {name: value for name, value in arguments.items() if value is not None}
+    _check_bounded("get_bilateral_data", reporter_code, partner_code, cmd_code)
+    _check_list("type_code", type_code, "typeCode")
+    _check_list("freq_code", freq_code, "freqCode")
+    _check_list("cl_code", cl_code, "clCode")
+    _check_areas("reporter_code", reporter_code, "reporter")
+    _check_period(period, max_periods=None)
+    _check_areas("partner_code", partner_code, "partner")
+    _check_cmd_code(cmd_code, cl_code)
+    _check_tools_flow(flow_code)
+    return _set(
+        type_code=type_code,
+        freq_code=freq_code,
+        cl_code=cl_code,
+        reporter_code=reporter_code,
+        period=period,
+        partner_code=partner_code,
+        cmd_code=cmd_code,
+        flow_code=flow_code,
+        include_desc=include_desc,
+    )
 
 
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
-def _check_day(argument: str, value: str | None, problems: list[str]) -> None:
+def _check_day(argument: str, value: str | None) -> None:
     if value is None:
         return
     try:
@@ -680,7 +685,7 @@ def _check_day(argument: str, value: str | None, problems: list[str]) -> None:
     except ValueError:
         valid = False
     if not valid:
-        problems.append(f"{argument} {value!r} is not a day as YYYY-MM-DD, e.g. '2024-01-31'")
+        raise _refused(f"{argument} {value!r} is not a day as YYYY-MM-DD, e.g. '2024-01-31'")
 
 
 def validate_datasets(
@@ -688,8 +693,8 @@ def validate_datasets(
     freq_code: str,
     cl_code: str,
     *,
-    reporter_code: str | None = None,
-    period: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
     published_date_from: str | None = None,
     published_date_to: str | None = None,
 ) -> dict[str, Any]:
@@ -698,39 +703,32 @@ def validate_datasets(
     The same checks as ``validate_get`` for the parameters the two share with it, except
     that ``period`` takes more than 12 values (``getDa`` answered 13,
     ``tests/fixtures/get_da/ch_13_periods.json``); the publication dates are checked as
-    ``YYYY-MM-DD`` days. Values are never rewritten.
+    ``YYYY-MM-DD`` days. Values are never rewritten, and the first problem ends the checks.
 
     Returns:
         The arguments that are set, under the task's parameter names, in signature order.
 
     Raises:
-        UnknownCode: A reporter code the packaged table lacks, naming the packaged list,
-            its fetch date and the closest area (conventions §5); an
-            ``InvalidRequestError``. The first one found ends the checks: other problems
-            are reported once it is fixed.
-        InvalidRequestError: Naming every problem found, with the closest valid value
-            where there is one, and that nothing was sent.
+        UnknownCode: A code that its packaged list or table lacks, naming the list, its
+            fetch date and the closest codes (conventions §5); an ``InvalidRequestError``.
+        InvalidRequestError: Any other first problem, and that nothing was sent.
     """
-    problems: list[str] = []
-    _check_list("type_code", type_code, "typeCode", problems)
-    _check_list("freq_code", freq_code, "freqCode", problems)
-    _check_list("cl_code", cl_code, "clCode", problems)
-    _check_areas("reporter_code", reporter_code, "reporter", problems)
-    _check_period(period, problems, max_periods=None)
-    _check_day("published_date_from", published_date_from, problems)
-    _check_day("published_date_to", published_date_to, problems)
-    if problems:
-        raise _refused(problems)
-    arguments: dict[str, Any] = {
-        "type_code": type_code,
-        "freq_code": freq_code,
-        "cl_code": cl_code,
-        "reporter_code": reporter_code,
-        "period": period,
-        "published_date_from": published_date_from,
-        "published_date_to": published_date_to,
-    }
-    return {name: value for name, value in arguments.items() if value is not None}
+    _check_list("type_code", type_code, "typeCode")
+    _check_list("freq_code", freq_code, "freqCode")
+    _check_list("cl_code", cl_code, "clCode")
+    _check_areas("reporter_code", reporter_code, "reporter")
+    _check_period(period, max_periods=None)
+    _check_day("published_date_from", published_date_from)
+    _check_day("published_date_to", published_date_to)
+    return _set(
+        type_code=type_code,
+        freq_code=freq_code,
+        cl_code=cl_code,
+        reporter_code=reporter_code,
+        period=period,
+        published_date_from=published_date_from,
+        published_date_to=published_date_to,
+    )
 
 
 RECENT = "recent"
@@ -747,41 +745,31 @@ def validate_world_share(
     type_code: str,
     freq_code: str,
     *,
-    period: str | None = None,
-    reporter_code: str | None = None,
+    reporter_code: Codes | None = None,
+    period: Codes | None = None,
 ) -> dict[str, Any]:
     """Check the arguments of a ``public/v1/getWorldShare`` call before anything is sent.
 
-    ``type_code`` and ``freq_code`` against the packaged lists; ``period`` by shape, each
-    comma-separated member a year or a month as ``validate_get`` checks them, any number
-    of them (the spec states no limit), or ``RECENT`` alone; ``reporter_code`` against
-    ``Reporters.json``, each member of a comma-separated list. Values are never rewritten.
+    ``type_code`` and ``freq_code`` against the packaged lists; ``reporter_code`` against
+    ``Reporters.json``, each code of a list; ``period`` by shape, each a year or a month
+    as ``validate_get`` checks them, any number of them (the spec states no limit), or
+    ``RECENT`` alone. Values are never rewritten, and the first problem ends the checks.
 
     Returns:
         The arguments that are set, under the task's parameter names, in signature order.
 
     Raises:
-        UnknownCode: A reporter code the packaged table lacks, naming the packaged list,
-            its fetch date and the closest area (conventions §5); an
-            ``InvalidRequestError``. The first one found ends the checks: other problems
-            are reported once it is fixed.
-        InvalidRequestError: Naming every problem found, with the closest valid value
-            where there is one, and that nothing was sent.
+        UnknownCode: A code that its packaged list or table lacks, naming the list, its
+            fetch date and the closest codes (conventions §5); an ``InvalidRequestError``.
+        InvalidRequestError: Any other first problem, and that nothing was sent.
     """
-    problems: list[str] = []
-    _check_list("type_code", type_code, "typeCode", problems)
-    _check_list("freq_code", freq_code, "freqCode", problems)
-    _check_period(period, problems, max_periods=None, keyword=RECENT)
-    _check_areas("reporter_code", reporter_code, "reporter", problems)
-    if problems:
-        raise _refused(problems)
-    arguments: dict[str, Any] = {
-        "type_code": type_code,
-        "freq_code": freq_code,
-        "period": period,
-        "reporter_code": reporter_code,
-    }
-    return {name: value for name, value in arguments.items() if value is not None}
+    _check_list("type_code", type_code, "typeCode")
+    _check_list("freq_code", freq_code, "freqCode")
+    _check_areas("reporter_code", reporter_code, "reporter")
+    _check_period(period, max_periods=None, keyword=RECENT)
+    return _set(
+        type_code=type_code, freq_code=freq_code, reporter_code=reporter_code, period=period
+    )
 
 
 def classification_files() -> tuple[str, ...]:
@@ -791,26 +779,38 @@ def classification_files() -> tuple[str, ...]:
     list without the values added from the spec, ``CL_CODES_FROM_SPEC``, for which
     upstream serves no file.
     """
-    return tuple(value for value in _allowed("clCode") if value not in CL_CODES_FROM_SPEC)
+    return tuple(
+        str(record["clCode"])
+        for record in CL_CODES.packaged.records
+        if record["clCode"] not in CL_CODES_FROM_SPEC
+    )
+
+
+_FILES = (
+    "list_classifications lists the classifications, the categories cmd:<clCode>, "
+    f"{over_mcp('list_classifications')}."
+)
+"""``UnknownCode``'s reason for a classification the packaged ``clCode`` list lacks."""
 
 
 def validate_classification_file(cl_code: str) -> dict[str, Any]:
     """Check that ``cl_code`` names a classification file before it is fetched.
 
+    Core's check of the packaged ``clCode`` list first, then the values of the list that
+    upstream serves no file for, ``CL_CODES_FROM_SPEC``.
+
     Returns:
         ``{"cl_code": cl_code}``, the arguments under the task's parameter names.
 
     Raises:
-        InvalidRequestError: Naming the closest valid value and every valid one.
+        UnknownCode: ``cl_code`` is no value of the packaged ``clCode`` list.
+        InvalidRequestError: ``cl_code`` has no file, naming the classifications that do.
     """
-    files = classification_files()
-    if cl_code not in files:
-        closest = _closest(cl_code, files)
-        hint = f"; closest: {closest!r}" if closest else ""
-        raise InvalidRequestError(
-            f"cl_code {cl_code!r} has no classification file at UN Comtrade{hint}. "
-            f"{_UNSENT} Valid values: {', '.join(files)}.",
-            source=SOURCE,
+    CL_CODES.check("cl_code", cl_code, reason=_FILES)
+    if cl_code in CL_CODES_FROM_SPEC:
+        raise _refused(
+            f"cl_code {cl_code!r} has no classification file at UN Comtrade",
+            f"The classifications with a file: {', '.join(classification_files())}.",
         )
     return {"cl_code": cl_code}
 
@@ -822,17 +822,23 @@ def validate_code_list(param: str) -> dict[str, Any]:
         ``{"param": param}``, the arguments under the task's parameter names.
 
     Raises:
-        InvalidRequestError: Naming the closest list and every one the package carries.
+        InvalidRequestError: Naming the closest lists by core's ``closest`` and every one
+            the package carries.
     """
     if param not in PACKAGED_LISTS:
-        near = _closest(param, list(PACKAGED_LISTS))
-        hint = f"; closest: {near!r}" if near else ""
-        raise InvalidRequestError(
-            f"param {param!r} is not a list the package carries{hint}. "
-            f"{_UNSENT} Valid values: {', '.join(PACKAGED_LISTS)}.",
-            source=SOURCE,
-        )
+        rest = f"It carries: {', '.join(PACKAGED_LISTS)}."
+        near = closest(param, {name: name for name in PACKAGED_LISTS})
+        if near:
+            rest = f"Did you mean {', '.join(name for name, _ in near)}? {rest}"
+        raise _refused(f"param {param!r} is not a list the package carries", rest)
     return {"param": param}
+
+
+_CATEGORY = (
+    "The package answers from its copy of UN Comtrade's index of the reference files. "
+    f"list_classifications lists every category {over_mcp('list_classifications')}."
+)
+"""``UnknownCode``'s reason for a category the packaged ``ListofReferences.json`` lacks."""
 
 
 def validate_reference_category(category: str | None) -> dict[str, Any]:
@@ -842,19 +848,9 @@ def validate_reference_category(category: str | None) -> dict[str, Any]:
         ``{"category": category}``, or ``{}`` for ``None``, which keeps every row.
 
     Raises:
-        InvalidRequestError: Naming the closest category and every one the index holds.
+        UnknownCode: Naming the index, its fetch date and the closest categories.
     """
     if category is None:
         return {}
-    categories = [
-        str(record["category"]) for record in PackagedList.load(PACKAGE, "ListofReferences").records
-    ]
-    if category not in categories:
-        near = _closest(category, categories)
-        hint = f"; closest: {near!r}" if near else ""
-        raise InvalidRequestError(
-            f"category {category!r} is not a category of UN Comtrade's "
-            f"ListofReferences.json{hint}. {_UNSENT} Valid values: {', '.join(categories)}.",
-            source=SOURCE,
-        )
+    CATEGORIES.check("category", category, reason=_CATEGORY)
     return {"category": category}
