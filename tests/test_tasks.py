@@ -365,6 +365,20 @@ def test_a_comma_separated_text_is_refused_before_any_request(
     )
 
 
+@pytest.mark.parametrize("argument", COMMA_TEXTS)
+def test_a_set_of_codes_is_refused_before_any_request(
+    respx_mock: respx.MockRouter, argument: str
+) -> None:
+    """A set is no list of codes: it has no order, and ``params.joined`` joins a sequence alone.
+
+    So the check refuses what the join would send as given (sdk-core ADR-0061, decision 1).
+    """
+    codes = {COMMA_TEXTS[argument].split(",")[0]}
+    assert _refused(respx_mock, **{argument: codes}) == (
+        f"{argument} takes one code or a list of codes, not a set, {codes!r}. Nothing was sent."
+    )
+
+
 @pytest.mark.anyio
 async def test_the_tools_take_a_list_for_each_filter_of_several_values(
     respx_mock: respx.MockRouter,
