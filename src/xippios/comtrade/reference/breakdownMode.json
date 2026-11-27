@@ -1,7 +1,7 @@
 {
   "param": "breakdownMode",
   "endpoint": "files/v1/app/apim/comtrade.json",
-  "fetched": "2026-11-27T05:41:33Z",
+  "fetched": "2026-11-27T07:09:18Z",
   "note": "Read from docs/upstream/apidocs/comtrade.json, the snapshot of files/v1/app/apim/comtrade.json fetched 2026-11-27: operation get, the breakdownMode enum, whose description, \"Breakdown mode to choose from\", words no value.",
   "records": [
     {
