@@ -1232,7 +1232,7 @@ async def test_an_unknown_customs_code_over_mcp() -> None:
 
 
 TEXT_FIELDS: dict[str, tuple[str, ...]] = {
-    "typeCode": ("text",),
+    "typeCode": (),
     "freqCode": ("text",),
     "clCode": ("variable", "description"),
     "flowCode": ("text",),
@@ -1245,11 +1245,11 @@ TEXT_FIELDS: dict[str, tuple[str, ...]] = {
 }
 """The fields upstream words a list's values in, beside the value under the parameter's name.
 
-``text`` in ``tradeRegimes.json``, ``CustomsCodes.json``, ``ModeOfTransportCodes.json``
-and ``ModeOfSupply.json``; ``qtyAbbr`` and ``qtyDescription`` in ``QuantityUnits.json``;
-``variable`` and ``description`` in ``ListofReferences.json``; ``text`` cut from the
-spec's descriptions of ``typeCode`` and ``freqCode``, which word every value, where those
-of ``breakdownMode`` and ``aggregateBy`` word none.
+``text`` in ``tradeRegimes.json``, ``CustomsCodes.json``, ``ModeOfTransportCodes.json``,
+``ModeOfSupply.json`` and ``Frequency.json`` (``freqCode``); ``qtyAbbr`` and
+``qtyDescription`` in ``QuantityUnits.json``; ``variable`` and ``description`` in
+``ListofReferences.json``. The lists read from the spec, ``typeCode``, ``breakdownMode``
+and ``aggregateBy``, carry none, since UN Comtrade lists no reference file of them.
 """
 
 
@@ -1294,7 +1294,7 @@ def test_the_spec_lists_name_the_operation_they_were_read_from() -> None:
         re.MULTILINE,
     )
     assert row is not None
-    for name in ["typeCode", "freqCode", "breakdownMode", "aggregateBy"]:
+    for name in ["typeCode", "breakdownMode", "aggregateBy"]:
         packaged = PackagedList.load(PACKAGE, name)
         assert packaged.endpoint == "files/v1/app/apim/comtrade.json", name
         assert packaged.fetched == datetime.fromisoformat(row.group(1)), name
@@ -1304,6 +1304,28 @@ def test_the_spec_lists_name_the_operation_they_were_read_from() -> None:
             f"files/v1/app/apim/comtrade.json fetched {packaged.fetched:%Y-%m-%d}: operation "
             "get, the "
         ), name
+
+
+def test_the_frequencies_are_upstreams_frequency_json() -> None:
+    """``freqCode`` names its codes in the words of UN Comtrade's own ``Frequency.json``.
+
+    ``ListofReferences.json`` lists the file as the list of the variable ``Frequency``, and
+    its rows hold ``A`` and ``M``, the values of the spec's ``freqCode`` enum, each with its
+    ``text`` (https://github.com/xippios/sdk-comtrade/issues/68).
+    """
+    frequency = PackagedList.load(PACKAGE, "freqCode")
+    [listed] = [
+        record["fileuri"]
+        for record in PackagedList.load(PACKAGE, "ListofReferences").records
+        if record["category"] == "freq"
+    ]
+    assert listed == "https://comtradeapi.un.org/files/v1/app/reference/Frequency.json"
+    assert frequency.endpoint == "files/v1/app/reference/Frequency.json"
+    assert frequency.note is not None
+    assert frequency.note.startswith("The ids of Frequency.json with their text")
+    codes = [record["freqCode"] for record in frequency.records]
+    assert {"A", "M"} <= set(codes)
+    assert all(record.get("text") for record in frequency.records)
 
 
 def test_no_generated_module_repeats_the_packaged_lists() -> None:
@@ -2164,7 +2186,7 @@ def test_list_codes_carries_upstreams_words(respx_mock: respx.MockRouter) -> Non
     }
     assert by_value("clCode")["H6"]["variable"] == "Product [HS 2022]"
     assert by_value("clCode")["BE"] == {"variable": None, "description": None}
-    assert by_value("typeCode") == {"C": {"text": "commodities"}, "S": {"text": "service"}}
+    assert by_value("typeCode") == {"C": {}, "S": {}}, "no file of upstream's words them"
     assert by_value("freqCode") == {"A": {"text": "annual"}, "M": {"text": "monthly"}}
     assert by_value("breakdownMode") == {"classic": {}, "plus": {}}
     assert list(by_value("aggregateBy"))[:2] == ["cmdCode", "period"]
