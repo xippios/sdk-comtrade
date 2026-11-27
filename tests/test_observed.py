@@ -106,6 +106,21 @@ def test_the_documentations_old_address_is_a_note() -> None:
     assert "comtradeplus.un.org" not in script
 
 
+def test_the_package_names_the_documentation_where_it_now_stands() -> None:
+    """The copier answers name the documentation page that the snapshot reads and the site on
+    its host, and no text of the package's own names the old host: the README, ``CLAUDE.md``,
+    the layout, the scripts and modules, the manifest and the command rendered from the
+    answers (https://github.com/xippios/sdk-comtrade/issues/77). Beyond the note above, the old
+    host stands only in the kept articles, as upstream prints it there."""
+    lines = (ROOT / ".copier-answers.yml").read_text(encoding="utf-8").splitlines()
+    answers = dict(line.split(": ", 1) for line in lines if not line.startswith("#"))
+    assert answers["upstream_docs_url"] == DOCUMENTATION.strip("`")
+    assert answers["upstream_url"] == "https://comtrade.un.org"
+    rendered = [ROOT / "pyproject.toml", ROOT / ".claude" / "commands" / "refresh-upstream.md"]
+    for path in (*PACKAGE_TEXT, *rendered):
+        assert "comtradeplus.un.org" not in path.read_text(encoding="utf-8"), path.name
+
+
 def test_every_sample_a_probe_names_was_taken_on_a_date_it_gives() -> None:
     """A recording's day, from its ``recorded_at``, and a packaged list's, from its
     ``fetched``, is a date of the probe that names it."""
