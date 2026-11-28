@@ -1,6 +1,6 @@
 [project]
 name = "xippios-comtrade"
-version = "0.3.0"
+version = "0.4.0"
 description = "Typed client, MCP tools and HTTP routes for UN Comtrade"
 readme = "README.md"
 license = "Apache-2.0"

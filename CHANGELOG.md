@@ -4,6 +4,172 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/) (pre-1.0: breaking changes bump the minor).
 
+## [0.4.0] - 2026-11-28
+
+### Added
+
+- The README's `## Scope` names each of the 29 operations of UN Comtrade's five API
+  products, the twenty-one that no task wraps yet each with its public issue, and each
+  documented choice that a caller cannot make. What UN Comtrade was observed to answer
+  stands once in `docs/upstream/OBSERVED.md`, each note with its probe, its date and its
+  recording. (https://github.com/xippios/sdk-comtrade/issues/33,
+  https://github.com/xippios/sdk-comtrade/issues/63)
+- Every answer names in `meta.names` the reporter, partner, flow, customs, transport and
+  frequency codes that the call asked for, by the packaged lists, so an answer without rows
+  names what the call asked for. The rows' flow codes are named too, `MIF` and `XIF`, which
+  the package adds from the spec without upstream's words, by their own code.
+  (sdk-core ADR-0067, https://github.com/xippios/sdk-comtrade/issues/66)
+- An answer of `get_data` after a count of 0 says in `meta.notes` that UN Comtrade counted no
+  record for the query and that no data request was sent, since a code that UN Comtrade does
+  not have counts 0 too. (https://github.com/xippios/sdk-usda-esr/issues/88)
+- Every answer whose rows carry a reporter, partner, customs, transport, supply, quantity
+  unit or frequency code names those codes in `meta.names` by the packaged lists. A code
+  that its list lacks is left out of the names and said in `meta.notes`, so no answer is
+  withheld for it. (sdk-core ADR-0067, https://github.com/xippios/sdk-core/issues/478)
+
+### Changed
+
+- Every list and table packaged from UN Comtrade's reference files is the one fetched on
+  2026-11-27, the day that `meta.retrieved_at` of the list tasks and the fetch date of an
+  `UnknownCode` refusal give, while the three lists read from the spec carry the time of its
+  snapshot. No code left or joined any list or table, and no record changed but the words of
+  `freqCode` and `typeCode`. (https://github.com/xippios/sdk-comtrade/issues/68)
+- A refusal of a call as given names the first problem that it finds, in the order of the
+  arguments, where it named every problem found. Core's check judges every packaged list, so
+  an unknown `type_code`, `freq_code`, `cl_code`, `flow_code`, `aggregate_by`,
+  `breakdown_mode` or `category` raises `UnknownCode`, an `InvalidRequestError` that names
+  the closest codes by core's `closest`. An area code without the same area in the other
+  table names the nearest codes by number, by core's `nearest`.
+  (sdk-core ADR-0061, https://github.com/xippios/sdk-comtrade/issues/34)
+- The description of `get_data` and of its tool states the most that one call sends: two
+  requests, the count and the data, each tried at most 4 times, so at most 8.
+  (sdk-core ADR-0061, https://github.com/xippios/sdk-comtrade/issues/66)
+- The client keeps the keyed answers under `data/v1` and `tools/v1` for 300 s beside the
+  reference files, which it keeps for the life of the process, each by the longest path
+  prefix that its path starts with. A call repeated within five minutes is answered from the
+  cache and spends no call of the daily quota, while the public operations under
+  `public/v1` stay out of it. (https://github.com/xippios/sdk-core/issues/479)
+- A decimal without fractional digits is a JSON integer in the answers of the MCP tools and
+  the routes, `16217` where it read `16217.0`.
+  (https://github.com/xippios/sdk-core/issues/478)
+- `get_data` refuses a query over UN Comtrade's limit of 100,000 records per call with
+  core's `QueryTooLarge`, whose message gives the count, the limit, that the count was sent
+  and no data fetched, and what narrows the query. It still answers a count of 0 with an
+  empty list and no data request, and its answer carries the count as `meta.total`.
+  (https://github.com/xippios/sdk-comtrade/issues/38)
+- Every refusal of a call as given says `Nothing was sent.` after its first sentence, the MCP
+  adapter's refusal of an argument among them, while a refusal after a request says what
+  was sent. An area, customs or transport code is checked by one call of core's check, and
+  the refusal of an area names the integer, `756` where it read `'756'`, with the classes
+  unchanged. (https://github.com/xippios/sdk-core/issues/481)
+- `meta.retrieved_at` of each task that reads UN Comtrade is the client's time of the answer,
+  the time it was stored where the cache answers. `get_data` takes the older of its count
+  and its data request. (sdk-core ADR-0037, https://github.com/xippios/sdk-core/issues/479)
+- The descriptions of `comtrade_get_data`, `comtrade_get_trade_balance`,
+  `comtrade_get_bilateral_data`, `comtrade_get_comtrade_releases`, `comtrade_get_world_share`
+  and `comtrade_list_codes` are each task's docstring before `Args:`, under 1,000
+  characters. The text of each argument stands in the tool's input schema.
+  (https://github.com/xippios/sdk-core/issues/485)
+
+### Fixed
+
+- The package's links to UN Comtrade, the `Upstream` URL of its PyPI page and the README's,
+  name the site on its new host, `comtrade.un.org`, in place of `comtradeplus.un.org`.
+  (https://github.com/xippios/sdk-comtrade/issues/77)
+- `docs/upstream/FETCHED.md` lists under `Not fetched` the document that the documentation
+  page's console loads, the data availability API and My API Portal, each with the reason
+  that the snapshot does not request it. (https://github.com/xippios/sdk-comtrade/issues/80)
+
+### Breaking
+
+- `TypeCodeValue` loses `text`, and `list_codes("typeCode")` answers `C` and `S` without
+  words, since UN Comtrade lists no reference file of `typeCode` and a label comes from
+  upstream's own list. The words of `freqCode`, in `list_codes("freqCode")` and in
+  `meta.names`, are those of UN Comtrade's `Frequency.json`, `Annual` and `Monthly`, in place
+  of `annual` and `monthly` cut from the spec's description, and `FreqCodeValue.text` is
+  always set. The file's row `Q` Quarterly, which the `freqCode` of no API document
+  takes, stays refused before any request.
+  (sdk-core ADR-0060, https://github.com/xippios/sdk-comtrade/issues/68)
+- `get_counts` becomes `count_data`, its MCP tool `comtrade_count_data` and its route
+  `/comtrade/count_data`, with no alias: `count_` is the family's verb for upstream's own
+  count. `list_codes(param)` keeps its name.
+  (sdk-core ADR-0061, https://github.com/xippios/sdk-comtrade/issues/66)
+- `get_live_update` reads its four times strictly: an answer with a time that none of its
+  four forms reads fails with core's `ValidationError`, which names `data/v1/getLiveUpdate`,
+  where that time read as `None`. A time that UN Comtrade sends as null stays `None`.
+  (https://github.com/xippios/sdk-usda-esr/issues/60)
+- `search` of `list_reporters`, `list_partners` and `list_commodities` and `category` of
+  `list_classifications` are keyword-only, so `list_classifications("cmd:HS")` becomes
+  `list_classifications(category="cmd:HS")`. The keyword-only arguments of every task stand
+  in the spec's one order, `reporter_code`, `period`, `partner_code`, `partner2_code`,
+  `cmd_code`, `flow_code`, `customs_code` and `mot_code` before the rest, which orders the
+  tools' input schemas so and breaks no call by name.
+  (sdk-core ADR-0061, https://github.com/xippios/sdk-usda-esr/issues/60)
+- Several values of a filter are one argument that takes one code or a list of codes,
+  `reporter_code=[757, 842]`, which the package sends as UN Comtrade's comma-separated text,
+  and a comma-separated text such as `"757,842"` or a set is refused before any request. It
+  holds for `reporter_code`, `period`, `partner_code`, `partner2_code`, `cmd_code`,
+  `flow_code`, `customs_code`, `mot_code` and `aggregate_by`, while `flow_code` of
+  `get_bilateral_data` stays one value. Over MCP each takes a JSON array, and over HTTP the
+  routes of `count_data`, `get_data`, `get_data_availability`, `get_metadata`,
+  `get_trade_balance`, `get_bilateral_data` and `get_world_share` take a `POST` with a JSON
+  body, where a `GET` with a query now gets HTTP 405.
+  (sdk-core ADR-0061, https://github.com/xippios/sdk-comtrade/issues/66)
+- The package depends on `xippios-core~=0.5.0`, its extras likewise, is updated to
+  sdk-template v0.5.0 and applies conventions 1.30.
+  (https://github.com/xippios/sdk-comtrade/issues/63)
+- `xippios.comtrade.errors` holds no `QueryTooLarge` of its own any more, so an import of it
+  fails. A caller catches core's `xippios.core.QueryTooLarge`, which `get_data` raises, an
+  `InvalidRequestError` with the count and the limit as before.
+  (https://github.com/xippios/sdk-comtrade/issues/38)
+- The endpoint wrappers of `xippios.comtrade.api` return core's `Answer`, the model of
+  upstream's answer as its `payload` beside its `retrieved_at`, where they returned the
+  model itself. A caller of a wrapper reads `.payload`.
+  (sdk-core ADR-0037, https://github.com/xippios/sdk-core/issues/479)
+- `xippios.comtrade.enums`, the ten `StrEnum` classes generated from the packaged lists,
+  leaves the package, and `scripts/refresh_reference.py` no longer renders it: its
+  `--render-only` writes the provenance rows alone. No module of the package imported it, and
+  a task takes a code as a plain text all the same. `list_codes` returns each packaged list
+  with upstream's words where upstream's list gives them.
+  (https://github.com/xippios/sdk-comtrade/issues/64)
+- `get_bilateral_flows`, its MCP tool `comtrade_get_bilateral_flows` and its route leave the
+  package: the task fixed goods, the total row and the descriptions for the caller, which a
+  task of a source does not. `get_data` answers the same rows, in upstream's order, with
+  `type_code` `"C"`, `breakdown_mode="classic"` and `include_desc=True`, the reporter and the
+  partner as UN Comtrade's codes. (sdk-core ADR-0060,
+  https://github.com/xippios/sdk-core/issues/474)
+- `get_commodity_series`, its MCP tool `comtrade_get_commodity_series` and its route leave
+  the package: the task fixed goods, partner 0 and the total row for the caller and sent at
+  most 120 periods, 12 a call. `get_data` answers each 12 periods with `type_code` `"C"`,
+  `partner_code="0"`, `breakdown_mode="classic"` and `include_desc=True`, and a series of
+  `get_data` over more than 12 periods waits for a later release. (sdk-core ADR-0060,
+  https://github.com/xippios/sdk-core/issues/474,
+  https://github.com/xippios/sdk-comtrade/issues/36)
+- `get_mirror_flows`, its MCP tool `comtrade_get_mirror_flows` and its route leave the
+  package: the task fixed goods for the caller and cut `getBilateralData` to single product
+  codes and 12 periods. `get_bilateral_data` answers the same operation with every argument
+  that the caller sets, its rows with every field upstream sends beside upstream's note.
+  (sdk-core ADR-0060, https://github.com/xippios/sdk-core/issues/474)
+- `get_top_partners`, its MCP tool `comtrade_get_top_partners` and its route leave the
+  package: the task ranked a reporter's partners by `primary_value`, dropped partner 0, the
+  World, and kept the first `n`, a ranking that a task of a source does not make.
+  `get_data` without `partner_code` answers every partner's row, the World's among them,
+  with `type_code` `"C"`, `breakdown_mode="classic"` and `include_desc=True`.
+  (sdk-core ADR-0060, https://github.com/xippios/sdk-core/issues/474)
+- `get_world_trade`, its MCP tool `comtrade_get_world_trade` and its route leave the
+  package: the task fixed goods, partner 0 and the total row for the caller and sorted the
+  reporters by `primary_value`. `get_data` without `reporter_code` answers the same rows, in
+  upstream's order, with `type_code` `"C"`, `partner_code="0"`, `breakdown_mode="classic"`
+  and `include_desc=True`. (sdk-core ADR-0060, https://github.com/xippios/sdk-core/issues/474)
+- `models.TradeFlowRecord`, `MirrorFlowRecord` and `MirrorFlows` leave with the tasks that
+  returned them, and `params.SLICE_PINS`, `MAX_SERIES_PERIODS`, `validate_slice` and
+  `validate_mirror_flows` with the tasks that read them. `TradeDataRecord` and
+  `BilateralData` hold the rows of the two operations. No task resolves an ISO alpha-3 code
+  any more: every area argument takes UN Comtrade's code, which `list_reporters` and
+  `list_partners` find by its alpha-3 code. (sdk-core ADR-0060,
+  https://github.com/xippios/sdk-core/issues/474,
+  https://github.com/xippios/sdk-comtrade/issues/37)
+
 ## [0.3.0] - 2026-11-20
 
 ### Added
