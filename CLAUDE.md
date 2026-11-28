@@ -12,7 +12,7 @@ this file.
 
 | | |
 | --- | --- |
-| Upstream | UN Comtrade, https://comtradeplus.un.org |
+| Upstream | UN Comtrade, https://comtrade.un.org |
 | API base URL | `https://comtradeapi.un.org` |
 | Documentation | https://comtrade.un.org/en/api-docs and the five OpenAPI files it no longer names, under https://comtradeapi.un.org/files/v1/app/apim/, snapshotted in `docs/upstream/` |
 | Credentials | `COMTRADE_API_KEY` from the environment, sent as the `Ocp-Apim-Subscription-Key` header; never to the public operations or the reference files |

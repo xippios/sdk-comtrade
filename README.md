@@ -1,7 +1,7 @@
 # xippios-comtrade
 
 Typed Python client, MCP server and FastAPI routes for
-[UN Comtrade](https://comtradeplus.un.org), part of the
+[UN Comtrade](https://comtrade.un.org), part of the
 [xippios SDK family](https://github.com/xippios). Names and semantics follow the
 upstream documentation; every response carries its metadata (source, endpoint,
 retrieved_at, request).
@@ -242,7 +242,7 @@ that those five fixed. Alpha: the public surface may change in a minor version b
 
 ## Upstream terms and attribution
 
-Data comes from UN Comtrade (https://comtradeplus.un.org), on the terms upstream states
+Data comes from UN Comtrade (https://comtrade.un.org), on the terms upstream states
 for it in its [Policy on Comtrade Data Use](https://uncomtrade.org/docs/policy-on-comtrade-data-use/),
 under which use of the data is subject to a license agreement found at
 https://comtrade.un.org/en/license-agreement, regardless of whether the data is accessed via

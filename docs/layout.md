@@ -51,11 +51,14 @@ tests/
   test_refresh_upstream.py  the snapshot script's declaration and hooks, offline: its
                    pages, the five OpenAPI files against the committed ones, the statements
                    of the attribution against the kept articles and the documentation
-                   page's footer, the agreement that it does not fetch, each row's note
-                   and an article's Markdown
+                   page's footer, the four pages that it does not fetch, each with the
+                   link or the kept file its reason names, each row's note and an
+                   article's Markdown
   test_observed.py docs/upstream/OBSERVED.md as committed: each note's probe, operation
-                   and sample, the dates of its samples, and that the package's own text
-                   dates no answer outside it
+                   and sample, the dates of its samples, that the package's own text
+                   dates no answer outside it, and that the copier answers name the
+                   documentation's new address and the package's own text not its old
+                   host
 docs/
   upstream/        also apidocs/, the five OpenAPI files of the API products; help/, the
                    Help Center articles in Markdown; reference/, ListofReferences.json and

@@ -96,8 +96,9 @@ def test_a_capture_requests_the_declared_pages_and_no_other() -> None:
 
     The frame follows no redirect to another host, and ``linked`` names no page, so a capture
     sends one request for each of the 27 pages, before a retry; no section is the script's.
-    The one page that ``not_fetched`` names, the licence agreement, is no page of the snapshot:
-    the frame writes its row under ``Not fetched`` and requests it never.
+    The four pages that ``not_fetched`` names, the licence agreement, the console's document,
+    the data availability API and My API Portal, are no pages of the snapshot: the frame
+    writes their rows under ``Not fetched`` and requests them never.
     The answers below are inputs of the test, not answers from UN Comtrade.
     """
     snapshot = script.SNAPSHOT
@@ -109,7 +110,12 @@ def test_a_capture_requests_the_declared_pages_and_no_other() -> None:
         row = Row(page, answer(page.url, b"{}", "application/json"), None)
         assert snapshot.linked(row) == ()
     assert snapshot.sections([]) == ()
-    assert [entry.url for entry in snapshot.not_fetched] == [script.LICENCE_URL]
+    assert [entry.url for entry in snapshot.not_fetched] == [
+        script.LICENCE_URL,
+        script.CONSOLE_SPEC_URL,
+        script.DATA_AVAILABILITY_API_URL,
+        script.API_PORTAL_URL,
+    ]
     assert not {entry.url for entry in snapshot.not_fetched} & {page.url for page in snapshot.pages}
 
 
@@ -125,6 +131,51 @@ def test_each_link_the_attribution_records_is_fetched_or_not_fetched() -> None:
     reason = left_out[script.LICENCE_URL]
     assert "License Agreement" in reason
     assert "Policy on Comtrade Data Use" in reason
+
+
+LINK = re.compile(r"https://[^\s<>()\[\]\"',;]+")
+"""An address as an article's Markdown prints it, in a link, an autolink or an ``href``."""
+KEPT = re.compile(r"`((?:apidocs|help)/[^`\s]+)`")
+"""A file of the snapshot that a reason names, from ``docs/upstream/``."""
+
+
+def test_the_pages_the_documentation_links_and_no_capture_requests_are_not_fetched() -> None:
+    """The console's document, the data availability API and My API Portal have their rows
+    under ``Not fetched``, each with its reason (conventions §3,
+    https://github.com/xippios/sdk-comtrade/issues/80).
+
+    The documentation page's console loads one document for a viewer without an account, at
+    the page's own address, and the snapshot keeps the Public product's OpenAPI file in its
+    place. The kept articles link the other two, and each reason names the kept files that
+    hold what the snapshot reads in place of the page.
+    """
+    left_out = {entry.url: entry.reason for entry in script.SNAPSHOT.not_fetched}
+    console = script.CONSOLE_SPEC_URL
+    assert console == "https://comtrade.un.org/en/api-docs?handler=Spec&product=public"
+    assert urlsplit(console)._replace(query="").geturl() == script.DOCS_URL
+    assert f"{script.APIM_BASE}public.json" in left_out[console]
+    assert script.DATA_AVAILABILITY_API_URL == "https://comtradedeveloper.un.org/"
+    assert script.API_PORTAL_URL == "https://comtrade.un.org/en/api-portal"
+    kept = {
+        slug: set(LINK.findall((ROOT / "docs/upstream/help" / f"{slug}.md").read_text("utf-8")))
+        for slug in script.HELP_SLUGS
+    }
+    linking = {
+        url: sorted(slug for slug, links in kept.items() if url in links)
+        for url in (script.DATA_AVAILABILITY_API_URL, script.API_PORTAL_URL)
+    }
+    assert linking == {
+        script.DATA_AVAILABILITY_API_URL: ["data-availability"],
+        script.API_PORTAL_URL: ["data-availability", "subscriptions", "un-comtrade-api"],
+    }
+    named = {url: KEPT.findall(left_out[url]) for url in (console, *linking)}
+    assert named == {
+        console: ["apidocs/public.json"],
+        script.DATA_AVAILABILITY_API_URL: ["apidocs/comtrade.json", "apidocs/public.json"],
+        script.API_PORTAL_URL: ["help/subscriptions.md"],
+    }
+    for files in named.values():
+        assert all((ROOT / "docs/upstream" / file).is_file() for file in files)
 
 
 AGREEMENT = re.compile(r"https://comtrade\.un\.org/[^\s<>()\[\],;]+")
